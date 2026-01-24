@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "577768862760",
+    "project_id": "apexpredictions01",
+    "storage_bucket": "apexpredictions01.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:577768862760:android:8513a12c158e4146a5f11d",
+        "android_client_info": {
+          "package_name": "com.kingzconnect.apx"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "577768862760-rhjtklbgolu8dhuk0hqqqh7a9gce050q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kingzconnect.apx",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "577768862760-clof09c2sd3nljoltackr0j6tdghebq6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjSlem4vK2ogJlQXDgmrBcGmnFQzPKDwM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "577768862760-brvq6dk4u45h92l8cte3eh17jccvf1i2.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "577768862760-vqn7atvm4dg8ftmkn48rd6qlhpnugbk5.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.apex.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

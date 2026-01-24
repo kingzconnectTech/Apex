@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { COLORS } from '../constants/colors';
 
 export default function MatchDetailsScreen({ route }) {
   const { match } = route.params || {};
@@ -63,20 +64,21 @@ export default function MatchDetailsScreen({ route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.bg,
   },
   header: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.cardBg,
     padding: 20,
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: COLORS.primary,
   },
   league: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.secondary,
     marginBottom: 10,
     textTransform: 'uppercase',
+    fontWeight: 'bold',
   },
   scoreContainer: {
     flexDirection: 'row',
@@ -90,15 +92,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     flex: 1,
     textAlign: 'center',
+    color: COLORS.text,
   },
   vs: {
     fontSize: 16,
-    color: '#999',
+    color: COLORS.textSecondary,
     marginHorizontal: 10,
   },
   date: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.accent,
   },
   section: {
     padding: 20,
@@ -107,10 +110,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: '#333',
+    color: COLORS.secondary,
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.cardBg,
     padding: 15,
     borderRadius: 10,
     shadowColor: '#000',
@@ -118,19 +121,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   predictionText: {
     fontSize: 16,
-    color: '#333',
+    color: COLORS.text,
     marginBottom: 5,
   },
   highlight: {
     fontWeight: 'bold',
-    color: '#2e64e5',
+    color: COLORS.primary,
   },
   confidence: {
     fontSize: 14,
-    color: '#4caf50',
+    color: COLORS.success,
     fontWeight: 'bold',
   },
   row: {
@@ -138,7 +143,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   statBox: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.cardBg,
     padding: 15,
     borderRadius: 10,
     width: '48%',
@@ -148,20 +153,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   statLabel: {
     fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 5,
     textAlign: 'center',
+    color: COLORS.text,
   },
   statValue: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.accent,
+    fontWeight: 'bold',
   },
   statText: {
     fontSize: 14,
-    color: '#333',
+    color: COLORS.text,
     marginBottom: 5,
   },
 });

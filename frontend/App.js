@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import auth from '@react-native-firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
+import { COLORS } from './constants/colors';
+import { StatusBar } from 'expo-status-bar';
 
 // Screens
 import HomeScreen from './screens/HomeScreen';
@@ -18,9 +20,35 @@ const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 const HomeStack = createStackNavigator();
 
+const ApexTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: COLORS.primary,
+    background: COLORS.bg,
+    card: COLORS.bg, // Tab bar and headers match background or slightly lighter
+    text: COLORS.text,
+    border: COLORS.primary,
+    notification: COLORS.accent,
+  },
+};
+
 function HomeStackNavigator() {
   return (
-    <HomeStack.Navigator>
+    <HomeStack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: COLORS.bg,
+          elevation: 0,
+          shadowOpacity: 0,
+          borderBottomWidth: 0,
+        },
+        headerTintColor: COLORS.text,
+        headerTitleStyle: {
+          fontWeight: 'bold',
+        },
+      }}
+    >
       <HomeStack.Screen 
         name="HomeScreen" 
         component={HomeScreen} 
@@ -54,8 +82,20 @@ function MainTabNavigator() {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: 'tomato',
-        tabBarInactiveTintColor: 'gray',
+        tabBarActiveTintColor: COLORS.primary,
+        tabBarInactiveTintColor: COLORS.textSecondary,
+        tabBarStyle: {
+          backgroundColor: COLORS.bg,
+          borderTopColor: COLORS.primary,
+          borderTopWidth: 0.5,
+        },
+        headerStyle: {
+          backgroundColor: COLORS.bg,
+          elevation: 0,
+          shadowOpacity: 0,
+          borderBottomWidth: 0,
+        },
+        headerTintColor: COLORS.text,
       })}
     >
       <Tab.Screen 
@@ -72,9 +112,14 @@ function MainTabNavigator() {
 
 function AuthStack() {
   return (
-    <Stack.Navigator>
-      <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Register" component={RegisterScreen} options={{ headerShown: false }} />
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        cardStyle: { backgroundColor: COLORS.bg }
+      }}
+    >
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Register" component={RegisterScreen} />
     </Stack.Navigator>
   );
 }
@@ -97,7 +142,8 @@ export default function App() {
   if (initializing) return null; // Or a loading spinner
 
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={ApexTheme}>
+      <StatusBar style="light" />
       {user ? <MainTabNavigator /> : <AuthStack />}
     </NavigationContainer>
   );

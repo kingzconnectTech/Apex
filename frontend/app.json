@@ -20,6 +20,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "package": "com.kingzconnect.apex",
+      "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true
     },
     "web": {
