@@ -1,247 +1,582 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, SafeAreaView, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, ActivityIndicator, ScrollView, Platform, Animated } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
+import { RewardedAd, RewardedAdEventType, AdEventType, TestIds } from 'react-native-google-mobile-ads';
 
-const MARKET_ITEMS = [
+const adUnitId = __DEV__ ? TestIds.REWARDED : 'ca-app-pub-xxxxxxxxxxxxx/yyyyyyyyyy';
+
+const TOKEN_PACKAGES = [
   {
     id: '1',
-    title: 'Premium Prediction Bot',
-    description: 'Advanced AI algorithm with 85% accuracy rate on EPL matches.',
-    price: '$9.99/mo',
-    icon: 'hardware-chip-outline',
-    category: 'Subscription',
+    name: 'Starter Pile',
+    tokens: 100,
+    price: '$1.99',
+    bonus: null,
+    color: ['#4FACFE', '#00F2FE'], // Cyan/Blue
+    icon: 'cube-outline',
+    description: 'Perfect for beginners'
   },
   {
     id: '2',
-    title: 'VIP Tips Access',
-    description: 'Daily high-confidence tips from our expert analysts.',
-    price: '$4.99/mo',
-    icon: 'star-outline',
-    category: 'Subscription',
+    name: 'Grinder Stash',
+    tokens: 550,
+    price: '$9.99',
+    bonus: '+10% Bonus',
+    color: ['#43E97B', '#38F9D7'], // Green/Teal
+    popular: true,
+    icon: 'layers-outline',
+    description: 'Most popular choice'
   },
   {
     id: '3',
-    title: 'Ad-Free Experience',
-    description: 'Remove all ads from the application forever.',
-    price: '$2.99',
-    icon: 'close-circle-outline',
-    category: 'One-time',
+    name: 'Pro Sack',
+    tokens: 1200,
+    price: '$19.99',
+    bonus: '+20% Bonus',
+    color: ['#FA709A', '#FEE140'], // Pink/Gold
+    icon: 'briefcase-outline',
+    description: 'For serious bettors'
   },
   {
     id: '4',
-    title: 'Historical Data Pack',
-    description: 'Access 5 years of historical match data and analysis.',
-    price: '$14.99',
-    icon: 'stats-chart-outline',
-    category: 'One-time',
-  },
+    name: 'Whale Vault',
+    tokens: 3500,
+    price: '$49.99',
+    bonus: 'BEST VALUE',
+    color: ['#667EEA', '#764BA2'], // Purple/Violet
+    icon: 'diamond-outline',
+    description: 'Maximize your potential'
+  }
 ];
 
-export default function MarketScreen() {
-  const renderMarketItem = ({ item }) => (
-    <TouchableOpacity style={styles.card}>
-      <View style={styles.iconContainer}>
-        <Ionicons name={item.icon} size={32} color={COLORS.primary} />
-      </View>
-      
-      <View style={styles.cardContent}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>{item.title}</Text>
-          <View style={styles.categoryBadge}>
-            <Text style={styles.categoryText}>{item.category}</Text>
-          </View>
-        </View>
-        
-        <Text style={styles.description}>{item.description}</Text>
-        
-        <View style={styles.footer}>
-          <Text style={styles.price}>{item.price}</Text>
-          <TouchableOpacity style={styles.buyButton}>
-            <Text style={styles.buyButtonText}>Purchase</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+export default function MarketScreen({ navigation }) {
+    const [balance, setBalance] = useState(150); // Mock initial balance
+    const [loaded, setLoaded] = useState(false);
+    const rewardedAd = useRef(null);
+    const scrollY = useRef(new Animated.Value(0)).current;
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Marketplace</Text>
-        <View style={styles.coinContainer}>
-          <Ionicons name="wallet-outline" size={20} color={COLORS.accent} />
-          <Text style={styles.coinText}>0 Credits</Text>
+    useEffect(() => {
+        const ad = RewardedAd.createForAdRequest(adUnitId, {
+            requestNonPersonalizedAdsOnly: true,
+        });
+        
+        rewardedAd.current = ad;
+
+        const unsubscribeLoaded = ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
+            setLoaded(true);
+        });
+
+        const unsubscribeEarned = ad.addAdEventListener(
+            RewardedAdEventType.EARNED_REWARD,
+            reward => {
+                setBalance(prev => prev + 10);
+                Alert.alert("Success", "You earned 10 APT!");
+            },
+        );
+        
+        const unsubscribeClosed = ad.addAdEventListener(AdEventType.CLOSED, () => {
+            setLoaded(false);
+            ad.load();
+        });
+
+        ad.load();
+
+        return () => {
+            unsubscribeLoaded();
+            unsubscribeEarned();
+            unsubscribeClosed();
+        };
+    }, []);
+
+    const showAd = () => {
+        if (loaded && rewardedAd.current) {
+            rewardedAd.current.show();
+        } else {
+            Alert.alert("Ad not ready", "Please wait a moment for the ad to load.");
+        }
+    };
+
+    const handleBuy = (pack) => {
+        Alert.alert(
+            "Confirm Purchase",
+            `Purchase ${pack.tokens} APT for ${pack.price}?`,
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Confirm", onPress: () => {
+                    setBalance(prev => prev + pack.tokens);
+                    Alert.alert("Success", "APT added to your wallet!");
+                }}
+            ]
+        );
+    };
+
+    const renderHeader = () => (
+        <View>
+            <LinearGradient
+                colors={[COLORS.primary, '#0f2027']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroSection}
+            >
+                <View style={styles.patternOverlay} />
+                <SafeAreaView edges={['top']} style={styles.safeArea}>
+                    <View style={styles.header}>
+                        <View>
+                            <Text style={styles.headerTitle}>Token Store</Text>
+                            <Text style={styles.headerSubtitle}>Fuel your predictions</Text>
+                        </View>
+                        <TouchableOpacity style={styles.historyBtn}>
+                            <Ionicons name="time-outline" size={24} color="#FFF" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Balance Card - Floating Effect */}
+                    <View style={styles.balanceContainer}>
+                        <LinearGradient
+                            colors={['#FFD700', '#FFA500']}
+                            start={{x: 0, y: 0}}
+                            end={{x: 1, y: 1}}
+                            style={styles.balanceCard}
+                        >
+                            <View style={styles.balanceContent}>
+                                <View>
+                                    <Text style={styles.balanceLabel}>CURRENT BALANCE</Text>
+                                    <View style={styles.balanceRow}>
+                                        <Ionicons name="wallet" size={32} color="#000" />
+                                        <Text style={styles.balanceAmount}>{balance}</Text>
+                                        <Text style={styles.balanceUnit}>APT</Text>
+                                    </View>
+                                </View>
+                                <View style={styles.addBtnContainer}>
+                                    <View style={styles.addBtn}>
+                                        <Ionicons name="add" size={24} color="#FFF" />
+                                    </View>
+                                </View>
+                            </View>
+                            <View style={styles.balanceDecor}>
+                                <Ionicons name="logo-bitcoin" size={100} color="rgba(255,255,255,0.2)" />
+                            </View>
+                        </LinearGradient>
+                    </View>
+                </SafeAreaView>
+            </LinearGradient>
+
+            {/* Free Tokens Section */}
+            <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>Daily Rewards</Text>
+                <TouchableOpacity 
+                    style={[styles.freeCard, !loaded && styles.disabledCard]} 
+                    onPress={showAd}
+                    disabled={!loaded}
+                    activeOpacity={0.9}
+                >
+                    <LinearGradient
+                        colors={['#1E1E1E', '#252525']}
+                        style={styles.freeCardGradient}
+                        start={{x: 0, y: 0}}
+                        end={{x: 1, y: 1}}
+                    >
+                        <View style={styles.freeCardBorder} />
+                        <View style={styles.freeContent}>
+                            <LinearGradient
+                                colors={['#FF416C', '#FF4B2B']}
+                                style={styles.freeIconContainer}
+                            >
+                                <Ionicons name="play" size={24} color="#FFF" />
+                            </LinearGradient>
+                            <View style={styles.freeTextContainer}>
+                                <Text style={styles.freeTitle}>Watch Video Ad</Text>
+                                <Text style={styles.freeSubtitle}>Get +10 Free APT instantly</Text>
+                            </View>
+                            <View style={styles.freeButton}>
+                                    {loaded ? (
+                                    <Text style={styles.freeButtonText}>CLAIM</Text>
+                                    ) : (
+                                    <ActivityIndicator size="small" color="#FFF" />
+                                    )}
+                            </View>
+                        </View>
+                    </LinearGradient>
+                </TouchableOpacity>
+            </View>
+
+            <Text style={styles.sectionTitle}>Buy Tokens</Text>
         </View>
-      </View>
-      
-      <View style={styles.banner}>
-        <Text style={styles.bannerTitle}>Upgrade to Pro</Text>
-        <Text style={styles.bannerText}>Unlock all features and get unlimited access to predictions.</Text>
-        <TouchableOpacity style={styles.bannerButton}>
-          <Text style={styles.bannerButtonText}>Learn More</Text>
+    );
+
+    const renderPackage = ({ item }) => (
+        <TouchableOpacity 
+            activeOpacity={0.9}
+            onPress={() => handleBuy(item)}
+            style={styles.packageCardContainer}
+        >
+            <View style={[styles.packageCard, item.popular && styles.popularCardBorder]}>
+                {item.popular && (
+                    <LinearGradient
+                        colors={[COLORS.primary, '#FF8C00']}
+                        start={{x: 0, y: 0}}
+                        end={{x: 1, y: 0}}
+                        style={styles.popularBadge}
+                    >
+                        <Text style={styles.popularText}>MOST POPULAR</Text>
+                    </LinearGradient>
+                )}
+                
+                <LinearGradient
+                    colors={['#1E1E1E', '#252525']}
+                    style={styles.cardContent}
+                >
+                    <View style={styles.cardHeader}>
+                         <LinearGradient colors={item.color} style={styles.iconBackground}>
+                            <Ionicons name={item.icon} size={moderateScale(24)} color="#FFF" />
+                         </LinearGradient>
+                         {item.bonus && (
+                            <View style={styles.bonusBadge}>
+                                <Text style={styles.bonusText}>{item.bonus}</Text>
+                            </View>
+                         )}
+                    </View>
+
+                    <View style={styles.infoContainer}>
+                        <Text style={styles.packageName}>{item.name}</Text>
+                        <View style={styles.tokenRow}>
+                            <Text style={styles.tokenAmount}>{item.tokens}</Text>
+                            <Text style={styles.tokenLabel}>APT</Text>
+                        </View>
+                    </View>
+
+                    <TouchableOpacity style={styles.priceButton} onPress={() => handleBuy(item)}>
+                        <Text style={styles.priceText}>{item.price}</Text>
+                        <Ionicons name="arrow-forward" size={14} color="#FFF" />
+                    </TouchableOpacity>
+                </LinearGradient>
+            </View>
         </TouchableOpacity>
-      </View>
+    );
 
-      <Text style={styles.sectionTitle}>Available Items</Text>
-      
-      <FlatList
-        data={MARKET_ITEMS}
-        renderItem={renderMarketItem}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
-    </SafeAreaView>
-  );
+    return (
+        <View style={styles.container}>
+            <FlatList
+                data={TOKEN_PACKAGES}
+                renderItem={renderPackage}
+                keyExtractor={item => item.id}
+                numColumns={2}
+                columnWrapperStyle={styles.columnWrapper}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                ListHeaderComponent={renderHeader}
+            />
+        </View>
+    );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#121212',
+  },
+  safeArea: {
+    marginBottom: verticalScale(20),
+  },
+  heroSection: {
+    paddingBottom: verticalScale(40),
+    borderBottomLeftRadius: moderateScale(30),
+    borderBottomRightRadius: moderateScale(30),
+    marginBottom: verticalScale(20),
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  patternOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.2)',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: COLORS.bg,
+    paddingHorizontal: moderateScale(20),
+    paddingTop: verticalScale(10),
+    marginBottom: verticalScale(20),
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  coinContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.cardBg,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-  },
-  coinText: {
-    color: COLORS.accent,
-    fontWeight: 'bold',
-    marginLeft: 6,
-  },
-  banner: {
-    margin: 20,
-    marginTop: 0,
-    backgroundColor: COLORS.primary,
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    shadowColor: COLORS.secondary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
-  },
-  bannerTitle: {
+    fontSize: getResponsiveFontSize(28),
+    fontWeight: '900',
     color: COLORS.white,
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    letterSpacing: 0.5,
   },
-  bannerText: {
-    color: COLORS.white,
-    textAlign: 'center',
-    marginBottom: 16,
-    opacity: 0.9,
+  headerSubtitle: {
+    fontSize: getResponsiveFontSize(14),
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
   },
-  bannerButton: {
-    backgroundColor: COLORS.accent,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  bannerButtonText: {
-    color: COLORS.bg,
-    fontWeight: 'bold',
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginLeft: 20,
-    marginBottom: 10,
-  },
-  listContent: {
-    padding: 20,
-    paddingTop: 0,
-  },
-  card: {
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 12,
-    backgroundColor: 'rgba(98, 129, 65, 0.1)',
+  historyBtn: {
+    width: horizontalScale(44),
+    height: horizontalScale(44),
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: moderateScale(14),
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  balanceContainer: {
+    paddingHorizontal: moderateScale(20),
+  },
+  balanceCard: {
+    borderRadius: moderateScale(24),
+    padding: moderateScale(24),
+    position: 'relative',
+    overflow: 'hidden',
+    height: verticalScale(160),
+    justifyContent: 'center',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  balanceContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  balanceLabel: {
+    color: 'rgba(0,0,0,0.6)',
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '800',
+    marginBottom: verticalScale(8),
+    letterSpacing: 1,
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  balanceAmount: {
+    color: '#000',
+    fontSize: getResponsiveFontSize(42),
+    fontWeight: '900',
+    marginLeft: horizontalScale(8),
+    marginRight: horizontalScale(8),
+  },
+  balanceUnit: {
+    color: 'rgba(0,0,0,0.7)',
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '700',
+    marginTop: verticalScale(14),
+  },
+  addBtnContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addBtn: {
+    width: horizontalScale(40),
+    height: horizontalScale(40),
+    borderRadius: horizontalScale(20),
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  balanceDecor: {
+    position: 'absolute',
+    right: -20,
+    bottom: -30,
+    opacity: 0.5,
+    transform: [{ rotate: '-15deg' }]
+  },
+  sectionContainer: {
+    paddingHorizontal: moderateScale(20),
+    marginBottom: verticalScale(24),
+  },
+  sectionTitle: {
+    fontSize: getResponsiveFontSize(18),
+    fontWeight: '800',
+    color: COLORS.white,
+    marginLeft: moderateScale(20),
+    marginBottom: verticalScale(16),
+    marginTop: verticalScale(8),
+  },
+  freeCard: {
+    borderRadius: moderateScale(20),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  disabledCard: {
+    opacity: 0.6,
+  },
+  freeCardGradient: {
+    borderRadius: moderateScale(20),
+    padding: moderateScale(2), // Border effect
+  },
+  freeCardBorder: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: moderateScale(20),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  freeContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E1E1E',
+    borderRadius: moderateScale(18),
+    padding: moderateScale(16),
+  },
+  freeIconContainer: {
+    width: horizontalScale(48),
+    height: horizontalScale(48),
+    borderRadius: moderateScale(16),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: horizontalScale(16),
+  },
+  freeTextContainer: {
+    flex: 1,
+  },
+  freeTitle: {
+    color: COLORS.white,
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: 'bold',
+    marginBottom: verticalScale(4),
+  },
+  freeSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '500',
+  },
+  freeButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: horizontalScale(16),
+    paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(12),
+    minWidth: horizontalScale(70),
+    alignItems: 'center',
+  },
+  freeButtonText: {
+    color: COLORS.white,
+    fontWeight: '800',
+    fontSize: getResponsiveFontSize(11),
+    letterSpacing: 0.5,
+  },
+  listContent: {
+    paddingHorizontal: moderateScale(20),
+    paddingBottom: verticalScale(100),
+  },
+  columnWrapper: {
+    justifyContent: 'space-between',
+  },
+  packageCardContainer: {
+    width: '48%',
+    marginBottom: verticalScale(16),
+  },
+  packageCard: {
+    borderRadius: moderateScale(24),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  popularCardBorder: {
+    transform: [{ scale: 1.02 }],
   },
   cardContent: {
-    flex: 1,
+    padding: moderateScale(16),
+    borderRadius: moderateScale(24),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  popularBadge: {
+    position: 'absolute',
+    top: -10,
+    alignSelf: 'center',
+    paddingHorizontal: horizontalScale(12),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(12),
+    zIndex: 10,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  popularText: {
+    color: '#FFF',
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 4,
+    marginBottom: verticalScale(12),
   },
-  cardTitle: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: 'bold',
-    flex: 1,
-  },
-  categoryBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginLeft: 8,
-  },
-  categoryText: {
-    color: COLORS.textSecondary,
-    fontSize: 10,
-  },
-  description: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginBottom: 12,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  iconBackground: {
+    width: horizontalScale(44),
+    height: horizontalScale(44),
+    borderRadius: moderateScale(14),
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  price: {
-    color: COLORS.accent,
-    fontSize: 16,
-    fontWeight: 'bold',
+  bonusBadge: {
+    backgroundColor: 'rgba(76, 175, 80, 0.15)',
+    paddingHorizontal: horizontalScale(6),
+    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(4),
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.3)',
   },
-  buyButton: {
-    backgroundColor: COLORS.secondary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+  bonusText: {
+    color: '#4CAF50',
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: '700',
   },
-  buyButtonText: {
+  infoContainer: {
+    marginBottom: verticalScale(16),
+  },
+  packageName: {
+    color: COLORS.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '600',
+    marginBottom: verticalScale(4),
+  },
+  tokenRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  tokenAmount: {
     color: COLORS.white,
-    fontWeight: 'bold',
-    fontSize: 12,
+    fontSize: getResponsiveFontSize(22),
+    fontWeight: '800',
+    marginRight: horizontalScale(4),
+  },
+  tokenLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '600',
+  },
+  priceButton: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingVertical: verticalScale(12),
+    borderRadius: moderateScale(14),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  priceText: {
+    color: COLORS.white,
+    fontWeight: '700',
+    fontSize: getResponsiveFontSize(14),
+    marginRight: horizontalScale(4),
   },
 });

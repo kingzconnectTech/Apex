@@ -20,7 +20,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.kingzconnect.apex",
+      "package": "com.kingzconnect.apx",
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true
     },
@@ -28,10 +28,17 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "react-native-google-mobile-ads",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3940256099942544~3347511713",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+        }
+      ],
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
-      "@react-native-firebase/auth"
+      "@react-native-firebase/auth",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

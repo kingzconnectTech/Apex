@@ -6,6 +6,7 @@ import auth from '@react-native-firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from './constants/colors';
 import { StatusBar } from 'expo-status-bar';
+import { moderateScale } from './utils/responsive';
 
 // Screens
 import HomeScreen from './screens/HomeScreen';
@@ -15,6 +16,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import MatchDetailsScreen from './screens/MatchDetailsScreen';
+import LeoScreen from './screens/LeoScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -32,6 +34,8 @@ const ApexTheme = {
     notification: COLORS.accent,
   },
 };
+
+const RootStack = createStackNavigator();
 
 function HomeStackNavigator() {
   return (
@@ -54,11 +58,6 @@ function HomeStackNavigator() {
         component={HomeScreen} 
         options={{ headerShown: false }} 
       />
-      <HomeStack.Screen 
-        name="MatchDetails" 
-        component={MatchDetailsScreen} 
-        options={{ title: 'Match Analysis' }}
-      />
     </HomeStack.Navigator>
   );
 }
@@ -80,7 +79,7 @@ function MainTabNavigator() {
             iconName = focused ? 'settings' : 'settings-outline';
           }
 
-          return <Ionicons name={iconName} size={size} color={color} />;
+          return <Ionicons name={iconName} size={moderateScale(size)} color={color} />;
         },
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textSecondary,
@@ -107,6 +106,34 @@ function MainTabNavigator() {
       <Tab.Screen name="Market" component={MarketScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
+  );
+}
+
+function AppStack() {
+  return (
+    <RootStack.Navigator screenOptions={{ headerShown: false }}>
+      <RootStack.Screen name="MainTabs" component={MainTabNavigator} />
+      <RootStack.Screen 
+        name="MatchDetails" 
+        component={MatchDetailsScreen} 
+        options={{ 
+          headerShown: true,
+          title: 'Match Analysis',
+          headerStyle: {
+            backgroundColor: COLORS.bg,
+            elevation: 0,
+            shadowOpacity: 0,
+            borderBottomWidth: 0,
+          },
+          headerTintColor: COLORS.text,
+        }}
+      />
+      <RootStack.Screen 
+        name="Leo" 
+        component={LeoScreen} 
+        options={{ headerShown: false }}
+      />
+    </RootStack.Navigator>
   );
 }
 
@@ -144,7 +171,7 @@ export default function App() {
   return (
     <NavigationContainer theme={ApexTheme}>
       <StatusBar style="light" />
-      {user ? <MainTabNavigator /> : <AuthStack />}
+      {user ? <AppStack /> : <AuthStack />}
     </NavigationContainer>
   );
 }

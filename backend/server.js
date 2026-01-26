@@ -15,14 +15,13 @@ app.use(express.urlencoded({ extended: true }));
 // Project Settings > Service accounts > Generate new private key
 // Save it as 'serviceAccountKey.json' in this directory
 try {
-  // Check if service account file exists before initializing
-  // const serviceAccount = require('./serviceAccountKey.json');
-  // admin.initializeApp({
-  //   credential: admin.credential.cert(serviceAccount)
-  // });
-  console.log('Firebase Admin SDK setup placeholder - awaiting serviceAccountKey.json');
+  const serviceAccount = require('./serviceAccountKey.json');
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log('Firebase Admin SDK initialized successfully');
 } catch (error) {
-  console.warn('Firebase Admin SDK not initialized: serviceAccountKey.json missing');
+  console.warn('Firebase Admin SDK not initialized:', error.message);
 }
 
 // Basic route

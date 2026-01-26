@@ -5,3 +5,4 @@ dist/
 coverage/
 .expo/
 *.log
+backend/serviceAccountKey.json

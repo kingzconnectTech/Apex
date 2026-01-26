@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } f
 import auth from '@react-native-firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/colors';
+import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
 
 export default function SettingsScreen({ navigation }) {
   const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark as per new theme
@@ -54,7 +55,7 @@ export default function SettingsScreen({ navigation }) {
   // Dynamic styles based on theme (Keeping toggle logic but default base is now dark)
   const themeStyles = {
     container: {
-      backgroundColor: isDarkMode ? COLORS.bg : '#f8f9fa',
+      backgroundColor: isDarkMode ? COLORS.bg : '#ffffff',
     },
     text: {
       color: isDarkMode ? COLORS.text : '#333333',
@@ -76,7 +77,7 @@ export default function SettingsScreen({ navigation }) {
       {/* User Profile Section */}
       <View style={[styles.profileSection, themeStyles.card]}>
         <View style={styles.avatarContainer}>
-          <Ionicons name="person-circle-outline" size={80} color={COLORS.primary} />
+          <Ionicons name="person-circle-outline" size={moderateScale(80)} color={COLORS.primary} />
         </View>
         <Text style={[styles.userName, themeStyles.text]}>{user?.displayName || 'User'}</Text>
         <Text style={[styles.userEmail, { color: COLORS.textSecondary }]}>{user?.email || 'No Email'}</Text>
@@ -87,7 +88,7 @@ export default function SettingsScreen({ navigation }) {
       <View style={[styles.section, themeStyles.card]}>
         <View style={styles.row}>
           <View style={styles.rowLeft}>
-            <Ionicons name="moon-outline" size={22} color={themeStyles.iconColor} />
+            <Ionicons name="moon-outline" size={moderateScale(22)} color={themeStyles.iconColor} />
             <Text style={[styles.rowLabel, themeStyles.text]}>Dark Mode</Text>
           </View>
           <Switch
@@ -105,20 +106,20 @@ export default function SettingsScreen({ navigation }) {
       <View style={[styles.section, themeStyles.card]}>
         <TouchableOpacity style={styles.row} onPress={handleContact}>
           <View style={styles.rowLeft}>
-            <Ionicons name="mail-outline" size={22} color={themeStyles.iconColor} />
+            <Ionicons name="mail-outline" size={moderateScale(22)} color={themeStyles.iconColor} />
             <Text style={[styles.rowLabel, themeStyles.text]}>Contact Us</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
+          <Ionicons name="chevron-forward" size={moderateScale(20)} color={COLORS.textSecondary} />
         </TouchableOpacity>
         
         <View style={[styles.separator, themeStyles.separator]} />
 
         <TouchableOpacity style={styles.row} onPress={handlePrivacyPolicy}>
           <View style={styles.rowLeft}>
-            <Ionicons name="shield-checkmark-outline" size={22} color={themeStyles.iconColor} />
+            <Ionicons name="shield-checkmark-outline" size={moderateScale(22)} color={themeStyles.iconColor} />
             <Text style={[styles.rowLabel, themeStyles.text]}>Privacy Policy</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
+          <Ionicons name="chevron-forward" size={moderateScale(20)} color={COLORS.textSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -127,7 +128,7 @@ export default function SettingsScreen({ navigation }) {
       <View style={[styles.section, themeStyles.card]}>
         <TouchableOpacity style={styles.row} onPress={handleLogout}>
           <View style={styles.rowLeft}>
-            <Ionicons name="log-out-outline" size={22} color={COLORS.error} />
+            <Ionicons name="log-out-outline" size={moderateScale(22)} color={COLORS.error} />
             <Text style={[styles.rowLabel, { color: COLORS.error }]}>Log Out</Text>
           </View>
         </TouchableOpacity>
@@ -136,7 +137,7 @@ export default function SettingsScreen({ navigation }) {
 
         <TouchableOpacity style={styles.row} onPress={handleDeleteAccount}>
           <View style={styles.rowLeft}>
-            <Ionicons name="trash-outline" size={22} color={COLORS.error} />
+            <Ionicons name="trash-outline" size={moderateScale(22)} color={COLORS.error} />
             <Text style={[styles.rowLabel, { color: COLORS.error }]}>Delete Account</Text>
           </View>
         </TouchableOpacity>
@@ -150,46 +151,46 @@ export default function SettingsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    padding: moderateScale(20),
   },
   profileSection: {
     alignItems: 'center',
-    padding: 20,
-    borderRadius: 15,
-    marginBottom: 25,
+    padding: moderateScale(20),
+    borderRadius: moderateScale(15),
+    marginBottom: verticalScale(25),
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: verticalScale(2) },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowRadius: moderateScale(3),
     elevation: 2,
     borderWidth: 1,
     borderColor: COLORS.primary,
   },
   avatarContainer: {
-    marginBottom: 10,
+    marginBottom: verticalScale(10),
   },
   userName: {
-    fontSize: 20,
+    fontSize: getResponsiveFontSize(20),
     fontWeight: 'bold',
-    marginBottom: 5,
+    marginBottom: verticalScale(5),
   },
   userEmail: {
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
     fontWeight: '600',
-    marginBottom: 10,
-    marginLeft: 5,
+    marginBottom: verticalScale(10),
+    marginLeft: horizontalScale(5),
     textTransform: 'uppercase',
   },
   section: {
-    borderRadius: 15,
-    marginBottom: 25,
+    borderRadius: moderateScale(15),
+    marginBottom: verticalScale(25),
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: verticalScale(1) },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: moderateScale(2),
     elevation: 2,
     overflow: 'hidden',
   },
@@ -197,16 +198,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
+    paddingVertical: verticalScale(15),
+    paddingHorizontal: horizontalScale(20),
   },
   rowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   rowLabel: {
-    fontSize: 16,
-    marginLeft: 15,
+    fontSize: getResponsiveFontSize(16),
+    marginLeft: horizontalScale(15),
     fontWeight: '500',
   },
   separator: {
@@ -215,7 +216,7 @@ const styles = StyleSheet.create({
   },
   versionText: {
     textAlign: 'center',
-    marginBottom: 30,
-    fontSize: 12,
+    marginBottom: verticalScale(30),
+    fontSize: getResponsiveFontSize(12),
   },
 });

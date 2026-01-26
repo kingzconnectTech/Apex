@@ -1,13 +1,32 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Alert, 
+  ActivityIndicator, 
+  KeyboardAvoidingView, 
+  Platform,
+  ScrollView
+} from 'react-native';
 import auth from '@react-native-firebase/auth';
-import { COLORS } from '../constants/colors';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { COLORS } from '../constants/colors';
+import { 
+  horizontalScale, 
+  verticalScale, 
+  moderateScale, 
+  getResponsiveFontSize 
+} from '../utils/responsive';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -24,115 +43,211 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address to reset password');
+      return;
+    }
+    try {
+      await auth().sendPasswordResetEmail(email);
+      Alert.alert('Success', 'Password reset email sent! Check your inbox.');
+    } catch (error) {
+      Alert.alert('Error', error.message);
+    }
+  };
+
   return (
-    <View style={styles.container}>
-      <View style={styles.logoContainer}>
-        <Ionicons name="football" size={80} color={COLORS.primary} />
-        <Text style={styles.appName}>APEX</Text>
-      </View>
-      
-      <Text style={styles.title}>Welcome Back</Text>
-      
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor={COLORS.textSecondary}
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
-      
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor={COLORS.textSecondary}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-      
-      <TouchableOpacity 
-        style={styles.button} 
-        onPress={handleLogin}
-        disabled={loading}
+    <LinearGradient
+      colors={[COLORS.bg, '#121611']}
+      style={styles.container}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        {loading ? (
-          <ActivityIndicator color={COLORS.bg} />
-        ) : (
-          <Text style={styles.buttonText}>Login</Text>
-        )}
-      </TouchableOpacity>
-      
-      <TouchableOpacity onPress={() => navigation.navigate('Register')} style={styles.linkContainer}>
-        <Text style={styles.linkText}>
-          Don't have an account? <Text style={styles.linkHighlight}>Register</Text>
-        </Text>
-      </TouchableOpacity>
-    </View>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.headerContainer}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="football" size={moderateScale(50)} color={COLORS.accent} />
+            </View>
+            <Text style={styles.appName}>APEX</Text>
+            <Text style={styles.subtitle}>Welcome Back, Hunter</Text>
+          </View>
+
+          <View style={styles.formContainer}>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="mail-outline" size={moderateScale(20)} color={COLORS.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Email Address"
+                placeholderTextColor={COLORS.textSecondary}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Ionicons name="lock-closed-outline" size={moderateScale(20)} color={COLORS.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor={COLORS.textSecondary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                <Ionicons 
+                  name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                  size={moderateScale(20)} 
+                  color={COLORS.textSecondary} 
+                />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordContainer}>
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={[COLORS.primary, COLORS.secondary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.button}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>LOGIN</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <View style={styles.footerContainer}>
+              <Text style={styles.footerText}>New to Apex?</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                <Text style={styles.signupText}>Create Account</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: COLORS.bg,
   },
-  logoContainer: {
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: moderateScale(24),
+  },
+  headerContainer: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: verticalScale(50),
+  },
+  iconCircle: {
+    width: horizontalScale(100),
+    height: horizontalScale(100),
+    borderRadius: moderateScale(50),
+    backgroundColor: 'rgba(98, 129, 65, 0.15)', // COLORS.primary with opacity
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: verticalScale(16),
+    borderWidth: 1,
+    borderColor: 'rgba(235, 213, 171, 0.3)', // COLORS.accent with opacity
   },
   appName: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: COLORS.accent,
-    letterSpacing: 2,
+    fontSize: getResponsiveFontSize(42),
+    fontWeight: '800',
+    color: COLORS.white,
+    letterSpacing: 4,
+    marginBottom: verticalScale(8),
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-    color: COLORS.text,
+  subtitle: {
+    fontSize: getResponsiveFontSize(16),
+    color: COLORS.textSecondary,
+    letterSpacing: 1,
+  },
+  formContainer: {
+    width: '100%',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: moderateScale(12),
+    marginBottom: verticalScale(16),
+    paddingHorizontal: horizontalScale(16),
+    height: verticalScale(56),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  inputIcon: {
+    marginRight: horizontalScale(12),
   },
   input: {
-    backgroundColor: COLORS.cardBg,
-    color: COLORS.text,
-    padding: 15,
-    marginBottom: 15,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
+    flex: 1,
+    color: COLORS.white,
+    fontSize: getResponsiveFontSize(16),
+    height: '100%',
+  },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginBottom: verticalScale(30),
+  },
+  forgotPasswordText: {
+    color: COLORS.accent,
+    fontSize: getResponsiveFontSize(14),
+    fontWeight: '600',
   },
   button: {
-    backgroundColor: COLORS.secondary,
-    padding: 15,
-    borderRadius: 10,
+    height: verticalScale(56),
+    borderRadius: moderateScale(28),
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
-    shadowColor: COLORS.secondary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowColor: COLORS.primary,
+    shadowOffset: {
+      width: 0,
+      height: verticalScale(8),
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: moderateScale(10),
+    elevation: 8,
   },
   buttonText: {
-    color: COLORS.bg,
+    color: COLORS.white,
+    fontSize: getResponsiveFontSize(16),
     fontWeight: 'bold',
-    fontSize: 16,
+    letterSpacing: 1.5,
   },
-  linkContainer: {
-    marginTop: 20,
+  footerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: verticalScale(40),
     alignItems: 'center',
   },
-  linkText: {
+  footerText: {
     color: COLORS.textSecondary,
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
+    marginRight: horizontalScale(8),
   },
-  linkHighlight: {
-    color: COLORS.accent,
+  signupText: {
+    color: COLORS.secondary,
+    fontSize: getResponsiveFontSize(14),
     fontWeight: 'bold',
   },
 });
