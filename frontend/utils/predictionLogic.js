@@ -109,6 +109,8 @@ export const analyzeMatch = ({
 
     // --- 3. Head to Head ---
     let h2hAvgGoals = 0;
+    let h2hMaxPoints = 0;
+    let h2hMinPoints = 1000;
 
     if (h2h) {
         const totalMeetings = h2h.homeWins + h2h.awayWins + h2h.draws;
@@ -142,7 +144,10 @@ export const analyzeMatch = ({
                          // Note: We need to know who was home/away in that specific match to assign hGoals/aGoals correctly relative to CURRENT teams.
                          // However, MatchDetails logic already sorted wins/losses. 
                          // For goal totals, it doesn't matter who scored.
-                         totalGoals += (parts[0] + parts[1]);
+                         const gameTotal = parts[0] + parts[1];
+                         totalGoals += gameTotal;
+                         if (gameTotal > h2hMaxPoints) h2hMaxPoints = gameTotal;
+                         if (gameTotal < h2hMinPoints) h2hMinPoints = gameTotal;
                          validGames++;
                     }
                 }
@@ -175,6 +180,7 @@ export const analyzeMatch = ({
     // --- 4. Goal Analysis ---
     let hAvgScored = 0, aAvgScored = 0;
     let hAvgConceded = 0, aAvgConceded = 0;
+    let hLastGamePts = 0, aLastGamePts = 0;
 
     if (homeStats.lastMatches && awayStats.lastMatches) {
         const calcAvg = (matches, key) => matches.reduce((sum, m) => sum + (m[key] || 0), 0) / matches.length;
@@ -182,6 +188,16 @@ export const analyzeMatch = ({
         aAvgScored = calcAvg(awayStats.lastMatches, 'pf');
         hAvgConceded = calcAvg(homeStats.lastMatches, 'pa');
         aAvgConceded = calcAvg(awayStats.lastMatches, 'pa');
+
+        // Extract Last Game Total Points
+        if (homeStats.lastMatches.length > 0) {
+            const last = homeStats.lastMatches[0];
+            hLastGamePts = (parseFloat(last.pf) || 0) + (parseFloat(last.pa) || 0);
+        }
+        if (awayStats.lastMatches.length > 0) {
+            const last = awayStats.lastMatches[0];
+            aLastGamePts = (parseFloat(last.pf) || 0) + (parseFloat(last.pa) || 0);
+        }
     } else {
         // Fallback estimate from record if possible, or skip
         // Without detailed scores, we can't do accurate Over/Under
@@ -299,49 +315,235 @@ export const analyzeMatch = ({
                 }
             }
         } else {
-            let totalPoints = hAvgScored + aAvgScored;
+            // --- BASKETBALL TOTALS LOGIC ---
+            let totalPoints = hAvgScored + aAvgScored; // Base expectation
             
             // Adjust based on H2H history for Basketball
             if (h2hAvgGoals > 0) {
-                totalPoints = (totalPoints * 0.7) + (h2hAvgGoals * 0.3);
+                totalPoints = (totalPoints * 0.6) + (h2hAvgGoals * 0.4);
             }
 
-            if (totalPoints > 228) {
-                goalsPrediction = "Over 225.5 Points";
-                goalsConfidence = 75; 
+            // Adjust with recent trend (last game)
+            if (hLastGamePts > 0 && aLastGamePts > 0) {
+                const recentTrend = (hLastGamePts + aLastGamePts) / 2;
+                totalPoints = (totalPoints * 0.8) + (recentTrend * 0.2);
+            }
+
+            // Set a "Line" to predict against
+            const predictedLine = Math.round(totalPoints);
+            
+            // Check user constraints: H2H Max/Min and Previous Game
+            let confidenceBoost = 0;
+            
+            if (h2hAvgGoals > 0) {
+                // If the LOWEST H2H score is still high, that's a strong Over signal
+                if (h2hMinPoints > predictedLine - 10) {
+                     confidenceBoost += 5;
+                     factors.push({ label: `H2H Floor High (> ${h2hMinPoints})`, side: "neutral", type: "info" });
+                }
+                // If the HIGHEST H2H score is low, that's a strong Under signal
+                if (h2hMaxPoints < predictedLine + 10) {
+                     confidenceBoost += 5;
+                     factors.push({ label: `H2H Ceiling Low (< ${h2hMaxPoints})`, side: "neutral", type: "info" });
+                }
+            }
+
+            // Last Game Context
+            if (hLastGamePts > 0) {
+                if (hLastGamePts > predictedLine / 2 + 10) {
+                    factors.push({ label: `${homeName} Last Game High (${hLastGamePts})`, side: "home", type: "info" });
+                } else if (hLastGamePts < predictedLine / 2 - 10) {
+                    factors.push({ label: `${homeName} Last Game Low (${hLastGamePts})`, side: "home", type: "info" });
+                }
+            }
+
+            // Generate Prediction Lines
+            // Logic: If we project 230, we predict "Over 223.5" (safe margin)
+            const margin = 6.5; 
+            const overLine = Math.floor(totalPoints - margin) + 0.5;
+            const underLine = Math.ceil(totalPoints + margin) - 0.5;
+
+            // Determine Over/Under
+            if (totalPoints > 220) {
+                goalsPrediction = `Over ${overLine}`;
+                goalsConfidence = 70 + confidenceBoost;
+                factors.push({ label: `Proj. Total ${predictedLine} Pts`, side: "neutral", type: "success" });
             } else if (totalPoints < 210) {
-                goalsPrediction = "Under 225.5 Points";
-                goalsConfidence = 70;
+                goalsPrediction = `Under ${underLine}`;
+                goalsConfidence = 70 + confidenceBoost;
+                factors.push({ label: `Proj. Total ${predictedLine} Pts`, side: "neutral", type: "warning" });
+            } else {
+                // Middle ground
+                if (hLastGamePts > totalPoints/2 && aLastGamePts > totalPoints/2) {
+                     goalsPrediction = `Over ${overLine}`;
+                     goalsConfidence = 65;
+                     factors.push({ label: "Recent Games High Scoring", side: "neutral", type: "info" });
+                } else {
+                     goalsPrediction = `Under ${underLine}`;
+                     goalsConfidence = 65;
+                }
             }
         }
     }
 
-    // C. Select Best Prediction
-    // Strategy: If Win Confidence is low (< 65%), aggressively look for safer Goal markets
-    // Otherwise, standard comparison
-    const winThreshold = 65; 
-    
-    // Check if the win prediction is a Draw/Close Match, which we want to preserve unless Goal signal is strong
-    const isDraw = winPrediction.includes("Draw") || winPrediction.includes("Close Match");
-    // If it's a draw, require +15 confidence boost to switch. Otherwise +10.
-    const switchMargin = isDraw ? 15 : 10;
+    // --- BASKETBALL SPREAD / HANDICAP LOGIC ---
+    // Focuses on Margin of Victory, Home/Away Splits, and Fatigue
+    let spreadPrediction = null;
+    let spreadConfidence = 0;
 
-    // Only switch to Goal Prediction if it's significantly better or if Win Prediction is weak
-    // We raised the bar for switching to keep consistency with Tips unless compelling reason
-    if ((goalsPrediction && goalsConfidence > winConfidence + switchMargin) || (!isDraw && winConfidence < winThreshold && goalsPrediction && goalsConfidence > winConfidence)) {
-        prediction = goalsPrediction;
-        finalConfidence = goalsConfidence;
-        color = COLORS.accent;
-    } else {
-        prediction = winPrediction;
-        finalConfidence = winConfidence;
+    if (isBasketball && homeStats.lastMatches && awayStats.lastMatches) {
+        // 1. Calculate Splits (Home at Home, Away at Away)
+        const getMargin = (matches) => {
+            if (!matches || matches.length === 0) return 0;
+            return matches.reduce((sum, m) => sum + (parseInt(m.pf) - parseInt(m.pa)), 0) / matches.length;
+        };
+
+        // Filter for splits
+        const homeAtHome = homeStats.lastMatches.filter(m => m.isHome);
+        const awayAtAway = awayStats.lastMatches.filter(m => !m.isHome);
+
+        // Calculate Ratings (Avg Point Differential)
+        // Fallback to overall last 5 if splits are empty (early season)
+        const homeRating = homeAtHome.length >= 2 ? getMargin(homeAtHome) : getMargin(homeStats.lastMatches) + 3; // +3 Home Court Proxy
+        const awayRating = awayAtAway.length >= 2 ? getMargin(awayAtAway) : getMargin(awayStats.lastMatches) - 3; // -3 Away Disadv Proxy
+
+        // 2. Base Expected Margin
+        // If Home is +10 and Away is -5, Exp Margin = +15 (Home wins by 15)
+        let expMargin = homeRating - awayRating;
+
+        // 3. Adjust for Fatigue (Rest Days)
+        // Check date of last match
+        const checkFatigue = (matches) => {
+            if (!matches || matches.length === 0) return false;
+            const lastDate = new Date(matches[0].date);
+            const today = new Date();
+            const diffTime = Math.abs(today - lastDate);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            return diffDays <= 2; // Played within last 48 hours (Back-to-back or 1 day rest)
+        };
+
+        if (checkFatigue(homeStats.lastMatches)) {
+            expMargin -= 4; // Fatigue Penalty
+            factors.push({ label: "Home Fatigue (Short Rest)", side: "away", type: "warning" });
+        }
+        if (checkFatigue(awayStats.lastMatches)) {
+            expMargin += 4; // Fatigue Bonus for Home (Away tired)
+            factors.push({ label: "Away Fatigue (Short Rest)", side: "home", type: "success" });
+        }
+
+        // 4. H2H Adjustment (20% Weight)
+        if (h2h && h2h.recent && h2h.recent.length > 0) {
+            let h2hMarginSum = 0;
+            let count = 0;
+            h2h.recent.forEach(game => {
+                 if (game.score && game.score.includes('-')) {
+                    const parts = game.score.split('-').map(s => parseInt(s, 10));
+                    // Note: We need to ensure we know who is home. 
+                    // Assuming standard H-A order in H2H list might be risky without parsing names.
+                    // For now, skip specific margin calc from H2H to avoid flipping signs error.
+                    // Or rely on h2h.homeWins dominance earlier.
+                 }
+            });
+            // Simplified: If Home dominates H2H (>60% wins), boost margin
+            const total = h2h.homeWins + h2h.awayWins;
+            if (total > 0) {
+                if (h2h.homeWins / total > 0.6) expMargin += 3;
+                if (h2h.awayWins / total > 0.6) expMargin -= 3;
+            }
+        }
+
+        // 5. Generate Spread Line
+        // We output a "Handicap" prediction.
+        // e.g. "Lakers -5.5"
         
-        if (prediction.includes(homeName)) color = COLORS.success;
-        else if (prediction.includes(awayName)) color = COLORS.error;
-        else if (prediction.includes('1X')) color = '#4dabf7'; 
-        else if (prediction.includes('X2')) color = '#ff8787'; 
-        else color = COLORS.textSecondary;
+        // Safety Buffer: We want Value.
+        // If we project +10, we recommend -6.5 to be safe.
+        // If we project +3, we might skip or recommend ML.
+        
+        const spreadBuffer = 3.5; 
+        
+        if (expMargin > 5) {
+            // Home Favorite
+            const line = Math.floor(expMargin - spreadBuffer) + 0.5; // e.g. 10 -> 6.5
+            if (line > 0) {
+                spreadPrediction = `${homeName} ${-line}`; // e.g. "Lakers -6.5"
+                spreadConfidence = 75; // Baseline high for clear favorites
+                factors.push({ label: `Proj. Margin +${Math.round(expMargin)}`, side: "home", type: "success" });
+            }
+        } else if (expMargin < -5) {
+            // Away Favorite
+            const line = Math.floor(Math.abs(expMargin) - spreadBuffer) + 0.5;
+            if (line > 0) {
+                spreadPrediction = `${awayName} ${-line}`; // e.g. "Celtics -6.5"
+                spreadConfidence = 75;
+                factors.push({ label: `Proj. Margin ${Math.round(expMargin)}`, side: "away", type: "success" });
+            }
+        } else {
+            // Close game - Predicting spread is risky without knowing book line.
+            // Maybe predict "Cover +X"?
+            // Let's stick to Moneyline for close games unless user wants specific spread logic.
+            spreadConfidence = 50; 
+        }
+
+        // 6. Confidence Boosters
+        // Check Consistency (Std Dev proxy: diff between Avg Margin and Last Game Margin)
+        // If Last Game Margin is consistent with Avg, boost confidence.
+        const homeLastMargin = homeStats.lastMatches.length > 0 ? (parseInt(homeStats.lastMatches[0].pf) - parseInt(homeStats.lastMatches[0].pa)) : 0;
+        if (Math.abs(homeLastMargin - homeRating) < 5) spreadConfidence += 5; // Consistent form
+
     }
+
+    // C. Select Best Prediction (Highest Confidence Wins)
+    // Strategy: Compare all generated predictions and pick the one with the highest confidence score.
+
+    const candidates = [];
+
+    // 1. Win Prediction Candidate
+    let winColor = COLORS.textSecondary;
+    if (winPrediction.includes(homeName)) winColor = COLORS.success;
+    else if (winPrediction.includes(awayName)) winColor = COLORS.error;
+    else if (winPrediction.includes('1X')) winColor = '#4dabf7'; 
+    else if (winPrediction.includes('X2')) winColor = '#ff8787'; 
+    
+    candidates.push({
+        text: winPrediction,
+        confidence: winConfidence,
+        color: winColor
+    });
+
+    // 2. Goals/Total Prediction Candidate
+    if (goalsPrediction) {
+        candidates.push({
+            text: goalsPrediction,
+            confidence: goalsConfidence,
+            color: COLORS.accent
+        });
+    }
+
+    // 3. Spread/Handicap Prediction Candidate
+    if (spreadPrediction) {
+         const spreadColor = spreadPrediction.includes(homeName) ? COLORS.success : COLORS.error;
+         candidates.push({
+            text: spreadPrediction,
+            confidence: spreadConfidence,
+            color: spreadColor
+         });
+    }
+
+    // 4. Sort by confidence (descending)
+    // If tie, stable sort preserves order (Win > Goals > Spread priority if needed, but here we trust score)
+    // We can add a secondary sort priority if needed, but "highest confidence" is the requested logic.
+    candidates.sort((a, b) => b.confidence - a.confidence);
+
+    // 5. Select Best
+    const best = candidates[0];
+    prediction = best.text;
+    finalConfidence = best.confidence;
+    color = best.color;
+
+    // Debug log to verify selection logic (optional, for development)
+    // console.log("Prediction Candidates:", candidates);
+
 
     return {
         prediction,

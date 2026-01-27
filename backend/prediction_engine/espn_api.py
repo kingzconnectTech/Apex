@@ -41,6 +41,7 @@ class EspnClient:
             ("soccer", "usa.1"),       # MLS
             ("basketball", "nba"),     # NBA
             ("basketball", "mens-college-basketball"), # NCAA
+            ("basketball", "womens-college-basketball"), # NCAA Women
             ("basketball", "wnba"),    # WNBA
         ]
         
