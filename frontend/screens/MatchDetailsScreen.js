@@ -3,19 +3,71 @@ import { View, Text, StyleSheet, ScrollView, Image, ActivityIndicator, Linking, 
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS } from '../constants/colors';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
 import { fetchTeamDetails, fetchMatchAnalysis, fetchGamesStats } from '../services/espn';
 import { analyzeMatch } from '../utils/predictionLogic';
+import { useUser } from '../context/UserContext';
+import { Alert } from 'react-native';
+import { InterstitialAd, AdEventType } from 'react-native-google-mobile-ads';
+import { AdUnits } from '../constants/ads';
+import { GlobalBannerAd } from '../components/GlobalBannerAd';
+import { useTheme } from '../context/ThemeContext';
 
 export default function MatchDetailsScreen({ route, navigation }) {
+  const { theme, isDarkMode } = useTheme();
+  const styles = createStyles(theme, isDarkMode);
+  
   const { match } = route.params || {};
+  const { balance, subtractBalance } = useUser();
   const [loading, setLoading] = useState(true);
   const [homeDetails, setHomeDetails] = useState(null);
   const [awayDetails, setAwayDetails] = useState(null);
   const [matchAnalysis, setMatchAnalysis] = useState(null);
   const [h2hDeepStats, setH2HDeepStats] = useState([]);
-  const [showPrediction, setShowPrediction] = useState(true); // Default to true now
+  const [showPrediction, setShowPrediction] = useState(false); // Default to false now
+  const [adLoaded, setAdLoaded] = useState(false);
+  const interstitialRef = useRef(null);
+  const pendingActionRef = useRef(null);
+
+  // Load Interstitial Ad
+  useEffect(() => {
+    const ad = InterstitialAd.createForAdRequest(AdUnits.INTERSTITIAL, {
+      requestNonPersonalizedAdsOnly: true,
+    });
+
+    const unsubscribeLoaded = ad.addAdEventListener(AdEventType.LOADED, () => {
+      setAdLoaded(true);
+    });
+
+    const unsubscribeClosed = ad.addAdEventListener(AdEventType.CLOSED, () => {
+      if (pendingActionRef.current) {
+        navigation.dispatch(pendingActionRef.current);
+        pendingActionRef.current = null;
+      }
+    });
+
+    ad.load();
+    interstitialRef.current = ad;
+
+    return () => {
+      unsubscribeLoaded();
+      unsubscribeClosed();
+    };
+  }, [navigation]);
+
+  // Handle Navigation with Ad
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (adLoaded && interstitialRef.current && !pendingActionRef.current) {
+        e.preventDefault();
+        pendingActionRef.current = e.data.action;
+        interstitialRef.current.show();
+        setAdLoaded(false);
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, adLoaded]);
 
   // Helper to safely get team name whether it's a string (legacy) or object (new)
   const getTeamName = (team) => (typeof team === 'object' ? team.name : team);
@@ -188,8 +240,6 @@ export default function MatchDetailsScreen({ route, navigation }) {
     if (isBasketball) {
       if (!matchAnalysis && !homeDetails) return null;
 
-      // ... (Basketball Logic kept similar, simplified for brevity in this replace block if unchanged)
-      // Actually, need to preserve it. Let's copy existing basketball logic or fallback to averages.
       const h = matchAnalysis?.homeStats || {};
       const a = matchAnalysis?.awayStats || {};
 
@@ -326,25 +376,40 @@ export default function MatchDetailsScreen({ route, navigation }) {
   }, [botAnalysis]);
 
   const getConfidenceColor = (conf) => {
-      if (conf >= 70) return COLORS.success; // High - Green
-      if (conf >= 50) return '#FFC107'; // Medium - Orange
-      return COLORS.error; // Low - Red
+      if (conf >= 70) return theme.success; // High - Green
+      if (conf >= 50) return theme.accent; // Medium - Cream/Gold (Accent)
+      return theme.error; // Low - Red
+  };
+
+  const handleUnlockPrediction = () => {
+    if (subtractBalance(3)) {
+        setShowPrediction(true);
+    } else {
+        Alert.alert(
+            "Insufficient Balance", 
+            "You need 3 APT to view this prediction.",
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Get Tokens", onPress: () => navigation.navigate('Market') }
+            ]
+        );
+    }
   };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Gradient Header */}
         <LinearGradient
-            colors={[COLORS.primary, '#1a1a1a']}
+            colors={[theme.cardBg, theme.bg]}
             start={{x: 0, y: 0}}
-            end={{x: 1, y: 1}}
+            end={{x: 0, y: 1}}
             style={styles.headerGradient}
         >
             <SafeAreaView edges={['top', 'left', 'right']}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={COLORS.white} />
+                    <Ionicons name="arrow-back" size={24} color={theme.white} />
                 </TouchableOpacity>
                 <Text style={styles.leagueTitle}>{match?.league || 'League'}</Text>
                 
@@ -372,7 +437,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+          <ActivityIndicator size="large" color={theme.primary} />
           <Text style={styles.loadingText}>Analyzing Match Data...</Text>
         </View>
       ) : (
@@ -383,58 +448,78 @@ export default function MatchDetailsScreen({ route, navigation }) {
                   <Text style={styles.cardTitle}>AI Match Analysis</Text>
               </View>
               
-              <View style={styles.predictionBox}>
-                <Text style={styles.predictionLabel}>PREDICTION</Text>
-                <Text style={[styles.predictionValue, { color: getConfidenceColor(botAnalysis.confidence) }]}>
-                  {botAnalysis.prediction}
-                </Text>
-              </View>
-
-              <View style={styles.confidenceRow}>
-                <Text style={styles.confidenceLabel}>Confidence</Text>
-                <View style={styles.confidenceBarBg}>
-                  <Animated.View style={[
-                    styles.confidenceBarFill, 
-                    { 
-                        width: confidenceAnim.interpolate({
-                            inputRange: [0, 100],
-                            outputRange: ['0%', '100%']
-                        }), 
-                        backgroundColor: getConfidenceColor(botAnalysis.confidence) 
-                    }
-                  ]} />
-                </View>
-                <Text style={styles.confidenceValue}>{botAnalysis.confidence}%</Text>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.formSection}>
-                  <Text style={styles.subTitle}>Recent Form</Text>
-                  <View style={styles.teamFormRow}>
-                      <Text style={styles.teamFormName} numberOfLines={1}>{homeName}</Text>
-                      {renderForm(homeStats)}
+              {!showPrediction ? (
+                 <View style={styles.lockedContainer}>
+                    <Ionicons name="lock-closed" size={40} color={theme.textSecondary} />
+                    <Text style={styles.lockedText}>Prediction Locked</Text>
+                    <TouchableOpacity style={styles.unlockButton} onPress={handleUnlockPrediction}>
+                        <LinearGradient
+                            colors={[theme.primary, theme.warning]}
+                            start={{x: 0, y: 0}}
+                            end={{x: 1, y: 0}}
+                            style={styles.unlockGradient}
+                        >
+                            <Text style={styles.unlockText}>Unlock for 3 APT</Text>
+                            <Ionicons name="key" size={16} color="#FFF" style={{ marginLeft: 8 }} />
+                        </LinearGradient>
+                    </TouchableOpacity>
+                 </View>
+              ) : (
+                <>
+                  <View style={styles.predictionBox}>
+                    <Text style={styles.predictionLabel}>PREDICTION</Text>
+                    <Text style={[styles.predictionValue, { color: getConfidenceColor(botAnalysis.confidence) }]}>
+                      {botAnalysis.prediction}
+                    </Text>
                   </View>
-                  <View style={styles.teamFormRow}>
-                      <Text style={styles.teamFormName} numberOfLines={1}>{awayName}</Text>
-                      {renderForm(awayStats)}
+
+                  <View style={styles.confidenceRow}>
+                    <Text style={styles.confidenceLabel}>Confidence</Text>
+                    <View style={styles.confidenceBarBg}>
+                      <Animated.View style={[
+                        styles.confidenceBarFill, 
+                        { 
+                            width: confidenceAnim.interpolate({
+                                inputRange: [0, 100],
+                                outputRange: ['0%', '100%']
+                            }), 
+                            backgroundColor: getConfidenceColor(botAnalysis.confidence) 
+                        }
+                      ]} />
+                    </View>
+                    <Text style={styles.confidenceValue}>{botAnalysis.confidence}%</Text>
                   </View>
-              </View>
 
-              <View style={styles.divider} />
+                  <View style={styles.divider} />
 
-              <Text style={styles.subTitle}>Key Factors</Text>
-              {botAnalysis.factors.map((factor, i) => (
-                <View key={i} style={styles.factorRow}>
-                  <View style={[
-                    styles.factorDot, 
-                    { backgroundColor: factor.side === 'home' ? COLORS.success : (factor.side === 'away' ? COLORS.error : COLORS.textSecondary) }
-                  ]} />
-                  <Text style={styles.factorText}>
-                    <Text style={{fontWeight: 'bold'}}>{factor.side === 'home' ? homeName : (factor.side === 'away' ? awayName : 'Both')}</Text>: {factor.label}
-                  </Text>
-                </View>
-              ))}
+                  <View style={styles.formSection}>
+                      <Text style={styles.subTitle}>Recent Form</Text>
+                      <View style={styles.teamFormRow}>
+                          <Text style={styles.teamFormName} numberOfLines={1}>{homeName}</Text>
+                          {renderForm(homeStats)}
+                      </View>
+                      <View style={styles.teamFormRow}>
+                          <Text style={styles.teamFormName} numberOfLines={1}>{awayName}</Text>
+                          {renderForm(awayStats)}
+                      </View>
+                  </View>
+
+                  <View style={styles.divider} />
+
+                  <Text style={styles.subTitle}>Key Factors</Text>
+                  {botAnalysis.factors.map((factor, i) => (
+                    <View key={i} style={styles.factorRow}>
+                      <View style={[
+                        styles.factorDot, 
+                        { backgroundColor: factor.side === 'home' ? theme.success : (factor.side === 'away' ? theme.error : theme.textSecondary) }
+                      ]} />
+                      <Text style={styles.factorText}>
+                        <Text style={{fontWeight: 'bold'}}>{factor.side === 'home' ? homeName : (factor.side === 'away' ? awayName : 'Both')}</Text>: {factor.label}
+                      </Text>
+                    </View>
+                  ))}
+                </>
+              )}
             </View>
           )}
 
@@ -506,14 +591,15 @@ export default function MatchDetailsScreen({ route, navigation }) {
         </View>
       )}
       </ScrollView>
+      <GlobalBannerAd />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme, isDarkMode) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.bg,
   },
   scrollContent: {
       paddingBottom: verticalScale(40),
@@ -530,7 +616,7 @@ const styles = StyleSheet.create({
       padding: 5,
   },
   leagueTitle: {
-      color: COLORS.textSecondary,
+      color: 'rgba(255,255,255,0.7)',
       fontSize: getResponsiveFontSize(14),
       textAlign: 'center',
       marginBottom: verticalScale(10),
@@ -554,7 +640,7 @@ const styles = StyleSheet.create({
       marginBottom: verticalScale(8),
   },
   teamName: {
-      color: COLORS.white,
+      color: theme.white,
       fontSize: getResponsiveFontSize(14),
       fontWeight: 'bold',
       textAlign: 'center',
@@ -564,7 +650,7 @@ const styles = StyleSheet.create({
       width: horizontalScale(50),
   },
   vsText: {
-      color: COLORS.white,
+      color: theme.white,
       fontSize: getResponsiveFontSize(24),
       fontWeight: '900',
       fontStyle: 'italic',
@@ -577,7 +663,7 @@ const styles = StyleSheet.create({
       marginTop: verticalScale(4),
   },
   timeText: {
-      color: COLORS.accent,
+      color: theme.accent,
       fontSize: getResponsiveFontSize(10),
       fontWeight: 'bold',
   },
@@ -592,28 +678,28 @@ const styles = StyleSheet.create({
       alignItems: 'center',
   },
   loadingText: {
-      color: COLORS.textSecondary,
+      color: theme.textSecondary,
       marginTop: verticalScale(10),
   },
   contentContainer: {
       padding: moderateScale(20),
   },
   card: {
-      backgroundColor: COLORS.cardBg,
+      backgroundColor: theme.cardBg,
       borderRadius: moderateScale(16),
       padding: moderateScale(20),
       marginBottom: verticalScale(20),
       borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.05)',
+      borderColor: theme.border,
   },
   cardHeader: {
       marginBottom: verticalScale(15),
       borderBottomWidth: 1,
-      borderBottomColor: 'rgba(255,255,255,0.05)',
+      borderBottomColor: theme.border,
       paddingBottom: verticalScale(10),
   },
   cardTitle: {
-      color: COLORS.white,
+      color: theme.text,
       fontSize: getResponsiveFontSize(18),
       fontWeight: 'bold',
   },
@@ -622,7 +708,7 @@ const styles = StyleSheet.create({
       marginBottom: verticalScale(20),
   },
   predictionLabel: {
-      color: COLORS.textSecondary,
+      color: theme.textSecondary,
       fontSize: getResponsiveFontSize(12),
       marginBottom: verticalScale(5),
       letterSpacing: 1,
@@ -637,14 +723,14 @@ const styles = StyleSheet.create({
       marginBottom: verticalScale(20),
   },
   confidenceLabel: {
-      color: COLORS.textSecondary,
+      color: theme.textSecondary,
       width: horizontalScale(80),
       fontSize: getResponsiveFontSize(12),
   },
   confidenceBarBg: {
       flex: 1,
       height: verticalScale(8),
-      backgroundColor: 'rgba(255,255,255,0.1)',
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
       borderRadius: moderateScale(4),
       marginHorizontal: horizontalScale(10),
       overflow: 'hidden',
@@ -654,7 +740,7 @@ const styles = StyleSheet.create({
       borderRadius: moderateScale(4),
   },
   confidenceValue: {
-      color: COLORS.white,
+      color: theme.text,
       fontSize: getResponsiveFontSize(12),
       fontWeight: 'bold',
       width: horizontalScale(30),
@@ -662,11 +748,11 @@ const styles = StyleSheet.create({
   },
   divider: {
       height: 1,
-      backgroundColor: 'rgba(255,255,255,0.1)',
+      backgroundColor: theme.border,
       marginVertical: verticalScale(15),
   },
   subTitle: {
-      color: COLORS.white,
+      color: theme.text,
       fontSize: getResponsiveFontSize(16),
       fontWeight: '600',
       marginBottom: verticalScale(10),
@@ -684,7 +770,7 @@ const styles = StyleSheet.create({
       marginRight: 10,
   },
   factorText: {
-      color: COLORS.textSecondary,
+      color: theme.textSecondary,
       fontSize: getResponsiveFontSize(13),
       flex: 1,
       lineHeight: 20,
@@ -696,19 +782,19 @@ const styles = StyleSheet.create({
   },
   metricItem: {
       width: '48%',
-      backgroundColor: 'rgba(255,255,255,0.03)',
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
       padding: moderateScale(10),
       borderRadius: moderateScale(8),
       marginBottom: verticalScale(10),
       alignItems: 'center',
   },
   metricLabel: {
-      color: COLORS.textSecondary,
+      color: theme.textSecondary,
       fontSize: getResponsiveFontSize(12),
       marginBottom: verticalScale(4),
   },
   metricValue: {
-      color: COLORS.white,
+      color: theme.text,
       fontSize: getResponsiveFontSize(16),
       fontWeight: 'bold',
   },
@@ -721,13 +807,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   h2hValue: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(20),
     fontWeight: 'bold',
     marginBottom: verticalScale(4),
   },
   h2hLabel: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
   },
   formContainer: {
@@ -743,16 +829,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: horizontalScale(4),
   },
-  win: { backgroundColor: COLORS.success },
-  loss: { backgroundColor: COLORS.error },
-  draw: { backgroundColor: COLORS.textSecondary },
+  win: { backgroundColor: theme.success },
+  loss: { backgroundColor: theme.error },
+  draw: { backgroundColor: theme.textSecondary },
   formText: {
-    color: COLORS.white,
+    color: '#fff',
     fontSize: getResponsiveFontSize(10),
     fontWeight: 'bold',
   },
+  lockedContainer: {
+    alignItems: 'center',
+    padding: moderateScale(20),
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+    borderRadius: moderateScale(16),
+    marginVertical: verticalScale(10),
+  },
+  lockedText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(14),
+    marginTop: verticalScale(10),
+    marginBottom: verticalScale(15),
+  },
+  unlockButton: {
+    width: '100%',
+    overflow: 'hidden',
+    borderRadius: moderateScale(12),
+  },
+  unlockGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: verticalScale(12),
+  },
+  unlockText: {
+    color: '#FFF',
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: 'bold',
+  },
   formSection: {
-      marginBottom: verticalScale(10),
+    marginBottom: verticalScale(20),
   },
   teamFormRow: {
       flexDirection: 'row',
@@ -761,13 +876,13 @@ const styles = StyleSheet.create({
       marginBottom: verticalScale(12),
   },
   teamFormName: {
-      color: COLORS.textSecondary,
+      color: theme.textSecondary,
       fontSize: getResponsiveFontSize(14),
       fontWeight: '600',
       maxWidth: '60%',
   },
   statValue: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(14),
     fontWeight: 'bold',
   },

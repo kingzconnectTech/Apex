@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, FlatList, Platform, Alert, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { InterstitialAd, AdEventType } from 'react-native-google-mobile-ads';
+import { AdUnits } from '../constants/ads';
+import { GlobalBannerAd } from '../components/GlobalBannerAd';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { COLORS } from '../constants/colors';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
-import { fetchMatches } from '../services/espn';
+import { fetchMatches, fetchTeamDetails, fetchMatchAnalysis } from '../services/espn';
 import { analyzeMatch } from '../utils/predictionLogic';
+import { useUser } from '../context/UserContext';
 
 const SPORTS = [
   { id: 'soccer', name: 'Football', icon: 'football' },
@@ -17,8 +20,56 @@ const SPORTS = [
 const COUNTS = [3, 5, 10, 15];
 
 export default function LeoScreen({ navigation }) {
+  const { theme, isDarkMode } = useTheme();
+  const styles = createStyles(theme, isDarkMode);
+  const { balance, subtractBalance } = useUser();
   const [selectedSports, setSelectedSports] = useState(['soccer']);
   const [matchLimit, setMatchLimit] = useState(5);
+  
+  // Ad State
+  const interstitialRef = useRef(null);
+  const pendingActionRef = useRef(null);
+  const [adLoaded, setAdLoaded] = useState(false);
+
+  useEffect(() => {
+    const ad = InterstitialAd.createForAdRequest(AdUnits.INTERSTITIAL, {
+        requestNonPersonalizedAdsOnly: true,
+    });
+
+    const unsubscribeLoaded = ad.addAdEventListener(AdEventType.LOADED, () => {
+        setAdLoaded(true);
+    });
+
+    const unsubscribeClosed = ad.addAdEventListener(AdEventType.CLOSED, () => {
+        if (pendingActionRef.current) {
+            navigation.dispatch(pendingActionRef.current);
+            pendingActionRef.current = null;
+        }
+    });
+    
+    ad.load();
+    interstitialRef.current = ad;
+
+    return () => {
+        unsubscribeLoaded();
+        unsubscribeClosed();
+    };
+  }, [navigation]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+        // Only show ad if loaded and we haven't already shown it (action pending)
+        if (adLoaded && interstitialRef.current && !pendingActionRef.current) {
+            e.preventDefault();
+            pendingActionRef.current = e.data.action;
+            interstitialRef.current.show();
+            setAdLoaded(false); // Ad consumed
+        }
+    });
+
+    return unsubscribe;
+  }, [navigation, adLoaded]);
+
   const [fromDate, setFromDate] = useState(new Date());
   const [toDate, setToDate] = useState(new Date(new Date().setDate(new Date().getDate() + 3)));
   const [showFromPicker, setShowFromPicker] = useState(false);
@@ -37,6 +88,18 @@ export default function LeoScreen({ navigation }) {
   };
 
   const handleChase = async () => {
+    if (!subtractBalance(8)) {
+        Alert.alert(
+            "Insufficient Balance", 
+            "You need 8 APT to ask Leo for predictions.",
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Get Tokens", onPress: () => navigation.navigate('Market') }
+            ]
+        );
+        return;
+    }
+
     setLoading(true);
     setResults(null);
     try {
@@ -55,24 +118,85 @@ export default function LeoScreen({ navigation }) {
         m.status === 'pre'
       );
 
-      // Analyze and Predict
-      const analyzedMatches = filteredMatches.map(match => {
+      // 1. Initial Quick Analysis (Filtering)
+      const preliminaryMatches = filteredMatches.map(match => {
         const analysis = analyzeMatch({
           homeName: match.homeTeam.name,
           awayName: match.awayTeam.name,
           homeStats: match.homeTeam,
           awayStats: match.awayTeam,
           sport: match.sport,
-          isDetailed: false // Basic analysis for list
+          isDetailed: false
         });
         return { ...match, analysis };
       });
-      
-      console.log(`Analyzed ${analyzedMatches.length} matches`);
 
-      // Sort by Confidence (Highest to Lowest)
-      // We take all valid matches and sort them to ensure we fill the requested limit
-      let bestPredictions = analyzedMatches
+      // 2. Select Top Candidates (Limit + Buffer)
+      const topCandidates = preliminaryMatches
+        .sort((a, b) => b.analysis.confidence - a.analysis.confidence)
+        .slice(0, matchLimit + 3);
+
+      // 3. Deep Analysis
+      const deepAnalyzedMatches = await Promise.all(topCandidates.map(async (match) => {
+        try {
+          const [homeDetails, awayDetails, matchAnalysis] = await Promise.all([
+             fetchTeamDetails(match.sport, match.leagueSlug, match.homeTeam.id),
+             fetchTeamDetails(match.sport, match.leagueSlug, match.awayTeam.id),
+             fetchMatchAnalysis(match.sport, match.leagueSlug, match.id)
+          ]);
+
+          // Extract H2H
+          let h2h = null;
+          if (matchAnalysis?.headToHeadGames) {
+             const validH2H = matchAnalysis.headToHeadGames.filter(g => 
+                String(g.id) !== String(match.id) && g.homeTeamScore !== undefined && g.awayTeamScore !== undefined
+             );
+             
+             let homeWins = 0, awayWins = 0, draws = 0;
+             const currentHomeId = match.homeTeam.id;
+             
+             const recent = validH2H.slice(0, 5).map(g => {
+                const hScore = parseInt(g.homeTeamScore || 0);
+                const aScore = parseInt(g.awayTeamScore || 0);
+                const isHomeHosting = String(g.homeTeamId) === String(currentHomeId);
+                
+                if (hScore === aScore) draws++;
+                else if (isHomeHosting) { if (hScore > aScore) homeWins++; else awayWins++; }
+                else { if (aScore > hScore) homeWins++; else awayWins++; }
+                
+                return { score: g.score, date: g.gameDate };
+             });
+             h2h = { homeWins, awayWins, draws, recent };
+          }
+
+          // Re-Analyze with Details
+          const detailedAnalysis = analyzeMatch({
+             homeName: match.homeTeam.name,
+             awayName: match.awayTeam.name,
+             homeStats: { 
+                 record: homeDetails?.stats?.record || match.homeTeam.record,
+                 lastMatches: homeDetails?.lastMatches,
+                 news: homeDetails?.news
+             },
+             awayStats: { 
+                 record: awayDetails?.stats?.record || match.awayTeam.record,
+                 lastMatches: awayDetails?.lastMatches,
+                 news: awayDetails?.news
+             },
+             h2h: h2h,
+             sport: match.sport,
+             isDetailed: true
+          });
+
+          return { ...match, analysis: detailedAnalysis };
+        } catch (e) {
+          console.warn("Deep analysis fallback for " + match.id, e);
+          return match; // Return preliminary result on failure
+        }
+      }));
+
+      // 4. Final Sort & Limit
+      const bestPredictions = deepAnalyzedMatches
         .sort((a, b) => b.analysis.confidence - a.analysis.confidence)
         .slice(0, matchLimit);
 
@@ -150,13 +274,13 @@ export default function LeoScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={[COLORS.primary, '#1a1a1a']}
+        colors={[theme.primary, theme.bg]}
         style={styles.headerGradient}
       >
         <SafeAreaView edges={['top']} style={styles.safeHeader}>
             <View style={styles.headerContent}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#FFF" />
+                    <Ionicons name="arrow-back" size={24} color={theme.white} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Leo Assistant</Text>
                 <View style={{ width: 24 }} />
@@ -178,7 +302,7 @@ export default function LeoScreen({ navigation }) {
                         <Ionicons 
                             name={sport.icon} 
                             size={16} 
-                            color={selectedSports.includes(sport.id) ? '#FFF' : COLORS.textSecondary} 
+                            color={selectedSports.includes(sport.id) ? '#FFF' : theme.textSecondary} 
                         />
                         <Text style={[styles.pillText, selectedSports.includes(sport.id) && styles.activePillText]}>
                             {sport.name}
@@ -193,7 +317,7 @@ export default function LeoScreen({ navigation }) {
                     <Text style={styles.dateLabel}>From</Text>
                     <Text style={styles.dateValue}>{formatDate(fromDate)}</Text>
                 </TouchableOpacity>
-                <Ionicons name="arrow-forward" size={20} color={COLORS.textSecondary} />
+                <Ionicons name="arrow-forward" size={20} color={theme.textSecondary} />
                 <TouchableOpacity style={styles.dateButton} onPress={() => setShowToPicker(true)}>
                     <Text style={styles.dateLabel}>To</Text>
                     <Text style={styles.dateValue}>{formatDate(toDate)}</Text>
@@ -233,13 +357,13 @@ export default function LeoScreen({ navigation }) {
                     <ActivityIndicator color="#FFF" />
                 ) : (
                     <LinearGradient
-                        colors={[COLORS.accent, '#e6c38a']}
+                        colors={[theme.accent, '#e6c38a']}
                         style={styles.chaseGradient}
                         start={{x: 0, y: 0}}
                         end={{x: 1, y: 0}}
                     >
                         <Text style={styles.chaseBtnText}>LEO CHASE</Text>
-                        <Ionicons name="flash" size={20} color={COLORS.primary} />
+                        <Ionicons name="flash" size={20} color={theme.primary} />
                     </LinearGradient>
                 )}
             </TouchableOpacity>
@@ -257,14 +381,15 @@ export default function LeoScreen({ navigation }) {
             </View>
         )}
       </ScrollView>
+      <GlobalBannerAd />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme, isDarkMode) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.bg,
   },
   headerGradient: {
     paddingBottom: verticalScale(20),
@@ -281,7 +406,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(10),
   },
   headerTitle: {
-    color: '#FFF',
+    color: theme.white,
     fontSize: getResponsiveFontSize(20),
     fontWeight: 'bold',
   },
@@ -292,15 +417,15 @@ const styles = StyleSheet.create({
     padding: moderateScale(20),
   },
   controlsSection: {
-    backgroundColor: COLORS.cardBg,
+    backgroundColor: theme.cardBg,
     padding: moderateScale(20),
     borderRadius: moderateScale(20),
     marginBottom: verticalScale(20),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: theme.border,
   },
   sectionLabel: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(14),
     marginBottom: verticalScale(10),
     fontWeight: '600',
@@ -314,27 +439,27 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     paddingVertical: verticalScale(8),
     paddingHorizontal: horizontalScale(16),
     borderRadius: moderateScale(20),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: theme.border,
   },
   countPill: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     paddingVertical: verticalScale(8),
     paddingHorizontal: horizontalScale(20),
     borderRadius: moderateScale(20),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: theme.border,
   },
   activePill: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.accent,
+    backgroundColor: theme.primary,
+    borderColor: theme.accent,
   },
   pillText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(14),
     fontWeight: '500',
     marginLeft: horizontalScale(6),
@@ -351,21 +476,21 @@ const styles = StyleSheet.create({
   },
   dateButton: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     padding: moderateScale(12),
     borderRadius: moderateScale(12),
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: theme.border,
     marginHorizontal: horizontalScale(5),
   },
   dateLabel: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
     marginBottom: verticalScale(4),
   },
   dateValue: {
-    color: '#FFF',
+    color: theme.text,
     fontSize: getResponsiveFontSize(16),
     fontWeight: 'bold',
   },
@@ -381,7 +506,7 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(15),
   },
   chaseBtnText: {
-    color: COLORS.primary,
+    color: theme.primary,
     fontSize: getResponsiveFontSize(18),
     fontWeight: '900',
     marginRight: horizontalScale(8),
@@ -391,19 +516,19 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(10),
   },
   resultsTitle: {
-    color: '#FFF',
+    color: theme.text,
     fontSize: getResponsiveFontSize(18),
     fontWeight: 'bold',
     marginBottom: verticalScale(15),
     marginLeft: horizontalScale(5),
   },
   resultCard: {
-    backgroundColor: COLORS.cardBg,
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(16),
     padding: moderateScale(16),
     marginBottom: verticalScale(16),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: theme.border,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -411,12 +536,12 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(12),
   },
   leagueText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
     fontWeight: '600',
   },
   dateText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
   },
   matchRow: {
@@ -436,13 +561,13 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(8),
   },
   teamName: {
-    color: '#FFF',
+    color: theme.text,
     fontSize: getResponsiveFontSize(12),
     textAlign: 'center',
     fontWeight: '500',
   },
   vsText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
     fontWeight: 'bold',
     marginHorizontal: horizontalScale(10),
@@ -450,12 +575,12 @@ const styles = StyleSheet.create({
   predictionContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     padding: moderateScale(12),
     borderRadius: moderateScale(12),
   },
   confidenceBadge: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.primary,
     paddingHorizontal: horizontalScale(8),
     paddingVertical: verticalScale(4),
     borderRadius: moderateScale(8),

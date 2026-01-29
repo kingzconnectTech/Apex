@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Image, ActivityIndicator, Animated, Platform, StatusBar, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS } from '../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { fetchMatches } from '../services/espn';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
+import { GlobalBannerAd } from '../components/GlobalBannerAd';
+import { useTheme } from '../context/ThemeContext';
 
 const CATEGORIES = ['Football', 'Basketball'];
 
@@ -16,6 +17,9 @@ const LEAGUES_FILTER = {
 };
 
 export default function TipsScreen({ navigation }) {
+  const { theme, isDarkMode } = useTheme();
+  const styles = createStyles(theme, isDarkMode);
+  
   const [selectedCategory, setSelectedCategory] = useState('Football');
   const [selectedLeague, setSelectedLeague] = useState('All');
   const [dateFilter, setDateFilter] = useState(new Date());
@@ -126,7 +130,7 @@ export default function TipsScreen({ navigation }) {
               {/* Footer: Action */}
               <View style={styles.cardFooter}>
                   <Text style={styles.footerText}>AI Analysis Available</Text>
-                  <Ionicons name="chevron-forward-circle" size={20} color={COLORS.primary} />
+                  <Ionicons name="chevron-forward-circle" size={20} color={theme.primary} />
               </View>
           </View>
         </TouchableOpacity>
@@ -138,7 +142,7 @@ export default function TipsScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} />
       
       {/* Header Section */}
       <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -148,7 +152,7 @@ export default function TipsScreen({ navigation }) {
                 <Text style={styles.headerSubtitle}>Daily AI Predictions</Text>
             </View>
             <TouchableOpacity style={styles.calendarBtn} onPress={() => setShowDatePicker(true)}>
-                <Ionicons name="calendar-outline" size={24} color={COLORS.white} />
+                <Ionicons name="calendar-outline" size={24} color={theme.text} />
             </TouchableOpacity>
         </View>
 
@@ -204,7 +208,7 @@ export default function TipsScreen({ navigation }) {
       {/* Main List */}
       {loading ? (
         <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
+            <ActivityIndicator size="large" color={theme.primary} />
             <Text style={styles.loadingText}>Finding best matches...</Text>
         </View>
       ) : (
@@ -215,11 +219,11 @@ export default function TipsScreen({ navigation }) {
             contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} colors={[theme.primary]} />
             }
             ListEmptyComponent={
                 <View style={styles.emptyState}>
-                    <Ionicons name="stats-chart-outline" size={60} color={COLORS.textSecondary} style={{ opacity: 0.3 }} />
+                    <Ionicons name="stats-chart-outline" size={60} color={theme.textSecondary} style={{ opacity: 0.3 }} />
                     <Text style={styles.emptyText}>No matches scheduled.</Text>
                 </View>
             }
@@ -234,17 +238,18 @@ export default function TipsScreen({ navigation }) {
           onChange={onDateChange}
         />
       )}
+      <GlobalBannerAd />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme, isDarkMode) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.bg,
   },
   safeArea: {
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.bg,
     paddingBottom: verticalScale(10),
   },
   headerContainer: {
@@ -258,17 +263,17 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: getResponsiveFontSize(32),
     fontWeight: '800',
-    color: COLORS.white,
+    color: theme.text,
     letterSpacing: -0.5,
   },
   headerSubtitle: {
     fontSize: getResponsiveFontSize(14),
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontWeight: '500',
   },
   calendarBtn: {
     padding: moderateScale(10),
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(12),
   },
   dateStripContainer: {
@@ -280,22 +285,22 @@ const styles = StyleSheet.create({
   dateItem: {
     width: horizontalScale(55),
     height: verticalScale(70),
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(16),
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: horizontalScale(10),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: theme.border,
   },
   dateItemActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
     transform: [{ scale: 1.05 }],
   },
   dateDay: {
     fontSize: getResponsiveFontSize(11),
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     marginBottom: verticalScale(4),
     fontWeight: '600',
   },
@@ -305,10 +310,10 @@ const styles = StyleSheet.create({
   dateNum: {
     fontSize: getResponsiveFontSize(20),
     fontWeight: '700',
-    color: COLORS.white,
+    color: theme.text,
   },
   dateNumActive: {
-    color: COLORS.white,
+    color: '#FFFFFF',
   },
   filtersSection: {
     marginBottom: verticalScale(5),
@@ -322,24 +327,24 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(8),
     borderRadius: moderateScale(20),
     marginRight: horizontalScale(8),
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: theme.cardBg,
   },
   catPillActive: {
-    backgroundColor: COLORS.white,
+    backgroundColor: theme.text, // Invert for active
   },
   catText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontWeight: '600',
     fontSize: getResponsiveFontSize(13),
   },
   catTextActive: {
-    color: COLORS.bg,
+    color: theme.bg,
     fontWeight: '700',
   },
   verticalDivider: {
     width: 1,
     height: verticalScale(16),
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: theme.border,
     marginHorizontal: horizontalScale(10),
   },
   leaguePill: {
@@ -348,18 +353,18 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(12),
     marginRight: horizontalScale(6),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: theme.border,
   },
   leaguePillActive: {
-    borderColor: COLORS.primary,
-    backgroundColor: 'rgba(52, 152, 219, 0.15)', // transparent primary
+    borderColor: theme.primary,
+    backgroundColor: isDarkMode ? 'rgba(52, 152, 219, 0.15)' : 'rgba(52, 152, 219, 0.05)', // transparent primary
   },
   leagueTextFilter: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
   },
   leagueTextActive: {
-    color: COLORS.primary,
+    color: theme.primary,
     fontWeight: '600',
   },
   listContainer: {
@@ -368,12 +373,12 @@ const styles = StyleSheet.create({
     paddingTop: verticalScale(10),
   },
   cardContainer: {
-    backgroundColor: COLORS.cardBg,
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(24),
     marginBottom: verticalScale(20),
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: theme.border,
   },
   cardContent: {
     padding: moderateScale(20),
@@ -385,19 +390,19 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(20),
   },
   leagueBadge: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     paddingHorizontal: horizontalScale(10),
     paddingVertical: verticalScale(4),
     borderRadius: moderateScale(8),
   },
   leagueName: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
     fontWeight: '600',
     textTransform: 'uppercase',
   },
   statusBadge: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     paddingHorizontal: horizontalScale(10),
     paddingVertical: verticalScale(4),
     borderRadius: moderateScale(8),
@@ -406,7 +411,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(231, 76, 60, 0.2)',
   },
   statusText: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(12),
     fontWeight: '700',
   },
@@ -430,7 +435,7 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(10),
   },
   teamName: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(14),
     fontWeight: '600',
     textAlign: 'center',
@@ -442,21 +447,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   vsText: {
-    color: 'rgba(255,255,255,0.2)',
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(24),
     fontWeight: '900',
     fontStyle: 'italic',
+    opacity: 0.5,
   },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
+    borderTopColor: theme.border,
     paddingTop: verticalScale(15),
   },
   footerText: {
-    color: COLORS.primary,
+    color: theme.primary,
     fontSize: getResponsiveFontSize(13),
     fontWeight: '600',
   },
@@ -467,7 +473,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: verticalScale(10),
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(14),
   },
   emptyState: {
@@ -476,7 +482,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   emptyText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(16),
     marginTop: verticalScale(10),
     fontWeight: '500',

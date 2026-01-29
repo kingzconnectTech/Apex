@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../constants/colors';
+import { useTheme } from '../context/ThemeContext';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
+import { GlobalBannerAd } from '../components/GlobalBannerAd';
 
 export default function SettingsScreen({ navigation }) {
-  const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark as per new theme
+  const { theme, isDarkMode, toggleTheme } = useTheme();
+  const styles = createStyles(theme, isDarkMode);
   const user = auth().currentUser;
-
-  const toggleSwitch = () => setIsDarkMode(previousState => !previousState);
 
   const handleLogout = async () => {
     try {
@@ -52,103 +52,86 @@ export default function SettingsScreen({ navigation }) {
     Alert.alert('Privacy Policy', 'Privacy Policy placeholder...');
   };
 
-  // Dynamic styles based on theme (Keeping toggle logic but default base is now dark)
-  const themeStyles = {
-    container: {
-      backgroundColor: isDarkMode ? COLORS.bg : '#ffffff',
-    },
-    text: {
-      color: isDarkMode ? COLORS.text : '#333333',
-    },
-    sectionTitle: {
-      color: isDarkMode ? COLORS.secondary : '#666666',
-    },
-    card: {
-      backgroundColor: isDarkMode ? COLORS.cardBg : '#ffffff',
-    },
-    iconColor: isDarkMode ? COLORS.accent : '#333333',
-    separator: {
-      backgroundColor: isDarkMode ? COLORS.bg : '#f0f0f0',
-    }
-  };
-
   return (
-    <ScrollView style={[styles.container, themeStyles.container]}>
-      {/* User Profile Section */}
-      <View style={[styles.profileSection, themeStyles.card]}>
-        <View style={styles.avatarContainer}>
-          <Ionicons name="person-circle-outline" size={moderateScale(80)} color={COLORS.primary} />
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+      <ScrollView style={[styles.container, { backgroundColor: theme.bg }]}>
+        {/* User Profile Section */}
+        <View style={[styles.profileSection, { backgroundColor: theme.cardBg, borderColor: theme.primary }]}>
+          <View style={styles.avatarContainer}>
+            <Ionicons name="person-circle-outline" size={moderateScale(80)} color={theme.primary} />
+          </View>
+          <Text style={[styles.userName, { color: theme.text }]}>{user?.displayName || 'User'}</Text>
+          <Text style={[styles.userEmail, { color: theme.textSecondary }]}>{user?.email || 'No Email'}</Text>
         </View>
-        <Text style={[styles.userName, themeStyles.text]}>{user?.displayName || 'User'}</Text>
-        <Text style={[styles.userEmail, { color: COLORS.textSecondary }]}>{user?.email || 'No Email'}</Text>
-      </View>
 
-      {/* App Preference Section */}
-      <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>App Preferences</Text>
-      <View style={[styles.section, themeStyles.card]}>
-        <View style={styles.row}>
-          <View style={styles.rowLeft}>
-            <Ionicons name="moon-outline" size={moderateScale(22)} color={themeStyles.iconColor} />
-            <Text style={[styles.rowLabel, themeStyles.text]}>Dark Mode</Text>
+        {/* App Preference Section */}
+        <Text style={[styles.sectionTitle, { color: theme.secondary }]}>App Preferences</Text>
+        <View style={[styles.section, { backgroundColor: theme.cardBg }]}>
+          <View style={styles.row}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="moon-outline" size={moderateScale(22)} color={theme.icon} />
+              <Text style={[styles.rowLabel, { color: theme.text }]}>Dark Mode</Text>
+            </View>
+            <Switch
+              trackColor={{ false: '#767577', true: theme.primary }}
+              thumbColor={isDarkMode ? theme.accent : '#f4f3f4'}
+              ios_backgroundColor="#3e3e3e"
+              onValueChange={toggleTheme}
+              value={isDarkMode}
+            />
           </View>
-          <Switch
-            trackColor={{ false: '#767577', true: COLORS.primary }}
-            thumbColor={isDarkMode ? COLORS.accent : '#f4f3f4'}
-            ios_backgroundColor="#3e3e3e"
-            onValueChange={toggleSwitch}
-            value={isDarkMode}
-          />
         </View>
-      </View>
 
-      {/* Support Section */}
-      <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Support</Text>
-      <View style={[styles.section, themeStyles.card]}>
-        <TouchableOpacity style={styles.row} onPress={handleContact}>
-          <View style={styles.rowLeft}>
-            <Ionicons name="mail-outline" size={moderateScale(22)} color={themeStyles.iconColor} />
-            <Text style={[styles.rowLabel, themeStyles.text]}>Contact Us</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={moderateScale(20)} color={COLORS.textSecondary} />
-        </TouchableOpacity>
+        {/* Support Section */}
+        <Text style={[styles.sectionTitle, { color: theme.secondary }]}>Support</Text>
+        <View style={[styles.section, { backgroundColor: theme.cardBg }]}>
+          <TouchableOpacity style={styles.row} onPress={handleContact}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="mail-outline" size={moderateScale(22)} color={theme.icon} />
+              <Text style={[styles.rowLabel, { color: theme.text }]}>Contact Us</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
+          </TouchableOpacity>
+          
+          <View style={[styles.separator, { backgroundColor: theme.bg }]} />
+
+          <TouchableOpacity style={styles.row} onPress={handlePrivacyPolicy}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="shield-checkmark-outline" size={moderateScale(22)} color={theme.icon} />
+              <Text style={[styles.rowLabel, { color: theme.text }]}>Privacy Policy</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Account Actions Section */}
+        <Text style={[styles.sectionTitle, { color: theme.secondary }]}>Account</Text>
+        <View style={[styles.section, { backgroundColor: theme.cardBg }]}>
+          <TouchableOpacity style={styles.row} onPress={handleLogout}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="log-out-outline" size={moderateScale(22)} color={theme.error} />
+              <Text style={[styles.rowLabel, { color: theme.error }]}>Log Out</Text>
+            </View>
+          </TouchableOpacity>
+          
+          <View style={[styles.separator, { backgroundColor: theme.bg }]} />
+
+          <TouchableOpacity style={styles.row} onPress={handleDeleteAccount}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="trash-outline" size={moderateScale(22)} color={theme.error} />
+              <Text style={[styles.rowLabel, { color: theme.error }]}>Delete Account</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
         
-        <View style={[styles.separator, themeStyles.separator]} />
-
-        <TouchableOpacity style={styles.row} onPress={handlePrivacyPolicy}>
-          <View style={styles.rowLeft}>
-            <Ionicons name="shield-checkmark-outline" size={moderateScale(22)} color={themeStyles.iconColor} />
-            <Text style={[styles.rowLabel, themeStyles.text]}>Privacy Policy</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={moderateScale(20)} color={COLORS.textSecondary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Account Actions Section */}
-      <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Account</Text>
-      <View style={[styles.section, themeStyles.card]}>
-        <TouchableOpacity style={styles.row} onPress={handleLogout}>
-          <View style={styles.rowLeft}>
-            <Ionicons name="log-out-outline" size={moderateScale(22)} color={COLORS.error} />
-            <Text style={[styles.rowLabel, { color: COLORS.error }]}>Log Out</Text>
-          </View>
-        </TouchableOpacity>
-        
-        <View style={[styles.separator, themeStyles.separator]} />
-
-        <TouchableOpacity style={styles.row} onPress={handleDeleteAccount}>
-          <View style={styles.rowLeft}>
-            <Ionicons name="trash-outline" size={moderateScale(22)} color={COLORS.error} />
-            <Text style={[styles.rowLabel, { color: COLORS.error }]}>Delete Account</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-      
-      <Text style={[styles.versionText, { color: COLORS.textSecondary }]}>Version 1.0.0</Text>
-    </ScrollView>
+        <Text style={[styles.versionText, { color: theme.textSecondary }]}>Version 1.0.0</Text>
+      </ScrollView>
+      <GlobalBannerAd />
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme, isDarkMode) => StyleSheet.create({
   container: {
     flex: 1,
     padding: moderateScale(20),
@@ -164,7 +147,7 @@ const styles = StyleSheet.create({
     shadowRadius: moderateScale(3),
     elevation: 2,
     borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderColor: theme.primary,
   },
   avatarContainer: {
     marginBottom: verticalScale(10),

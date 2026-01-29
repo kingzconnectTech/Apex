@@ -1,20 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, ActivityIndicator, ScrollView, Platform, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS } from '../constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
-import { RewardedAd, RewardedAdEventType, AdEventType, TestIds } from 'react-native-google-mobile-ads';
+import { RewardedAd, RewardedAdEventType, AdEventType, BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
+import { useUser } from '../context/UserContext';
+import { AdUnits } from '../constants/ads';
 
-const adUnitId = __DEV__ ? TestIds.REWARDED : 'ca-app-pub-xxxxxxxxxxxxx/yyyyyyyyyy';
+const adUnitId = AdUnits.REWARDED;
 
 const TOKEN_PACKAGES = [
   {
     id: '1',
     name: 'Starter Pile',
-    tokens: 100,
-    price: '$1.99',
+    tokens: 49,
+    price: '$1.00',
     bonus: null,
     color: ['#4FACFE', '#00F2FE'], // Cyan/Blue
     icon: 'cube-outline',
@@ -23,9 +24,9 @@ const TOKEN_PACKAGES = [
   {
     id: '2',
     name: 'Grinder Stash',
-    tokens: 550,
-    price: '$9.99',
-    bonus: '+10% Bonus',
+    tokens: 250,
+    price: '$4.99',
+    bonus: '+2% Bonus',
     color: ['#43E97B', '#38F9D7'], // Green/Teal
     popular: true,
     icon: 'layers-outline',
@@ -34,9 +35,9 @@ const TOKEN_PACKAGES = [
   {
     id: '3',
     name: 'Pro Sack',
-    tokens: 1200,
-    price: '$19.99',
-    bonus: '+20% Bonus',
+    tokens: 550,
+    price: '$9.99',
+    bonus: '+12% Bonus',
     color: ['#FA709A', '#FEE140'], // Pink/Gold
     icon: 'briefcase-outline',
     description: 'For serious bettors'
@@ -44,8 +45,8 @@ const TOKEN_PACKAGES = [
   {
     id: '4',
     name: 'Whale Vault',
-    tokens: 3500,
-    price: '$49.99',
+    tokens: 1500,
+    price: '$24.99',
     bonus: 'BEST VALUE',
     color: ['#667EEA', '#764BA2'], // Purple/Violet
     icon: 'diamond-outline',
@@ -53,8 +54,13 @@ const TOKEN_PACKAGES = [
   }
 ];
 
+import { GlobalBannerAd } from '../components/GlobalBannerAd';
+import { useTheme } from '../context/ThemeContext';
+
 export default function MarketScreen({ navigation }) {
-    const [balance, setBalance] = useState(150); // Mock initial balance
+    const { theme, isDarkMode } = useTheme();
+    const styles = createStyles(theme, isDarkMode);
+    const { balance, addBalance } = useUser();
     const [loaded, setLoaded] = useState(false);
     const rewardedAd = useRef(null);
     const scrollY = useRef(new Animated.Value(0)).current;
@@ -73,8 +79,8 @@ export default function MarketScreen({ navigation }) {
         const unsubscribeEarned = ad.addAdEventListener(
             RewardedAdEventType.EARNED_REWARD,
             reward => {
-                setBalance(prev => prev + 10);
-                Alert.alert("Success", "You earned 10 APT!");
+                addBalance(2);
+                Alert.alert("Success", "You earned 2 APT!");
             },
         );
         
@@ -107,7 +113,7 @@ export default function MarketScreen({ navigation }) {
             [
                 { text: "Cancel", style: "cancel" },
                 { text: "Confirm", onPress: () => {
-                    setBalance(prev => prev + pack.tokens);
+                    addBalance(pack.tokens);
                     Alert.alert("Success", "APT added to your wallet!");
                 }}
             ]
@@ -117,7 +123,7 @@ export default function MarketScreen({ navigation }) {
     const renderHeader = () => (
         <View>
             <LinearGradient
-                colors={[COLORS.primary, '#0f2027']}
+                colors={[theme.primary, theme.bg]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.heroSection}
@@ -130,7 +136,7 @@ export default function MarketScreen({ navigation }) {
                             <Text style={styles.headerSubtitle}>Fuel your predictions</Text>
                         </View>
                         <TouchableOpacity style={styles.historyBtn}>
-                            <Ionicons name="time-outline" size={24} color="#FFF" />
+                            <Ionicons name="time-outline" size={24} color={theme.white} />
                         </TouchableOpacity>
                     </View>
 
@@ -175,7 +181,7 @@ export default function MarketScreen({ navigation }) {
                     activeOpacity={0.9}
                 >
                     <LinearGradient
-                        colors={['#1E1E1E', '#252525']}
+                        colors={[theme.cardBg, theme.cardBg]}
                         style={styles.freeCardGradient}
                         start={{x: 0, y: 0}}
                         end={{x: 1, y: 1}}
@@ -190,7 +196,7 @@ export default function MarketScreen({ navigation }) {
                             </LinearGradient>
                             <View style={styles.freeTextContainer}>
                                 <Text style={styles.freeTitle}>Watch Video Ad</Text>
-                                <Text style={styles.freeSubtitle}>Get +10 Free APT instantly</Text>
+                                <Text style={styles.freeSubtitle}>Get +2 Free APT instantly</Text>
                             </View>
                             <View style={styles.freeButton}>
                                     {loaded ? (
@@ -217,7 +223,7 @@ export default function MarketScreen({ navigation }) {
             <View style={[styles.packageCard, item.popular && styles.popularCardBorder]}>
                 {item.popular && (
                     <LinearGradient
-                        colors={[COLORS.primary, '#FF8C00']}
+                        colors={[theme.primary, theme.warning]}
                         start={{x: 0, y: 0}}
                         end={{x: 1, y: 0}}
                         style={styles.popularBadge}
@@ -227,7 +233,7 @@ export default function MarketScreen({ navigation }) {
                 )}
                 
                 <LinearGradient
-                    colors={['#1E1E1E', '#252525']}
+                    colors={[theme.cardBg, theme.cardBg]}
                     style={styles.cardContent}
                 >
                     <View style={styles.cardHeader}>
@@ -251,7 +257,7 @@ export default function MarketScreen({ navigation }) {
 
                     <TouchableOpacity style={styles.priceButton} onPress={() => handleBuy(item)}>
                         <Text style={styles.priceText}>{item.price}</Text>
-                        <Ionicons name="arrow-forward" size={14} color="#FFF" />
+                        <Ionicons name="arrow-forward" size={14} color={theme.white} />
                     </TouchableOpacity>
                 </LinearGradient>
             </View>
@@ -270,14 +276,17 @@ export default function MarketScreen({ navigation }) {
                 showsVerticalScrollIndicator={false}
                 ListHeaderComponent={renderHeader}
             />
+            <View style={{ alignItems: 'center', backgroundColor: theme.bg }}>
+                <GlobalBannerAd />
+            </View>
         </View>
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme, isDarkMode) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.bg,
   },
   safeArea: {
     marginBottom: verticalScale(20),
@@ -305,23 +314,23 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: getResponsiveFontSize(28),
     fontWeight: '900',
-    color: COLORS.white,
+    color: theme.white,
     letterSpacing: 0.5,
   },
   headerSubtitle: {
     fontSize: getResponsiveFontSize(14),
-    color: 'rgba(255,255,255,0.7)',
+    color: isDarkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
     fontWeight: '500',
   },
   historyBtn: {
     width: horizontalScale(44),
     height: horizontalScale(44),
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
     borderRadius: moderateScale(14),
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
   },
   balanceContainer: {
     paddingHorizontal: moderateScale(20),
@@ -395,7 +404,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: getResponsiveFontSize(18),
     fontWeight: '800',
-    color: COLORS.white,
+    color: theme.text,
     marginLeft: moderateScale(20),
     marginBottom: verticalScale(16),
     marginTop: verticalScale(8),
@@ -419,12 +428,12 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: moderateScale(20),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
   },
   freeContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E1E1E',
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(18),
     padding: moderateScale(16),
   },
@@ -440,18 +449,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   freeTitle: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(16),
     fontWeight: 'bold',
     marginBottom: verticalScale(4),
   },
   freeSubtitle: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
     fontWeight: '500',
   },
   freeButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.primary,
     paddingHorizontal: horizontalScale(16),
     paddingVertical: verticalScale(8),
     borderRadius: moderateScale(12),
@@ -459,7 +468,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   freeButtonText: {
-    color: COLORS.white,
+    color: '#FFF',
     fontWeight: '800',
     fontSize: getResponsiveFontSize(11),
     letterSpacing: 0.5,
@@ -490,7 +499,7 @@ const styles = StyleSheet.create({
     padding: moderateScale(16),
     borderRadius: moderateScale(24),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
   },
   popularBadge: {
     position: 'absolute',
@@ -500,7 +509,7 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(4),
     borderRadius: moderateScale(12),
     zIndex: 10,
-    shadowColor: COLORS.primary,
+    shadowColor: theme.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -542,7 +551,7 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(16),
   },
   packageName: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
     fontWeight: '600',
     marginBottom: verticalScale(4),
@@ -552,13 +561,13 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   tokenAmount: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(22),
     fontWeight: '800',
     marginRight: horizontalScale(4),
   },
   tokenLabel: {
-    color: 'rgba(255,255,255,0.5)',
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
     fontWeight: '600',
   },
@@ -567,14 +576,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
     paddingVertical: verticalScale(12),
     borderRadius: moderateScale(14),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
   },
   priceText: {
-    color: COLORS.white,
+    color: theme.white,
     fontWeight: '700',
     fontSize: getResponsiveFontSize(14),
     marginRight: horizontalScale(4),

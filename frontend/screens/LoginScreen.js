@@ -9,20 +9,24 @@ import {
   ActivityIndicator, 
   KeyboardAvoidingView, 
   Platform,
-  ScrollView
+  ScrollView,
+  StatusBar
 } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../constants/colors';
 import { 
   horizontalScale, 
   verticalScale, 
   moderateScale, 
   getResponsiveFontSize 
 } from '../utils/responsive';
+import { useTheme } from '../context/ThemeContext';
 
 export default function LoginScreen({ navigation }) {
+  const { theme, isDarkMode } = useTheme();
+  const styles = createStyles(theme, isDarkMode);
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -58,9 +62,10 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <LinearGradient
-      colors={[COLORS.bg, '#121611']}
+      colors={isDarkMode ? [theme.bg, '#121611'] : [theme.bg, '#F0F2F5']}
       style={styles.container}
     >
+      <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
@@ -71,7 +76,7 @@ export default function LoginScreen({ navigation }) {
         >
           <View style={styles.headerContainer}>
             <View style={styles.iconCircle}>
-              <Ionicons name="football" size={moderateScale(50)} color={COLORS.accent} />
+              <Ionicons name="football" size={moderateScale(50)} color={theme.accent} />
             </View>
             <Text style={styles.appName}>APEX</Text>
             <Text style={styles.subtitle}>Welcome Back, Hunter</Text>
@@ -79,11 +84,11 @@ export default function LoginScreen({ navigation }) {
 
           <View style={styles.formContainer}>
             <View style={styles.inputWrapper}>
-              <Ionicons name="mail-outline" size={moderateScale(20)} color={COLORS.textSecondary} style={styles.inputIcon} />
+              <Ionicons name="mail-outline" size={moderateScale(20)} color={theme.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Email Address"
-                placeholderTextColor={COLORS.textSecondary}
+                placeholderTextColor={theme.textSecondary}
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
@@ -92,11 +97,11 @@ export default function LoginScreen({ navigation }) {
             </View>
 
             <View style={styles.inputWrapper}>
-              <Ionicons name="lock-closed-outline" size={moderateScale(20)} color={COLORS.textSecondary} style={styles.inputIcon} />
+              <Ionicons name="lock-closed-outline" size={moderateScale(20)} color={theme.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Password"
-                placeholderTextColor={COLORS.textSecondary}
+                placeholderTextColor={theme.textSecondary}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -105,7 +110,7 @@ export default function LoginScreen({ navigation }) {
                 <Ionicons 
                   name={showPassword ? "eye-off-outline" : "eye-outline"} 
                   size={moderateScale(20)} 
-                  color={COLORS.textSecondary} 
+                  color={theme.textSecondary} 
                 />
               </TouchableOpacity>
             </View>
@@ -120,7 +125,7 @@ export default function LoginScreen({ navigation }) {
               activeOpacity={0.8}
             >
               <LinearGradient
-                colors={[COLORS.primary, COLORS.secondary]}
+                colors={[theme.primary, theme.secondary]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.button}
@@ -146,7 +151,7 @@ export default function LoginScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme, isDarkMode) => StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -163,23 +168,23 @@ const styles = StyleSheet.create({
     width: horizontalScale(100),
     height: horizontalScale(100),
     borderRadius: moderateScale(50),
-    backgroundColor: 'rgba(98, 129, 65, 0.15)', // COLORS.primary with opacity
+    backgroundColor: isDarkMode ? 'rgba(98, 129, 65, 0.15)' : 'rgba(98, 129, 65, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: verticalScale(16),
     borderWidth: 1,
-    borderColor: 'rgba(235, 213, 171, 0.3)', // COLORS.accent with opacity
+    borderColor: isDarkMode ? 'rgba(235, 213, 171, 0.3)' : 'rgba(98, 129, 65, 0.3)',
   },
   appName: {
     fontSize: getResponsiveFontSize(42),
     fontWeight: '800',
-    color: COLORS.white,
+    color: theme.text,
     letterSpacing: 4,
     marginBottom: verticalScale(8),
   },
   subtitle: {
     fontSize: getResponsiveFontSize(16),
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     letterSpacing: 1,
   },
   formContainer: {
@@ -188,20 +193,20 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(12),
     marginBottom: verticalScale(16),
     paddingHorizontal: horizontalScale(16),
     height: verticalScale(56),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: theme.border,
   },
   inputIcon: {
     marginRight: horizontalScale(12),
   },
   input: {
     flex: 1,
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(16),
     height: '100%',
   },
@@ -210,7 +215,7 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(30),
   },
   forgotPasswordText: {
-    color: COLORS.accent,
+    color: theme.accent,
     fontSize: getResponsiveFontSize(14),
     fontWeight: '600',
   },
@@ -219,7 +224,7 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(28),
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: COLORS.primary,
+    shadowColor: theme.primary,
     shadowOffset: {
       width: 0,
       height: verticalScale(8),
@@ -229,7 +234,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   buttonText: {
-    color: COLORS.white,
+    color: '#fff',
     fontSize: getResponsiveFontSize(16),
     fontWeight: 'bold',
     letterSpacing: 1.5,
@@ -241,12 +246,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   footerText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(14),
     marginRight: horizontalScale(8),
   },
   signupText: {
-    color: COLORS.secondary,
+    color: theme.secondary,
     fontSize: getResponsiveFontSize(14),
     fontWeight: 'bold',
   },

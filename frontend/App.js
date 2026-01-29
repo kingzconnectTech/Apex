@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import auth from '@react-native-firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from './constants/colors';
 import { StatusBar } from 'expo-status-bar';
 import { moderateScale } from './utils/responsive';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { UserProvider } from './context/UserContext';
 
 // Screens
 import HomeScreen from './screens/HomeScreen';
@@ -21,33 +22,20 @@ import LeoScreen from './screens/LeoScreen';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 const HomeStack = createStackNavigator();
-
-const ApexTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    primary: COLORS.primary,
-    background: COLORS.bg,
-    card: COLORS.bg, // Tab bar and headers match background or slightly lighter
-    text: COLORS.text,
-    border: COLORS.primary,
-    notification: COLORS.accent,
-  },
-};
-
 const RootStack = createStackNavigator();
 
 function HomeStackNavigator() {
+  const { theme } = useTheme();
   return (
     <HomeStack.Navigator
       screenOptions={{
         headerStyle: {
-          backgroundColor: COLORS.bg,
+          backgroundColor: theme.bg,
           elevation: 0,
           shadowOpacity: 0,
           borderBottomWidth: 0,
         },
-        headerTintColor: COLORS.text,
+        headerTintColor: theme.text,
         headerTitleStyle: {
           fontWeight: 'bold',
         },
@@ -63,6 +51,7 @@ function HomeStackNavigator() {
 }
 
 function MainTabNavigator() {
+  const { theme } = useTheme();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -81,20 +70,20 @@ function MainTabNavigator() {
 
           return <Ionicons name={iconName} size={moderateScale(size)} color={color} />;
         },
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.textSecondary,
+        tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.textSecondary,
         tabBarStyle: {
-          backgroundColor: COLORS.bg,
-          borderTopColor: COLORS.primary,
+          backgroundColor: theme.bg,
+          borderTopColor: theme.border,
           borderTopWidth: 0.5,
         },
         headerStyle: {
-          backgroundColor: COLORS.bg,
+          backgroundColor: theme.bg,
           elevation: 0,
           shadowOpacity: 0,
           borderBottomWidth: 0,
         },
-        headerTintColor: COLORS.text,
+        headerTintColor: theme.text,
       })}
     >
       <Tab.Screen 
@@ -110,6 +99,7 @@ function MainTabNavigator() {
 }
 
 function AppStack() {
+  const { theme } = useTheme();
   return (
     <RootStack.Navigator screenOptions={{ headerShown: false }}>
       <RootStack.Screen name="MainTabs" component={MainTabNavigator} />
@@ -120,12 +110,12 @@ function AppStack() {
           headerShown: true,
           title: 'Match Analysis',
           headerStyle: {
-            backgroundColor: COLORS.bg,
+            backgroundColor: theme.bg,
             elevation: 0,
             shadowOpacity: 0,
             borderBottomWidth: 0,
           },
-          headerTintColor: COLORS.text,
+          headerTintColor: theme.text,
         }}
       />
       <RootStack.Screen 
@@ -138,11 +128,12 @@ function AppStack() {
 }
 
 function AuthStack() {
+  const { theme } = useTheme();
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        cardStyle: { backgroundColor: COLORS.bg }
+        cardStyle: { backgroundColor: theme.bg }
       }}
     >
       <Stack.Screen name="Login" component={LoginScreen} />
@@ -151,9 +142,10 @@ function AuthStack() {
   );
 }
 
-export default function App() {
+function AppContent() {
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState();
+  const { theme, isDarkMode } = useTheme();
 
   // Handle user state changes
   function onAuthStateChanged(user) {
@@ -168,10 +160,33 @@ export default function App() {
 
   if (initializing) return null; // Or a loading spinner
 
+  const navigationTheme = {
+    ...(isDarkMode ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(isDarkMode ? DarkTheme.colors : DefaultTheme.colors),
+      primary: theme.primary,
+      background: theme.bg,
+      card: theme.bg,
+      text: theme.text,
+      border: theme.border,
+      notification: theme.accent,
+    },
+  };
+
   return (
-    <NavigationContainer theme={ApexTheme}>
-      <StatusBar style="light" />
+    <NavigationContainer theme={navigationTheme}>
+      <StatusBar style={isDarkMode ? "light" : "dark"} />
       {user ? <AppStack /> : <AuthStack />}
     </NavigationContainer>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <UserProvider>
+        <AppContent />
+      </UserProvider>
+    </ThemeProvider>
   );
 }

@@ -1,15 +1,20 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, ActivityIndicator, Image, RefreshControl, Animated, Dimensions, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, ActivityIndicator, Image, RefreshControl, Animated, Dimensions, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS } from '../constants/colors';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
 import { fetchMatches } from '../services/espn';
+import { useUser } from '../context/UserContext';
+import { useTheme } from '../context/ThemeContext';
+import { GlobalBannerAd } from '../components/GlobalBannerAd';
 
 const CARD_WIDTH = width * 0.75;
 const SPACING = horizontalScale(16);
 
 export default function HomeScreen({ navigation }) {
+  const { theme, isDarkMode } = useTheme();
+  const styles = createStyles(theme, isDarkMode);
+  const { balance } = useUser();
   const [allUpcomingMatches, setAllUpcomingMatches] = useState([]);
   const [upcomingMatches, setUpcomingMatches] = useState([]);
   const [liveMatches, setLiveMatches] = useState([]);
@@ -146,7 +151,7 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.leagueBadgeText} numberOfLines={1}>{item.league}</Text>
         </View>
         <View style={styles.timeBadge}>
-            <Ionicons name="time-outline" size={12} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
+            <Ionicons name="time-outline" size={12} color={theme.textSecondary} style={{ marginRight: 4 }} />
             <Text style={styles.dateText}>{item.time}</Text>
         </View>
       </View>
@@ -169,24 +174,25 @@ export default function HomeScreen({ navigation }) {
       
       <View style={styles.cardFooter}>
         <Text style={styles.analysisLink}>Match Analysis</Text>
-        <Ionicons name="arrow-forward-circle" size={20} color={COLORS.primary} />
+        <Ionicons name="arrow-forward-circle" size={20} color={theme.primary} />
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <ScrollView 
-      style={styles.container} 
+    <View style={styles.container}>
+      <ScrollView 
+        style={{ flex: 1 }} 
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
       }
     >
       {/* Hero Section */}
       <View style={styles.heroWrapper}>
         <LinearGradient
-            colors={[COLORS.primary, '#0f2027']}
+            colors={isDarkMode ? [theme.primary, theme.bg] : [theme.primary, theme.primary]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.heroSection}
@@ -212,7 +218,7 @@ export default function HomeScreen({ navigation }) {
                     style={styles.balanceGradient}
                 >
                     <Ionicons name="wallet" size={moderateScale(14)} color="#000" />
-                    <Text style={styles.balanceText}>150 APT</Text>
+                    <Text style={styles.balanceText}>{balance} APT</Text>
                     <View style={styles.addBtn}>
                     <Ionicons name="add" size={moderateScale(10)} color="#FFF" />
                     </View>
@@ -235,7 +241,7 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => navigation.navigate('Tips')}
             >
                 <Text style={styles.huntButtonText}>START HUNTING</Text>
-                <Ionicons name="arrow-forward" size={moderateScale(20)} color={COLORS.primary} />
+                <Ionicons name="arrow-forward" size={moderateScale(20)} color={theme.primary} />
             </TouchableOpacity>
             </View>
         </LinearGradient>
@@ -247,7 +253,7 @@ export default function HomeScreen({ navigation }) {
             activeOpacity={0.9}
         >
             <LinearGradient
-                colors={['#1e1e1e', '#2a2a2a']}
+                colors={isDarkMode ? ['#1e1e1e', '#2a2a2a'] : [theme.cardBg, theme.cardBg]}
                 style={styles.leoGradient}
                 start={{x: 0, y: 0}}
                 end={{x: 1, y: 1}}
@@ -260,7 +266,7 @@ export default function HomeScreen({ navigation }) {
                         <Text style={styles.leoTitle}>Ask Leo AI</Text>
                         <Text style={styles.leoSubtitle}>Get high-confidence predictions</Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+                    <Ionicons name="chevron-forward" size={24} color={theme.textSecondary} />
                 </View>
             </LinearGradient>
         </TouchableOpacity>
@@ -289,7 +295,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-                <Ionicons name="radio-button-on" size={18} color="#FF4444" style={{ marginRight: 8 }} />
+                <Ionicons name="radio-button-on" size={18} color={theme.error} style={{ marginRight: 8 }} />
                 <Text style={styles.sectionTitle}>Live Action</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Tips')}>
@@ -313,7 +319,7 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.sectionContainer}>
         <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-                <Ionicons name="calendar" size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
+                <Ionicons name="calendar" size={18} color={theme.primary} style={{ marginRight: 8 }} />
                 <Text style={styles.sectionTitle}>Upcoming</Text>
             </View>
         </View>
@@ -340,7 +346,7 @@ export default function HomeScreen({ navigation }) {
 
         {loading ? (
           <View style={styles.loaderContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
+            <ActivityIndicator size="large" color={theme.primary} />
             <Text style={styles.loadingText}>Analyzing market data...</Text>
           </View>
         ) : upcomingMatches.length > 0 ? (
@@ -356,19 +362,21 @@ export default function HomeScreen({ navigation }) {
           />
         ) : (
           <View style={styles.emptyState}>
-            <Ionicons name="football-outline" size={moderateScale(48)} color={COLORS.textSecondary} style={{ opacity: 0.3 }} />
+            <Ionicons name="football-outline" size={moderateScale(48)} color={theme.textSecondary} style={{ opacity: 0.3 }} />
             <Text style={styles.noMatchesText}>No matches scheduled.</Text>
           </View>
         )}
       </View>
-    </ScrollView>
+      </ScrollView>
+      <GlobalBannerAd />
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme, isDarkMode) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.bg,
   },
   scrollContent: {
     flexGrow: 1,
@@ -412,7 +420,7 @@ const styles = StyleSheet.create({
   headerAppName: {
     fontSize: getResponsiveFontSize(22),
     fontWeight: '800',
-    color: COLORS.white,
+    color: theme.white,
     marginLeft: horizontalScale(10),
     letterSpacing: 1.5,
   },
@@ -453,7 +461,7 @@ const styles = StyleSheet.create({
   heroTitle: {
     fontSize: getResponsiveFontSize(42),
     fontWeight: '900',
-    color: COLORS.white,
+    color: theme.white,
     letterSpacing: 1,
     lineHeight: verticalScale(46),
     textAlign: 'center',
@@ -461,7 +469,7 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     fontSize: getResponsiveFontSize(32),
     fontWeight: '300',
-    color: COLORS.primary,
+    color: theme.primary,
     letterSpacing: 2,
     marginBottom: verticalScale(10),
     textAlign: 'center',
@@ -475,7 +483,7 @@ const styles = StyleSheet.create({
   },
   huntButton: {
     flexDirection: 'row',
-    backgroundColor: COLORS.white,
+    backgroundColor: theme.white,
     paddingVertical: verticalScale(14),
     paddingHorizontal: horizontalScale(24),
     borderRadius: moderateScale(16),
@@ -488,7 +496,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   huntButtonText: {
-    color: COLORS.primary,
+    color: theme.primary,
     fontSize: getResponsiveFontSize(15),
     fontWeight: '900',
     letterSpacing: 1,
@@ -515,7 +523,7 @@ const styles = StyleSheet.create({
   leoContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(17),
     padding: moderateScale(16),
   },
@@ -532,13 +540,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   leoTitle: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(16),
     fontWeight: 'bold',
     marginBottom: verticalScale(2),
   },
   leoSubtitle: {
-    color: 'rgba(255,255,255,0.6)',
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
   },
   statsContainer: {
@@ -550,12 +558,12 @@ const styles = StyleSheet.create({
   },
   statBox: {
     alignItems: 'center',
-    backgroundColor: '#1E1E1E',
+    backgroundColor: theme.cardBg,
     padding: moderateScale(16),
     borderRadius: moderateScale(16),
     flex: 1,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: theme.border,
   },
   statDivider: {
     width: horizontalScale(10),
@@ -563,12 +571,12 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: getResponsiveFontSize(20),
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color: theme.primary,
     marginBottom: verticalScale(4),
   },
   statLabel: {
     fontSize: getResponsiveFontSize(12),
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontWeight: '500',
   },
   sectionContainer: {
@@ -588,10 +596,10 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: getResponsiveFontSize(18),
     fontWeight: 'bold',
-    color: COLORS.white,
+    color: theme.text,
   },
   seeAllText: {
-    color: COLORS.primary,
+    color: theme.primary,
     fontSize: getResponsiveFontSize(14),
     fontWeight: '600',
   },
@@ -600,22 +608,22 @@ const styles = StyleSheet.create({
     paddingBottom: verticalScale(10),
   },
   matchCard: {
-    backgroundColor: '#1E1E1E',
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(20),
     padding: moderateScale(16),
     marginRight: SPACING,
     width: CARD_WIDTH,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: theme.border,
   },
   liveMatchCard: {
-    backgroundColor: '#1E1E1E',
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(20),
     padding: moderateScale(16),
     marginRight: SPACING,
     width: CARD_WIDTH,
     borderWidth: 1,
-    borderColor: '#FF4444',
+    borderColor: theme.error,
     overflow: 'hidden',
   },
   cardGradient: {
@@ -628,27 +636,27 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(16),
   },
   leagueBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0,0,0,0.05)',
     paddingHorizontal: horizontalScale(10),
     paddingVertical: verticalScale(4),
     borderRadius: moderateScale(8),
     maxWidth: '60%',
   },
   leagueBadgeText: {
-    color: 'rgba(255,255,255,0.8)',
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(11),
     fontWeight: '600',
   },
   timeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     paddingHorizontal: horizontalScale(8),
     paddingVertical: verticalScale(4),
     borderRadius: moderateScale(8),
   },
   dateText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(11),
     fontWeight: '500',
   },
@@ -669,7 +677,7 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   teamText: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(13),
     fontWeight: 'bold',
     textAlign: 'center',
@@ -679,7 +687,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   vsText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(14),
     fontWeight: '900',
     opacity: 0.5,
@@ -689,11 +697,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.05)',
+    borderTopColor: theme.border,
     paddingTop: verticalScale(12),
   },
   analysisLink: {
-    color: COLORS.primary,
+    color: theme.primary,
     fontSize: getResponsiveFontSize(13),
     fontWeight: '600',
   },
@@ -715,11 +723,11 @@ const styles = StyleSheet.create({
     width: horizontalScale(6),
     height: horizontalScale(6),
     borderRadius: moderateScale(3),
-    backgroundColor: '#FF4444',
+    backgroundColor: theme.error,
     marginRight: horizontalScale(6),
   },
   liveText: {
-    color: '#FF4444',
+    color: theme.error,
     fontSize: getResponsiveFontSize(11),
     fontWeight: 'bold',
   },
@@ -739,7 +747,7 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   liveTeamName: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(12),
     fontWeight: '600',
     textAlign: 'center',
@@ -749,13 +757,13 @@ const styles = StyleSheet.create({
     width: '30%',
   },
   scoreText: {
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(20),
     fontWeight: 'bold',
     marginBottom: verticalScale(4),
   },
   liveTime: {
-    color: '#FF4444',
+    color: theme.error,
     fontSize: getResponsiveFontSize(11),
     fontWeight: '600',
   },
@@ -767,18 +775,18 @@ const styles = StyleSheet.create({
   filterPill: {
     paddingHorizontal: horizontalScale(16),
     paddingVertical: verticalScale(8),
-    backgroundColor: '#1E1E1E',
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(20),
     marginRight: horizontalScale(8),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: theme.border,
   },
   filterPillActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
   },
   filterText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(13),
     fontWeight: '600',
   },
@@ -792,7 +800,7 @@ const styles = StyleSheet.create({
     padding: moderateScale(40),
   },
   loadingText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     marginTop: verticalScale(12),
     fontSize: getResponsiveFontSize(14),
   },
@@ -800,15 +808,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: moderateScale(40),
-    backgroundColor: '#1E1E1E',
+    backgroundColor: theme.cardBg,
     marginHorizontal: moderateScale(20),
     borderRadius: moderateScale(20),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: theme.border,
     borderStyle: 'dashed',
   },
   noMatchesText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     marginTop: verticalScale(16),
     fontSize: getResponsiveFontSize(14),
     fontWeight: '500',

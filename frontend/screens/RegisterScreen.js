@@ -11,21 +11,26 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Animated,
-  Easing
+  Easing,
+  StatusBar
 } from 'react-native';
 import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../constants/colors';
 import { 
   horizontalScale, 
   verticalScale, 
   moderateScale, 
   getResponsiveFontSize 
 } from '../utils/responsive';
+import { useTheme } from '../context/ThemeContext';
 
 export default function RegisterScreen({ navigation }) {
+  const { theme, isDarkMode } = useTheme();
+  const styles = createStyles(theme, isDarkMode);
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -112,7 +117,18 @@ export default function RegisterScreen({ navigation }) {
       await userCredential.user.updateProfile({
         displayName: name,
       });
-      // Optionally save DOB to Firestore here
+
+      // Create user document in Firestore
+      await firestore().collection('users').doc(userCredential.user.uid).set({
+        email: email,
+        registrationDate: firestore.FieldValue.serverTimestamp(),
+        lastActive: firestore.FieldValue.serverTimestamp(),
+        tokens: 30, // Initial token balance
+        fcmTokens: [], // Initialize empty array for FCM tokens
+        name: name,
+        dob: dob,
+      });
+
       Alert.alert('Welcome to Apex!', 'Your account has been created successfully.', [
         { text: 'Let\'s Go', onPress: () => {} } // Navigation is usually handled by auth state listener
       ]);
@@ -150,13 +166,13 @@ export default function RegisterScreen({ navigation }) {
       <Ionicons 
         name={icon} 
         size={moderateScale(20)} 
-        color={focusedInput === onFocusName ? COLORS.primary : COLORS.textSecondary} 
+        color={focusedInput === onFocusName ? theme.primary : theme.textSecondary} 
         style={styles.inputIcon} 
       />
       <TextInput
         style={styles.input}
         placeholder={placeholder}
-        placeholderTextColor={COLORS.textSecondary}
+        placeholderTextColor={theme.textSecondary}
         value={value}
         onChangeText={onChangeText}
         autoCapitalize={autoCapitalize}
@@ -170,7 +186,7 @@ export default function RegisterScreen({ navigation }) {
           <Ionicons 
             name={isSecureVisible ? "eye-off-outline" : "eye-outline"} 
             size={moderateScale(20)} 
-            color={COLORS.textSecondary} 
+            color={theme.textSecondary} 
           />
         </TouchableOpacity>
       )}
@@ -179,9 +195,10 @@ export default function RegisterScreen({ navigation }) {
 
   return (
     <LinearGradient
-      colors={[COLORS.bg, '#121611']}
+      colors={isDarkMode ? [theme.bg, '#121611'] : [theme.bg, '#F0F2F5']}
       style={styles.container}
     >
+      <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
@@ -195,7 +212,7 @@ export default function RegisterScreen({ navigation }) {
               onPress={() => navigation.goBack()}
               style={styles.backButton}
             >
-              <Ionicons name="arrow-back" size={moderateScale(24)} color={COLORS.text} />
+              <Ionicons name="arrow-back" size={moderateScale(24)} color={theme.text} />
             </TouchableOpacity>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Join the Apex Community</Text>
@@ -232,17 +249,17 @@ export default function RegisterScreen({ navigation }) {
               <Ionicons 
                 name="calendar-outline" 
                 size={moderateScale(20)} 
-                color={focusedInput === 'dob' ? COLORS.primary : COLORS.textSecondary} 
+                color={focusedInput === 'dob' ? theme.primary : theme.textSecondary} 
                 style={styles.inputIcon} 
               />
               <Text style={[
                 styles.inputText, 
-                !dobSet && { color: COLORS.textSecondary }
+                !dobSet && { color: theme.textSecondary }
               ]}>
                 {dobSet ? formatDate(dob) : 'Date of Birth'}
               </Text>
               {dobSet && (
-                <Ionicons name="checkmark-circle" size={moderateScale(18)} color={COLORS.success} />
+                <Ionicons name="checkmark-circle" size={moderateScale(18)} color={theme.success} />
               )}
             </TouchableOpacity>
 
@@ -294,7 +311,7 @@ export default function RegisterScreen({ navigation }) {
               onPress={() => setAgreeToTerms(!agreeToTerms)}
             >
               <View style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}>
-                {agreeToTerms && <Ionicons name="checkmark" size={moderateScale(14)} color={COLORS.bg} />}
+                {agreeToTerms && <Ionicons name="checkmark" size={moderateScale(14)} color={theme.bg} />}
               </View>
               <Text style={styles.termsText}>
                 I agree to the <Text style={styles.linkHighlight}>Terms of Service</Text> and <Text style={styles.linkHighlight}>Privacy Policy</Text>
@@ -308,7 +325,7 @@ export default function RegisterScreen({ navigation }) {
               style={styles.buttonContainer}
             >
               <LinearGradient
-                colors={loading ? [COLORS.textSecondary, COLORS.textSecondary] : [COLORS.primary, COLORS.secondary]}
+                colors={loading ? [theme.textSecondary, theme.textSecondary] : [theme.primary, theme.secondary]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.button}
@@ -334,8 +351,9 @@ export default function RegisterScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
+function createStyles(theme, isDarkMode) {
+  return StyleSheet.create({
+    container: {
     flex: 1,
   },
   scrollContent: {
@@ -350,7 +368,7 @@ const styles = StyleSheet.create({
     width: horizontalScale(40),
     height: horizontalScale(40),
     borderRadius: moderateScale(20),
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: theme.cardBg,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: verticalScale(20),
@@ -358,12 +376,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: getResponsiveFontSize(32),
     fontWeight: '800',
-    color: COLORS.white,
+    color: theme.text,
     marginBottom: verticalScale(8),
   },
   subtitle: {
     fontSize: getResponsiveFontSize(16),
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
   },
   formContainer: {
     width: '100%',
@@ -371,30 +389,30 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: theme.cardBg,
     borderRadius: moderateScale(12),
     marginBottom: verticalScale(16),
     paddingHorizontal: horizontalScale(16),
     height: verticalScale(56),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: theme.border,
   },
   inputWrapperFocused: {
-    borderColor: COLORS.primary,
-    backgroundColor: 'rgba(98, 129, 65, 0.1)', // Slight tint of primary
+    borderColor: theme.primary,
+    backgroundColor: isDarkMode ? 'rgba(98, 129, 65, 0.1)' : 'rgba(98, 129, 65, 0.05)',
   },
   inputIcon: {
     marginRight: horizontalScale(12),
   },
   input: {
     flex: 1,
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(16),
     height: '100%',
   },
   inputText: {
     flex: 1,
-    color: COLORS.white,
+    color: theme.text,
     fontSize: getResponsiveFontSize(16),
   },
   termsContainer: {
@@ -408,18 +426,18 @@ const styles = StyleSheet.create({
     height: horizontalScale(20),
     borderRadius: moderateScale(4),
     borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderColor: theme.primary,
     marginRight: horizontalScale(10),
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
   checkboxChecked: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.primary,
   },
   termsText: {
     flex: 1,
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(13),
     lineHeight: verticalScale(18),
   },
@@ -431,7 +449,7 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(28),
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: COLORS.primary,
+    shadowColor: theme.primary,
     shadowOffset: {
       width: 0,
       height: verticalScale(8),
@@ -441,7 +459,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   buttonText: {
-    color: COLORS.white,
+    color: '#fff',
     fontSize: getResponsiveFontSize(16),
     fontWeight: 'bold',
     letterSpacing: 1.5,
@@ -454,17 +472,18 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(20),
   },
   footerText: {
-    color: COLORS.textSecondary,
+    color: theme.textSecondary,
     fontSize: getResponsiveFontSize(14),
     marginRight: horizontalScale(8),
   },
   loginText: {
-    color: COLORS.secondary,
+    color: theme.secondary,
     fontSize: getResponsiveFontSize(14),
     fontWeight: 'bold',
   },
   linkHighlight: {
-    color: COLORS.primary,
+    color: theme.primary,
     fontWeight: 'bold',
   },
 });
+}
