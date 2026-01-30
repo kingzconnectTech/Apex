@@ -13,9 +13,9 @@ sudo apt update && sudo apt upgrade -y
 echo "Installing essential tools..."
 sudo apt install -y curl git unzip build-essential
 
-# 3. Install Node.js (LTS Version - currently v18 or v20 recommended)
+# 3. Install Node.js (LTS Version - v20 recommended for Firebase)
 echo "Installing Node.js..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 
 # 4. Install Python 3 and Dependencies
@@ -23,24 +23,35 @@ sudo apt install -y nodejs
 echo "Installing Python and dependencies..."
 sudo apt install -y python3 python3-pip python3-venv python3-pandas python3-numpy python3-requests python-is-python3
 
-# 5. Install PM2 Global
+# 5. Install PM2 Global and Log Rotation
 echo "Installing PM2 process manager..."
 sudo npm install -g pm2
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 10
+
 
 # 6. Install Project Node Dependencies
 echo "Installing Node.js project dependencies..."
+if [ -d "$HOME/apex-backend" ]; then
+    cd "$HOME/apex-backend"
+fi
+
 if [ -f "package.json" ]; then
     npm install
 else
     echo "Warning: package.json not found in current directory."
 fi
 
-# 7. Setup Firewall (UFW)
+# 6. Configure Firewall (UFW)
 echo "Configuring Firewall..."
 sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'
+sudo ufw allow 'Nginx Full' || echo "Nginx Full profile not found, using fallback ports..."
+# Fallback if 'Nginx Full' profile is missing (common on minimal installs)
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 # Enable UFW if not already enabled (be careful not to lock yourself out, usually safe on EC2 if SSH allowed)
-# sudo ufw --force enable 
+sudo ufw --force enable 
 
 # 8. Install and Configure Nginx
 echo "Installing and Configuring Nginx..."
@@ -77,10 +88,33 @@ sudo systemctl restart nginx
 echo "=================================================="
 echo "Setup Complete!"
 echo "=================================================="
-echo "Next Steps:"
-echo "1. Upload your 'serviceAccountKey.json' to the backend directory."
-echo "2. Start the application with PM2:"
-echo "   pm2 start server.js --name apex-backend"
-echo "   pm2 save"
-echo "   pm2 startup"
+# 9. Start Application with PM2 and Configure Auto-Restart
+echo "Starting Application..."
+# Stop existing if any (ignore error)
+pm2 delete apex-backend 2>/dev/null || true
+
+# Start the application
+pm2 start server.js --name apex-backend
+
+# Save the list of processes
+pm2 save
+
+# Generate and Execute Startup Script
+# This detects the init system (systemd) and configures it to start PM2 on boot
+echo "Configuring PM2 to start on system boot..."
+sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u ubuntu --hp /home/ubuntu
+pm2 save
+
+echo "=================================================="
+echo "Setup Complete!"
+echo "=================================================="
+echo "Deployment Status:"
+echo "1. Backend is RUNNING (Managed by PM2)"
+echo "2. Auto-Restart is ENABLED (Systemd)"
+echo "3. Log Rotation is ENABLED"
+echo ""
+echo "To monitor your app:"
+echo "   pm2 status"
+echo "   pm2 logs"
+echo "   pm2 monit"
 echo "=================================================="

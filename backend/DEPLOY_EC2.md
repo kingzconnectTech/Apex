@@ -1,5 +1,11 @@
 # Deploying Apex Backend to AWS EC2
 
+**Current Deployment Status:**
+- **Public IP:** `54.160.213.128`
+- **Status:** Online (Node.js + Nginx)
+- **Last Updated:** 2026-01-30
+- **Action Required:** Upload `serviceAccountKey.json` for Firebase functionality.
+
 This guide will help you deploy the Apex backend to an AWS EC2 instance.
 
 ## Prerequisites
@@ -27,7 +33,7 @@ This guide will help you deploy the Apex backend to an AWS EC2 instance.
 2.  Navigate to where you saved your key file (e.g., `cd Downloads`).
 3.  Connect using SSH:
     ```bash
-    ssh -i "apex-key.pem" ubuntu@<YOUR-EC2-PUBLIC-IP>
+    ssh -i "apex-key.pem" ubuntu@54.160.213.128
     ```
     *(Note: On Windows, you might need to adjust permissions for the key file or use Putty, but Windows 10/11 OpenSSH usually works).*
 
@@ -39,7 +45,7 @@ Run this command from your local machine (not the EC2):
 ```bash
 # Zip the backend folder first to make it faster
 # Then copy:
-scp -i "path/to/apex-key.pem" -r path/to/Apex/backend ubuntu@<YOUR-EC2-PUBLIC-IP>:~/apex-backend
+scp -i "path/to/apex-key.pem" -r path/to/Apex/backend ubuntu@54.160.213.128:~/apex-backend
 ```
 
 ### Option B: Using Git (Recommended)
@@ -57,8 +63,9 @@ Once your code is on the server and you are inside the `backend` directory:
     ```bash
     chmod +x setup_ec2.sh
     ```
-2.  Run the script:
+    IMPORTANT: If using the automated deployment, the script might be in `~/apex-backend`.
     ```bash
+    cd ~/apex-backend
     ./setup_ec2.sh
     ```
     *This script will update the system, install Node.js, Python, Nginx, and dependencies.*
@@ -67,29 +74,25 @@ Once your code is on the server and you are inside the `backend` directory:
 You need to upload your `serviceAccountKey.json` to the server.
 1.  From your local machine:
     ```bash
-    scp -i "apex-key.pem" path/to/serviceAccountKey.json ubuntu@<YOUR-EC2-PUBLIC-IP>:~/apex-backend/backend/serviceAccountKey.json
+    scp -i "apex-key.pem" path/to/serviceAccountKey.json ubuntu@54.160.213.128:~/apex-backend/serviceAccountKey.json
     ```
     *(Adjust the destination path based on where you put the code).*
 
-## Step 6: Start the Server
-1.  Back on the EC2 instance, inside the backend directory:
-    ```bash
-    pm2 start server.js --name apex-backend
-    ```
-2.  Check status:
-    ```bash
-    pm2 status
-    pm2 logs
-    ```
-3.  Make it start automatically on reboot:
-    ```bash
-    pm2 startup
-    pm2 save
-    ```
+## Step 6: Start the Server (Automated)
+The updated `setup_ec2.sh` script now automatically:
+1.  Starts the application using PM2.
+2.  Configures `systemd` to restart the app on server reboot.
+3.  Installs `pm2-logrotate` to manage log file sizes.
+4.  Saves the process list.
+
+You can verify the status by running:
+```bash
+pm2 status
+```
 
 ## Step 7: Access the API
 Your API should now be accessible at:
-`http://<YOUR-EC2-PUBLIC-IP>/`
+`http://54.160.213.128/`
 
 Test it:
-`http://<YOUR-EC2-PUBLIC-IP>/api/predict` (Postman/Curl)
+`http://54.160.213.128/` (Should say "Apex API is running")

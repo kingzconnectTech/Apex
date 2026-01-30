@@ -386,23 +386,33 @@ export const analyzeMatch = ({
             
             let preferUnder = false;
             let reasonForUnder = "";
+            let underConfidenceBoost = 0;
 
             // Signal 1: H2H is significantly lower than projection
             if (h2hAvgGoals > 0 && h2hAvgGoals < projectedTotalPoints - 8) {
                 preferUnder = true;
                 reasonForUnder = "H2H Low";
+                underConfidenceBoost += 5;
             }
             
             // Signal 2: Recent form is significantly trending down
             const recentTrend = (hLastGamePts + aLastGamePts) / 2; // Last game sum
             if (hLastGamePts > 0 && aLastGamePts > 0 && recentTrend < projectedTotalPoints - 10) {
                 preferUnder = true;
-                reasonForUnder = "Recent Games Low";
+                reasonForUnder = reasonForUnder ? reasonForUnder + " & Recent Low" : "Recent Games Low";
+                underConfidenceBoost += 5;
+            }
+
+            // Signal 3: General Low Scoring (Defensive Teams)
+            if (projectedTotalPoints < 210) {
+                 preferUnder = true;
+                 reasonForUnder = reasonForUnder ? reasonForUnder + " & Low Proj" : "Defensive Matchup";
+                 underConfidenceBoost += 5;
             }
 
             if (preferUnder) {
                 goalsPrediction = `Under ${underLine}`;
-                goalsConfidence = 65 + confidenceBoost;
+                goalsConfidence = 65 + confidenceBoost + underConfidenceBoost; // Base increased from previous implicit 65
                 factors.push({ label: `Trend: Low Scoring (${reasonForUnder})`, side: "neutral", type: "warning" });
             } else {
                 goalsPrediction = `Over ${overLine}`;

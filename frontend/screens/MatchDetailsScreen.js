@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
 import { fetchTeamDetails, fetchMatchAnalysis, fetchGamesStats } from '../services/espn';
+import { checkBackendHealth } from '../services/api';
 import { analyzeMatch } from '../utils/predictionLogic';
 import { useUser } from '../context/UserContext';
 import { Alert } from 'react-native';
@@ -85,6 +86,10 @@ export default function MatchDetailsScreen({ route, navigation }) {
     const loadData = async () => {
       if (match?.sport && match?.leagueSlug && match?.id) {
         setLoading(true);
+        
+        // Check Backend Status (Public IP)
+        checkBackendHealth().then(status => console.log('Backend Connection Status:', status));
+
         try {
           // Fetch detailed info for both teams and the match itself
           const [home, away, analysis] = await Promise.all([
