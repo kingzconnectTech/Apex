@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, ActivityIndicator, ScrollView, Platform, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, ActivityIndicator, ScrollView, Platform, Animated, Linking, TextInput, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
+import { formatNumber } from '../utils/format';
 import { RewardedAd, RewardedAdEventType, AdEventType, BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { useUser } from '../context/UserContext';
+import { useTheme } from '../context/ThemeContext';
 import { AdUnits } from '../constants/ads';
 
 const adUnitId = AdUnits.REWARDED;
@@ -55,13 +57,15 @@ const TOKEN_PACKAGES = [
 ];
 
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
-import { useTheme } from '../context/ThemeContext';
 
 export default function MarketScreen({ navigation }) {
     const { theme, isDarkMode } = useTheme();
     const styles = createStyles(theme, isDarkMode);
-    const { balance, addBalance } = useUser();
+    const { balance, addBalance, transferTokens } = useUser();
     const [loaded, setLoaded] = useState(false);
+    const [recipientEmail, setRecipientEmail] = useState('');
+    const [transferAmount, setTransferAmount] = useState('');
+    const [transferLoading, setTransferLoading] = useState(false);
     const rewardedAd = useRef(null);
     const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -78,9 +82,14 @@ export default function MarketScreen({ navigation }) {
 
         const unsubscribeEarned = ad.addAdEventListener(
             RewardedAdEventType.EARNED_REWARD,
-            reward => {
-                addBalance(2);
-                Alert.alert("Success", "You earned 2 APT!");
+            async reward => {
+                try {
+                    await addBalance(2);
+                    Alert.alert("Success", "You earned 2 APT!");
+                } catch (error) {
+                    console.error("Error adding reward:", error);
+                    Alert.alert("Error", "Could not add tokens. Please contact support.");
+                }
             },
         );
         
@@ -106,16 +115,57 @@ export default function MarketScreen({ navigation }) {
         }
     };
 
-    const handleBuy = (pack) => {
+    const handleBuy = async (pack) => {
+        const message = `Hello, I would like to purchase the ${pack.name} (${pack.tokens} APT) for ${pack.price}.`;
+        const url = `https://wa.me/gr/FUTOXBPIVAY4J1?text=${encodeURIComponent(message)}`;
+
+        try {
+            const supported = await Linking.canOpenURL(url);
+            if (supported) {
+                await Linking.openURL(url);
+            } else {
+                await Linking.openURL(url);
+            }
+        } catch (err) {
+            console.error('An error occurred', err);
+            Alert.alert('Error', 'Could not open WhatsApp.');
+        }
+    };
+
+    const handleTransfer = async () => {
+        if (!recipientEmail || !transferAmount) {
+            Alert.alert('Missing Fields', 'Please enter recipient email and amount.');
+            return;
+        }
+
+        const amount = parseInt(transferAmount);
+        if (isNaN(amount) || amount <= 0) {
+            Alert.alert('Invalid Amount', 'Please enter a valid positive number.');
+            return;
+        }
+
         Alert.alert(
-            "Confirm Purchase",
-            `Purchase ${pack.tokens} APT for ${pack.price}?`,
+            'Confirm Transfer',
+            `Are you sure you want to send ${amount} APT to ${recipientEmail}?`,
             [
-                { text: "Cancel", style: "cancel" },
-                { text: "Confirm", onPress: () => {
-                    addBalance(pack.tokens);
-                    Alert.alert("Success", "APT added to your wallet!");
-                }}
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                    text: 'Send', 
+                    onPress: async () => {
+                        Keyboard.dismiss();
+                        setTransferLoading(true);
+                        try {
+                            await transferTokens(recipientEmail.trim(), amount);
+                            Alert.alert('Success', `Successfully sent ${amount} APT to ${recipientEmail}`);
+                            setRecipientEmail('');
+                            setTransferAmount('');
+                        } catch (error) {
+                            Alert.alert('Transfer Failed', error.message);
+                        } finally {
+                            setTransferLoading(false);
+                        }
+                    }
+                }
             ]
         );
     };
@@ -153,7 +203,7 @@ export default function MarketScreen({ navigation }) {
                                     <Text style={styles.balanceLabel}>CURRENT BALANCE</Text>
                                     <View style={styles.balanceRow}>
                                         <Ionicons name="wallet" size={32} color="#000" />
-                                        <Text style={styles.balanceAmount}>{balance}</Text>
+                                        <Text style={styles.balanceAmount}>{formatNumber(balance)}</Text>
                                         <Text style={styles.balanceUnit}>APT</Text>
                                     </View>
                                 </View>
@@ -195,7 +245,7 @@ export default function MarketScreen({ navigation }) {
                                 <Ionicons name="play" size={24} color="#FFF" />
                             </LinearGradient>
                             <View style={styles.freeTextContainer}>
-                                <Text style={styles.freeTitle}>Watch Video Ad</Text>
+                                <Text style={styles.freeTitle}>Watch Short Ad</Text>
                                 <Text style={styles.freeSubtitle}>Get +2 Free APT instantly</Text>
                             </View>
                             <View style={styles.freeButton}>
@@ -208,6 +258,54 @@ export default function MarketScreen({ navigation }) {
                         </View>
                     </LinearGradient>
                 </TouchableOpacity>
+            </View>
+
+            {/* Transfer Section */}
+            <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>Transfer Tokens</Text>
+                <View style={styles.transferCard}>
+                    <View style={styles.inputRow}>
+                        <Text style={styles.inputLabel}>Recipient Email</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Enter user email"
+                            placeholderTextColor={theme.textSecondary}
+                            value={recipientEmail}
+                            onChangeText={setRecipientEmail}
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                        />
+                    </View>
+                    <View style={styles.inputRow}>
+                        <Text style={styles.inputLabel}>Amount</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="0"
+                            placeholderTextColor={theme.textSecondary}
+                            value={transferAmount}
+                            onChangeText={setTransferAmount}
+                            keyboardType="numeric"
+                        />
+                    </View>
+                    <TouchableOpacity 
+                        style={styles.sendButton} 
+                        onPress={handleTransfer}
+                        disabled={transferLoading}
+                    >
+                        <LinearGradient
+                            colors={['#667EEA', '#764BA2']}
+                            start={{x: 0, y: 0}}
+                            end={{x: 1, y: 0}}
+                            style={styles.sendButtonGradient}
+                        >
+                            {transferLoading ? (
+                                <ActivityIndicator color="#FFF" size="small" />
+                            ) : (
+                                <Text style={styles.sendButtonText}>SEND TOKENS</Text>
+                            )}
+                        </LinearGradient>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <Text style={styles.sectionTitle}>Buy Tokens</Text>
@@ -250,7 +348,7 @@ export default function MarketScreen({ navigation }) {
                     <View style={styles.infoContainer}>
                         <Text style={styles.packageName}>{item.name}</Text>
                         <View style={styles.tokenRow}>
-                            <Text style={styles.tokenAmount}>{item.tokens}</Text>
+                            <Text style={styles.tokenAmount}>{formatNumber(item.tokens)}</Text>
                             <Text style={styles.tokenLabel}>APT</Text>
                         </View>
                     </View>
@@ -274,7 +372,7 @@ export default function MarketScreen({ navigation }) {
                 columnWrapperStyle={styles.columnWrapper}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
-                ListHeaderComponent={renderHeader}
+                ListHeaderComponent={renderHeader()}
             />
             <View style={{ alignItems: 'center', backgroundColor: theme.bg }}>
                 <GlobalBannerAd />
@@ -471,6 +569,49 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     color: '#FFF',
     fontWeight: '800',
     fontSize: getResponsiveFontSize(11),
+    letterSpacing: 0.5,
+  },
+  transferCard: {
+    borderRadius: moderateScale(20),
+    backgroundColor: theme.cardBg,
+    padding: moderateScale(20),
+    marginBottom: verticalScale(24),
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+  },
+  inputRow: {
+    marginBottom: verticalScale(16),
+  },
+  inputLabel: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    marginBottom: verticalScale(8),
+    fontWeight: '600',
+  },
+  input: {
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+    borderRadius: moderateScale(12),
+    paddingHorizontal: horizontalScale(16),
+    paddingVertical: verticalScale(12),
+    color: theme.text,
+    fontSize: getResponsiveFontSize(14),
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  sendButton: {
+    borderRadius: moderateScale(12),
+    overflow: 'hidden',
+    marginTop: verticalScale(8),
+  },
+  sendButtonGradient: {
+    paddingVertical: verticalScale(12),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonText: {
+    color: '#FFF',
+    fontSize: getResponsiveFontSize(14),
+    fontWeight: 'bold',
     letterSpacing: 0.5,
   },
   listContent: {

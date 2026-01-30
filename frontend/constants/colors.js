@@ -16,7 +16,7 @@ export const THEME = {
     bg: '#FFFFFF',
     primary: '#628141',
     secondary: '#8BAE66',
-    accent: '#EBD5AB',
+    accent: '#B08D55', // Darker gold for better visibility on white
     white: '#FFFFFF',
     text: '#333333',
     textSecondary: '#666666',

@@ -1,0 +1,25 @@
+
+
+StatusCode        : 200
+StatusDescription : OK
+Content           : {"team":{"id":"1","uid":"s:40~l:46~t:1","slug":"atlanta-hawks","location":
+                    "Atlanta","name":"Hawks","abbreviation":"ATL","displayName":"Atlanta 
+                    Hawks","shortDisplayName":"Hawks","color":"c8102e","alter...
+RawContent        : HTTP/1.1 200 OK
+                    Access-Control-Allow-Origin: *
+                    Access-Control-Allow-Methods: GET,PUT,POST,DELETE,OPTIONS,HEAD
+                    Access-Control-Expose-Headers: content-length,location
+                    Link: <teamSummary.json#>; rel=...
+Forms             : {}
+Headers           : {[Access-Control-Allow-Origin, *], [Access-Control-Allow-Methods, 
+                    GET,PUT,POST,DELETE,OPTIONS,HEAD], [Access-Control-Expose-Headers, 
+                    content-length,location], [Link, <teamSummary.json#>; 
+                    rel="describedby"]...}
+Images            : {}
+InputFields       : {}
+Links             : {}
+ParsedHtml        : System.__ComObject
+RawContentLength  : 18095
+
+
+

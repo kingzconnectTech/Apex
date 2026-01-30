@@ -27,6 +27,56 @@ import {
 } from '../utils/responsive';
 import { useTheme } from '../context/ThemeContext';
 
+const InputField = ({ 
+  icon, 
+  placeholder, 
+  value, 
+  onChangeText, 
+  secureTextEntry, 
+  toggleSecure, 
+  isSecureVisible,
+  keyboardType = 'default',
+  autoCapitalize = 'none',
+  onFocusName,
+  styles,
+  theme,
+  focusedInput,
+  setFocusedInput
+}) => (
+  <View style={[
+    styles.inputWrapper,
+    focusedInput === onFocusName && styles.inputWrapperFocused
+  ]}>
+    <Ionicons 
+      name={icon} 
+      size={moderateScale(20)} 
+      color={focusedInput === onFocusName ? theme.primary : theme.textSecondary} 
+      style={styles.inputIcon} 
+    />
+    <TextInput
+      style={styles.input}
+      placeholder={placeholder}
+      placeholderTextColor={theme.textSecondary}
+      value={value}
+      onChangeText={onChangeText}
+      autoCapitalize={autoCapitalize}
+      keyboardType={keyboardType}
+      secureTextEntry={secureTextEntry}
+      onFocus={() => setFocusedInput(onFocusName)}
+      onBlur={() => setFocusedInput(null)}
+    />
+    {toggleSecure && (
+      <TouchableOpacity onPress={toggleSecure}>
+        <Ionicons 
+          name={isSecureVisible ? "eye-off-outline" : "eye-outline"} 
+          size={moderateScale(20)} 
+          color={theme.textSecondary} 
+        />
+      </TouchableOpacity>
+    )}
+  </View>
+);
+
 export default function RegisterScreen({ navigation }) {
   const { theme, isDarkMode } = useTheme();
   const styles = createStyles(theme, isDarkMode);
@@ -35,7 +85,12 @@ export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [dob, setDob] = useState(new Date());
+  
+  // Calculate date 18 years ago for default and max validation
+  const today = new Date();
+  const eighteenYearsAgo = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
+  
+  const [dob, setDob] = useState(eighteenYearsAgo);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dobSet, setDobSet] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -89,6 +144,12 @@ export default function RegisterScreen({ navigation }) {
     });
   };
 
+  // Track mounted state to avoid setting state on unmounted component
+  const isMounted = useRef(true);
+  useEffect(() => {
+    return () => { isMounted.current = false; };
+  }, []);
+
   const handleRegister = async () => {
     if (!name || !email || !password || !confirmPassword || !dobSet) {
       Alert.alert('Missing Information', 'Please fill in all fields to continue.');
@@ -113,85 +174,79 @@ export default function RegisterScreen({ navigation }) {
 
     setLoading(true);
     try {
+      // 1. Create Auth User
       const userCredential = await auth().createUserWithEmailAndPassword(email, password);
-      await userCredential.user.updateProfile({
-        displayName: name,
-      });
-
-      // Create user document in Firestore
-      await firestore().collection('users').doc(userCredential.user.uid).set({
-        email: email,
-        registrationDate: firestore.FieldValue.serverTimestamp(),
-        lastActive: firestore.FieldValue.serverTimestamp(),
-        tokens: 30, // Initial token balance
-        fcmTokens: [], // Initialize empty array for FCM tokens
-        name: name,
-        dob: dob,
-      });
-
-      Alert.alert('Welcome to Apex!', 'Your account has been created successfully.', [
-        { text: 'Let\'s Go', onPress: () => {} } // Navigation is usually handled by auth state listener
-      ]);
-    } catch (error) {
-      let errorMessage = 'Something went wrong. Please try again.';
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'That email address is already in use!';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'That email address is invalid!';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password should be at least 6 characters.';
+      
+      // 2. Update Profile (Non-critical)
+      try {
+        await userCredential.user.updateProfile({
+          displayName: name,
+        });
+      } catch (profileError) {
+        console.log('Profile update failed:', profileError);
       }
-      Alert.alert('Registration Failed', errorMessage);
+
+      // 3. Create Firestore Document (Critical)
+      try {
+        const userData = {
+          email: email,
+          registrationDate: new Date(), // Use client-side timestamp to avoid FieldValue issues
+          lastActive: new Date(),
+          tokens: 30, // Initial token balance
+          fcmTokens: [], // Initialize empty array for FCM tokens
+          name: name,
+          dob: dob, // Date object is supported by Firestore
+        };
+        
+        console.log("Attempting to write user data for:", userCredential.user.uid, userData);
+        
+        await firestore().collection('users').doc(userCredential.user.uid).set(userData);
+        console.log("Firestore write successful");
+      } catch (firestoreError) {
+        console.error("Firestore write failed: ", firestoreError);
+        // Rollback: Delete the user if Firestore write fails to prevent zombie accounts
+        if (auth().currentUser) {
+            try {
+                await auth().currentUser.delete();
+                console.log("Rolled back user creation due to Firestore failure");
+            } catch (deleteError) {
+                console.error("Failed to rollback user creation: ", deleteError);
+            }
+        }
+        throw firestoreError;
+      }
+
+      // Only show success alert if component is still mounted
+      if (isMounted.current) {
+        Alert.alert('Welcome to Apex!', 'Your account has been created successfully.', [
+          { text: 'Let\'s Go', onPress: () => {} }
+        ]);
+      }
+    } catch (error) {
+      console.error("Registration error: ", error);
+      
+      if (isMounted.current) {
+        let errorMessage = 'Something went wrong. Please try again.';
+        
+        // Handle Firestore permission denied specifically
+        if (error.message && error.message.includes('permission-denied')) {
+            errorMessage = 'Registration failed due to server permissions. Please contact support.';
+        } else if (error.code === 'auth/email-already-in-use') {
+          errorMessage = 'That email address is already in use!';
+        } else if (error.code === 'auth/invalid-email') {
+          errorMessage = 'That email address is invalid!';
+        } else if (error.code === 'auth/weak-password') {
+          errorMessage = 'Password should be at least 6 characters.';
+        }
+        
+        Alert.alert('Registration Failed', errorMessage);
+      }
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
   };
-
-  const InputField = ({ 
-    icon, 
-    placeholder, 
-    value, 
-    onChangeText, 
-    secureTextEntry, 
-    toggleSecure, 
-    isSecureVisible,
-    keyboardType = 'default',
-    autoCapitalize = 'none',
-    onFocusName
-  }) => (
-    <View style={[
-      styles.inputWrapper,
-      focusedInput === onFocusName && styles.inputWrapperFocused
-    ]}>
-      <Ionicons 
-        name={icon} 
-        size={moderateScale(20)} 
-        color={focusedInput === onFocusName ? theme.primary : theme.textSecondary} 
-        style={styles.inputIcon} 
-      />
-      <TextInput
-        style={styles.input}
-        placeholder={placeholder}
-        placeholderTextColor={theme.textSecondary}
-        value={value}
-        onChangeText={onChangeText}
-        autoCapitalize={autoCapitalize}
-        keyboardType={keyboardType}
-        secureTextEntry={secureTextEntry}
-        onFocus={() => setFocusedInput(onFocusName)}
-        onBlur={() => setFocusedInput(null)}
-      />
-      {toggleSecure && (
-        <TouchableOpacity onPress={toggleSecure}>
-          <Ionicons 
-            name={isSecureVisible ? "eye-off-outline" : "eye-outline"} 
-            size={moderateScale(20)} 
-            color={theme.textSecondary} 
-          />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
 
   return (
     <LinearGradient
@@ -234,6 +289,10 @@ export default function RegisterScreen({ navigation }) {
               onChangeText={setName}
               autoCapitalize="words"
               onFocusName="name"
+              styles={styles}
+              theme={theme}
+              focusedInput={focusedInput}
+              setFocusedInput={setFocusedInput}
             />
 
             <TouchableOpacity 
@@ -271,7 +330,7 @@ export default function RegisterScreen({ navigation }) {
                 is24Hour={true}
                 display="default"
                 onChange={onDateChange}
-                maximumDate={new Date()}
+                maximumDate={eighteenYearsAgo}
               />
             )}
 
@@ -282,6 +341,10 @@ export default function RegisterScreen({ navigation }) {
               onChangeText={setEmail}
               keyboardType="email-address"
               onFocusName="email"
+              styles={styles}
+              theme={theme}
+              focusedInput={focusedInput}
+              setFocusedInput={setFocusedInput}
             />
 
             <InputField 
@@ -293,6 +356,10 @@ export default function RegisterScreen({ navigation }) {
               toggleSecure={() => setShowPassword(!showPassword)}
               isSecureVisible={showPassword}
               onFocusName="password"
+              styles={styles}
+              theme={theme}
+              focusedInput={focusedInput}
+              setFocusedInput={setFocusedInput}
             />
 
             <InputField 
@@ -304,19 +371,27 @@ export default function RegisterScreen({ navigation }) {
               toggleSecure={() => setShowConfirmPassword(!showConfirmPassword)}
               isSecureVisible={showConfirmPassword}
               onFocusName="confirmPassword"
+              styles={styles}
+              theme={theme}
+              focusedInput={focusedInput}
+              setFocusedInput={setFocusedInput}
             />
 
-            <TouchableOpacity 
-              style={styles.termsContainer}
-              onPress={() => setAgreeToTerms(!agreeToTerms)}
-            >
-              <View style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}>
-                {agreeToTerms && <Ionicons name="checkmark" size={moderateScale(14)} color={theme.bg} />}
-              </View>
+            <View style={styles.termsContainer}>
+              <TouchableOpacity 
+                onPress={() => setAgreeToTerms(!agreeToTerms)}
+              >
+                <View style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}>
+                  {agreeToTerms && <Ionicons name="checkmark" size={moderateScale(14)} color={theme.bg} />}
+                </View>
+              </TouchableOpacity>
               <Text style={styles.termsText}>
-                I agree to the <Text style={styles.linkHighlight}>Terms of Service</Text> and <Text style={styles.linkHighlight}>Privacy Policy</Text>
+                <Text onPress={() => setAgreeToTerms(!agreeToTerms)}>I agree to the </Text>
+                <Text style={styles.linkHighlight} onPress={() => navigation.navigate('Terms')}>Terms of Service</Text>
+                <Text onPress={() => setAgreeToTerms(!agreeToTerms)}> and </Text>
+                <Text style={styles.linkHighlight} onPress={() => navigation.navigate('PrivacyPolicy')}>Privacy Policy</Text>
               </Text>
-            </TouchableOpacity>
+            </View>
 
             <TouchableOpacity 
               onPress={handleRegister}

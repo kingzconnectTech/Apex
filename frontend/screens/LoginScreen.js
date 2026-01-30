@@ -10,7 +10,8 @@ import {
   KeyboardAvoidingView, 
   Platform,
   ScrollView,
-  StatusBar
+  StatusBar,
+  Image
 } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -75,10 +76,15 @@ export default function LoginScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.headerContainer}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="football" size={moderateScale(50)} color={theme.accent} />
-            </View>
-            <Text style={styles.appName}>APEX</Text>
+            <Image 
+              source={require('../assets/Logo_B.png')}
+              style={{
+                width: horizontalScale(500),
+                height: horizontalScale(500),
+                resizeMode: 'contain',
+                marginBottom: verticalScale(-150)
+              }}
+            />
             <Text style={styles.subtitle}>Welcome Back, Hunter</Text>
           </View>
 
@@ -163,24 +169,6 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
   headerContainer: {
     alignItems: 'center',
     marginBottom: verticalScale(50),
-  },
-  iconCircle: {
-    width: horizontalScale(100),
-    height: horizontalScale(100),
-    borderRadius: moderateScale(50),
-    backgroundColor: isDarkMode ? 'rgba(98, 129, 65, 0.15)' : 'rgba(98, 129, 65, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: verticalScale(16),
-    borderWidth: 1,
-    borderColor: isDarkMode ? 'rgba(235, 213, 171, 0.3)' : 'rgba(98, 129, 65, 0.3)',
-  },
-  appName: {
-    fontSize: getResponsiveFontSize(42),
-    fontWeight: '800',
-    color: theme.text,
-    letterSpacing: 4,
-    marginBottom: verticalScale(8),
   },
   subtitle: {
     fontSize: getResponsiveFontSize(16),

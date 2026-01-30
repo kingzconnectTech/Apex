@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    match /users/{userId} {
+      // 1. READ: Allow any logged-in user to read profiles
+      // Required so users can look up recipients by email
+      allow read: if request.auth != null;
+      
+      // 2. CREATE: Users can only create their own profile
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // 3. UPDATE: 
+      allow update: if request.auth != null && (
+        // Case A: User is updating their own account (spending tokens, etc.)
+        request.auth.uid == userId 
+        || 
+        // Case B: Secure Token Transfer (Sender updating Recipient's balance)
+        (
+          // Ensure we are only modifying the 'tokens' field
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tokens']) &&
+          
+          // Ensure tokens are being ADDED to this document (the recipient)
+          request.resource.data.tokens > resource.data.tokens &&
+          
+          // SECURITY CRITICAL: Enforce Atomic Swap
+          // The amount added to THIS document (recipient) must equal 
+          // the amount deducted from the SENDER'S document (request.auth.uid)
+          // in the same transaction.
+          (
+             request.resource.data.tokens - resource.data.tokens == 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tokens - 
+             getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.tokens
+          )
+        )
+      );
+    }
+    
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

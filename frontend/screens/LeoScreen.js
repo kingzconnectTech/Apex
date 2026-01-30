@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, FlatList, Platform, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, FlatList, Platform, Alert, Image, Animated, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { InterstitialAd, AdEventType } from 'react-native-google-mobile-ads';
 import { AdUnits } from '../constants/ads';
@@ -11,6 +11,7 @@ import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } 
 import { fetchMatches, fetchTeamDetails, fetchMatchAnalysis } from '../services/espn';
 import { analyzeMatch } from '../utils/predictionLogic';
 import { useUser } from '../context/UserContext';
+import { useTheme } from '../context/ThemeContext';
 
 const SPORTS = [
   { id: 'soccer', name: 'Football', icon: 'football' },
@@ -77,6 +78,25 @@ export default function LeoScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
 
+  // Scanning Animation State
+  const scanAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (loading) {
+      scanAnim.setValue(0);
+      Animated.loop(
+        Animated.timing(scanAnim, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      scanAnim.stopAnimation();
+    }
+  }, [loading]);
+
   const toggleSport = (sportId) => {
     setSelectedSports(prev => {
       if (prev.includes(sportId)) {
@@ -88,7 +108,8 @@ export default function LeoScreen({ navigation }) {
   };
 
   const handleChase = async () => {
-    if (!subtractBalance(8)) {
+    const success = await subtractBalance(8);
+    if (!success) {
         Alert.alert(
             "Insufficient Balance", 
             "You need 8 APT to ask Leo for predictions.",
@@ -367,7 +388,38 @@ export default function LeoScreen({ navigation }) {
                     </LinearGradient>
                 )}
             </TouchableOpacity>
+            <Text style={styles.costText}>Cost: 8 APT per chase</Text>
         </View>
+
+        {/* Scanning Animation */}
+        {loading && (
+            <View style={styles.scanningContainer}>
+                <View style={styles.scannerBox}>
+                    <Ionicons name="finger-print" size={80} color={theme.textSecondary} style={{ opacity: 0.1 }} />
+                    <Animated.View 
+                        style={[
+                            styles.scanLine, 
+                            { 
+                                transform: [{ 
+                                    translateY: scanAnim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [0, verticalScale(150)] 
+                                    })
+                                }] 
+                            }
+                        ]} 
+                    >
+                        <LinearGradient
+                            colors={['transparent', theme.accent, 'transparent']}
+                            start={{x: 0, y: 0}}
+                            end={{x: 1, y: 0}}
+                            style={{ flex: 1 }}
+                        />
+                    </Animated.View>
+                </View>
+                <Text style={styles.scanningText}>Analyzing matchups...</Text>
+            </View>
+        )}
 
         {/* Results Section */}
         {results && (
@@ -512,6 +564,12 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     marginRight: horizontalScale(8),
     letterSpacing: 1,
   },
+  costText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    textAlign: 'center',
+    marginTop: verticalScale(8),
+  },
   resultsSection: {
     marginTop: verticalScale(10),
   },
@@ -595,5 +653,40 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     fontSize: getResponsiveFontSize(14),
     fontWeight: 'bold',
     flex: 1,
+  },
+  scanningContainer: {
+    marginTop: verticalScale(20),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scannerBox: {
+    width: horizontalScale(250),
+    height: verticalScale(150),
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: moderateScale(16),
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+  },
+  scanLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    shadowColor: theme.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  scanningText: {
+    marginTop: verticalScale(15),
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(14),
+    letterSpacing: 1,
+    fontWeight: '600',
   },
 });

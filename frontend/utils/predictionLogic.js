@@ -26,6 +26,12 @@ export const analyzeMatch = ({
     let homeScore = 0;
     let awayScore = 0;
     
+    // Team Totals (Declared here to ensure scope access)
+    let homeTeamTotalPrediction = null;
+    let homeTeamTotalConfidence = 0;
+    let awayTeamTotalPrediction = null;
+    let awayTeamTotalConfidence = 0;
+    
     // --- Helper: Parse Record (e.g., "10-5-2") ---
     const parseRecord = (record) => {
         if (!record) return { w: 0, l: 0, d: 0, played: 0, winPct: 0 };
@@ -244,26 +250,32 @@ export const analyzeMatch = ({
     let winPrediction = null;
     let winConfidence = 0;
 
-    if (diff > 25) {
-        winPrediction = `${homeName} to Win`;
-        winConfidence = Math.min(60 + (diff / 2), 95);
-    } else if (diff < -25) {
-        winPrediction = `${awayName} to Win`;
-        winConfidence = Math.min(60 + (Math.abs(diff) / 2), 95);
-    } else if (diff > 10) {
-        winPrediction = `1X (Home or Draw)`;
-        winConfidence = Math.min(70 + (diff / 2), 90);
-    } else if (diff < -10) {
-        winPrediction = `X2 (Away or Draw)`;
-        winConfidence = Math.min(70 + (Math.abs(diff) / 2), 90);
-    } else {
-        winPrediction = "Draw / Close Match";
-        winConfidence = 50 + Math.abs(diff);
+    if (!isBasketball) {
+        if (diff > 25) {
+            winPrediction = `${homeName} to Win`;
+            winConfidence = Math.min(60 + (diff / 2), 95);
+        } else if (diff < -25) {
+            winPrediction = `${awayName} to Win`;
+            winConfidence = Math.min(60 + (Math.abs(diff) / 2), 95);
+        } else if (diff > 10) {
+            winPrediction = `1X (Home or Draw)`;
+            winConfidence = Math.min(70 + (diff / 2), 90);
+        } else if (diff < -10) {
+            winPrediction = `X2 (Away or Draw)`;
+            winConfidence = Math.min(70 + (Math.abs(diff) / 2), 90);
+        } else {
+            winPrediction = "Draw / Close Match";
+            winConfidence = 50 + Math.abs(diff);
+        }
     }
 
     // B. Goals / Totals Logic (Only if detailed stats available)
     let goalsPrediction = null;
     let goalsConfidence = 0;
+
+    // Shared state for Basketball
+    let projectedTotalPoints = 0;
+    let projectedMargin = 0;
 
     if (hAvgScored > 0 && aAvgScored > 0) {
         if (!isBasketball) {
@@ -329,6 +341,8 @@ export const analyzeMatch = ({
                 totalPoints = (totalPoints * 0.8) + (recentTrend * 0.2);
             }
 
+            projectedTotalPoints = totalPoints;
+
             // Set a "Line" to predict against
             const predictedLine = Math.round(totalPoints);
             
@@ -360,21 +374,21 @@ export const analyzeMatch = ({
             // Generate Prediction Lines
             // Logic: If we project 230, we predict "Over 223.5" (safe margin)
             const margin = 6.5; 
-            const overLine = Math.floor(totalPoints - margin) + 0.5;
-            const underLine = Math.ceil(totalPoints + margin) - 0.5;
+            const overLine = Math.floor(projectedTotalPoints - margin) + 0.5;
+            const underLine = Math.ceil(projectedTotalPoints + margin) - 0.5;
 
             // Determine Over/Under
-            if (totalPoints > 220) {
+            if (projectedTotalPoints > 220) {
                 goalsPrediction = `Over ${overLine}`;
                 goalsConfidence = 70 + confidenceBoost;
                 factors.push({ label: `Proj. Total ${predictedLine} Pts`, side: "neutral", type: "success" });
-            } else if (totalPoints < 210) {
+            } else if (projectedTotalPoints < 210) {
                 goalsPrediction = `Under ${underLine}`;
                 goalsConfidence = 70 + confidenceBoost;
                 factors.push({ label: `Proj. Total ${predictedLine} Pts`, side: "neutral", type: "warning" });
             } else {
                 // Middle ground
-                if (hLastGamePts > totalPoints/2 && aLastGamePts > totalPoints/2) {
+                if (hLastGamePts > projectedTotalPoints/2 && aLastGamePts > projectedTotalPoints/2) {
                      goalsPrediction = `Over ${overLine}`;
                      goalsConfidence = 65;
                      factors.push({ label: "Recent Games High Scoring", side: "neutral", type: "info" });
@@ -409,7 +423,7 @@ export const analyzeMatch = ({
 
         // 2. Base Expected Margin
         // If Home is +10 and Away is -5, Exp Margin = +15 (Home wins by 15)
-        let expMargin = homeRating - awayRating;
+        projectedMargin = homeRating - awayRating;
 
         // 3. Adjust for Fatigue (Rest Days)
         // Check date of last match
@@ -423,11 +437,11 @@ export const analyzeMatch = ({
         };
 
         if (checkFatigue(homeStats.lastMatches)) {
-            expMargin -= 4; // Fatigue Penalty
+            projectedMargin -= 4; // Fatigue Penalty
             factors.push({ label: "Home Fatigue (Short Rest)", side: "away", type: "warning" });
         }
         if (checkFatigue(awayStats.lastMatches)) {
-            expMargin += 4; // Fatigue Bonus for Home (Away tired)
+            projectedMargin += 4; // Fatigue Bonus for Home (Away tired)
             factors.push({ label: "Away Fatigue (Short Rest)", side: "home", type: "success" });
         }
 
@@ -447,8 +461,8 @@ export const analyzeMatch = ({
             // Simplified: If Home dominates H2H (>60% wins), boost margin
             const total = h2h.homeWins + h2h.awayWins;
             if (total > 0) {
-                if (h2h.homeWins / total > 0.6) expMargin += 3;
-                if (h2h.awayWins / total > 0.6) expMargin -= 3;
+                if (h2h.homeWins / total > 0.6) projectedMargin += 3;
+                if (h2h.awayWins / total > 0.6) projectedMargin -= 3;
             }
         }
 
@@ -462,21 +476,24 @@ export const analyzeMatch = ({
         
         const spreadBuffer = 3.5; 
         
-        if (expMargin > 5) {
+        // DISABLE SPREAD PREDICTION FOR BASKETBALL (User Request: Only Totals or Team Totals)
+        // We still calculated projectedMargin above, which is needed for Team Totals.
+        /*
+        if (projectedMargin > 5) {
             // Home Favorite
-            const line = Math.floor(expMargin - spreadBuffer) + 0.5; // e.g. 10 -> 6.5
+            const line = Math.floor(projectedMargin - spreadBuffer) + 0.5; // e.g. 10 -> 6.5
             if (line > 0) {
                 spreadPrediction = `${homeName} ${-line}`; // e.g. "Lakers -6.5"
                 spreadConfidence = 75; // Baseline high for clear favorites
-                factors.push({ label: `Proj. Margin +${Math.round(expMargin)}`, side: "home", type: "success" });
+                factors.push({ label: `Proj. Margin +${Math.round(projectedMargin)}`, side: "home", type: "success" });
             }
-        } else if (expMargin < -5) {
+        } else if (projectedMargin < -5) {
             // Away Favorite
-            const line = Math.floor(Math.abs(expMargin) - spreadBuffer) + 0.5;
+            const line = Math.floor(Math.abs(projectedMargin) - spreadBuffer) + 0.5;
             if (line > 0) {
                 spreadPrediction = `${awayName} ${-line}`; // e.g. "Celtics -6.5"
                 spreadConfidence = 75;
-                factors.push({ label: `Proj. Margin ${Math.round(expMargin)}`, side: "away", type: "success" });
+                factors.push({ label: `Proj. Margin ${Math.round(projectedMargin)}`, side: "away", type: "success" });
             }
         } else {
             // Close game - Predicting spread is risky without knowing book line.
@@ -490,7 +507,43 @@ export const analyzeMatch = ({
         // If Last Game Margin is consistent with Avg, boost confidence.
         const homeLastMargin = homeStats.lastMatches.length > 0 ? (parseInt(homeStats.lastMatches[0].pf) - parseInt(homeStats.lastMatches[0].pa)) : 0;
         if (Math.abs(homeLastMargin - homeRating) < 5) spreadConfidence += 5; // Consistent form
+        */
 
+        // --- BASKETBALL TEAM TOTALS LOGIC ---
+        // Implied Score = (Total + Margin) / 2
+        // e.g. Total 220, Home +10. Home = 115, Away = 105.
+        
+        if (projectedTotalPoints > 0) {
+            const impliedHomeScore = (projectedTotalPoints + projectedMargin) / 2;
+            const impliedAwayScore = (projectedTotalPoints - projectedMargin) / 2;
+            
+            const teamTotalBuffer = 4.5; // Safety margin
+            
+            // Home Team Total Prediction
+            const homeLine = Math.floor(impliedHomeScore - teamTotalBuffer) + 0.5;
+            if (impliedHomeScore > 100) { // Basic sanity check
+                 homeTeamTotalPrediction = `${homeName} Over ${homeLine}`;
+                 // Confidence based on how strong the scoring data is
+                 homeTeamTotalConfidence = 65; 
+                 if (homeStats.lastMatches && homeStats.lastMatches.length > 0) {
+                     const avg = homeStats.lastMatches.reduce((s, m) => s + parseInt(m.pf), 0) / homeStats.lastMatches.length;
+                     if (avg > homeLine + 5) homeTeamTotalConfidence += 10;
+                 }
+                 factors.push({ label: `Implied Home Score ${Math.round(impliedHomeScore)}`, side: "home", type: "info" });
+            }
+
+            // Away Team Total Prediction
+            const awayLine = Math.floor(impliedAwayScore - teamTotalBuffer) + 0.5;
+             if (impliedAwayScore > 100) {
+                 awayTeamTotalPrediction = `${awayName} Over ${awayLine}`;
+                 awayTeamTotalConfidence = 65;
+                 if (awayStats.lastMatches && awayStats.lastMatches.length > 0) {
+                     const avg = awayStats.lastMatches.reduce((s, m) => s + parseInt(m.pf), 0) / awayStats.lastMatches.length;
+                     if (avg > awayLine + 5) awayTeamTotalConfidence += 10;
+                 }
+                 factors.push({ label: `Implied Away Score ${Math.round(impliedAwayScore)}`, side: "away", type: "info" });
+            }
+        }
     }
 
     // C. Select Best Prediction (Highest Confidence Wins)
@@ -499,17 +552,19 @@ export const analyzeMatch = ({
     const candidates = [];
 
     // 1. Win Prediction Candidate
-    let winColor = COLORS.textSecondary;
-    if (winPrediction.includes(homeName)) winColor = COLORS.success;
-    else if (winPrediction.includes(awayName)) winColor = COLORS.error;
-    else if (winPrediction.includes('1X')) winColor = '#4dabf7'; 
-    else if (winPrediction.includes('X2')) winColor = '#ff8787'; 
-    
-    candidates.push({
-        text: winPrediction,
-        confidence: winConfidence,
-        color: winColor
-    });
+    if (winPrediction) {
+        let winColor = COLORS.textSecondary;
+        if (winPrediction.includes(homeName)) winColor = COLORS.success;
+        else if (winPrediction.includes(awayName)) winColor = COLORS.error;
+        else if (winPrediction.includes('1X')) winColor = '#4dabf7'; 
+        else if (winPrediction.includes('X2')) winColor = '#ff8787'; 
+        
+        candidates.push({
+            text: winPrediction,
+            confidence: winConfidence,
+            color: winColor
+        });
+    }
 
     // 2. Goals/Total Prediction Candidate
     if (goalsPrediction) {
@@ -528,6 +583,22 @@ export const analyzeMatch = ({
             confidence: spreadConfidence,
             color: spreadColor
          });
+    }
+
+    // 4. Team Totals Candidates
+    if (homeTeamTotalPrediction) {
+        candidates.push({
+            text: homeTeamTotalPrediction,
+            confidence: homeTeamTotalConfidence,
+            color: COLORS.info
+        });
+    }
+    if (awayTeamTotalPrediction) {
+        candidates.push({
+            text: awayTeamTotalPrediction,
+            confidence: awayTeamTotalConfidence,
+            color: COLORS.info
+        });
     }
 
     // 4. Sort by confidence (descending)

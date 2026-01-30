@@ -381,8 +381,9 @@ export default function MatchDetailsScreen({ route, navigation }) {
       return theme.error; // Low - Red
   };
 
-  const handleUnlockPrediction = () => {
-    if (subtractBalance(3)) {
+  const handleUnlockPrediction = async () => {
+    const success = await subtractBalance(3);
+    if (success) {
         setShowPrediction(true);
     } else {
         Alert.alert(
@@ -409,7 +410,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
         >
             <SafeAreaView edges={['top', 'left', 'right']}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={theme.white} />
+                    <Ionicons name="arrow-back" size={24} color={theme.text} />
                 </TouchableOpacity>
                 <Text style={styles.leagueTitle}>{match?.league || 'League'}</Text>
                 
@@ -616,7 +617,7 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
       padding: 5,
   },
   leagueTitle: {
-      color: 'rgba(255,255,255,0.7)',
+      color: theme.textSecondary,
       fontSize: getResponsiveFontSize(14),
       textAlign: 'center',
       marginBottom: verticalScale(10),
@@ -640,7 +641,7 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
       marginBottom: verticalScale(8),
   },
   teamName: {
-      color: theme.white,
+      color: theme.text,
       fontSize: getResponsiveFontSize(14),
       fontWeight: 'bold',
       textAlign: 'center',
@@ -650,13 +651,13 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
       width: horizontalScale(50),
   },
   vsText: {
-      color: theme.white,
+      color: theme.text,
       fontSize: getResponsiveFontSize(24),
       fontWeight: '900',
       fontStyle: 'italic',
   },
   timeTag: {
-      backgroundColor: 'rgba(255,255,255,0.1)',
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
       paddingHorizontal: horizontalScale(8),
       paddingVertical: verticalScale(4),
       borderRadius: moderateScale(4),
@@ -668,7 +669,7 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
       fontWeight: 'bold',
   },
   venueText: {
-      color: 'rgba(255,255,255,0.5)',
+      color: theme.textSecondary,
       fontSize: getResponsiveFontSize(12),
       textAlign: 'center',
       marginTop: verticalScale(15),

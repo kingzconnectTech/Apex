@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, ActivityIndicator, Image, RefreshControl, Animated, Dimensions, Platform, StatusBar } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
+import { formatNumber } from '../utils/format';
 import { fetchMatches } from '../services/espn';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
@@ -202,8 +203,7 @@ export default function HomeScreen({ navigation }) {
             {/* Header Row */}
             <View style={styles.headerRow}>
             <View style={styles.logoContainer}>
-                <Image source={require('../assets/icon.png')} style={styles.headerLogo} />
-                <Text style={styles.headerAppName}>APEX</Text>
+                <Image source={require('../assets/Logo_A.png')} style={styles.headerLogo} />
             </View>
             
             <TouchableOpacity 
@@ -218,7 +218,7 @@ export default function HomeScreen({ navigation }) {
                     style={styles.balanceGradient}
                 >
                     <Ionicons name="wallet" size={moderateScale(14)} color="#000" />
-                    <Text style={styles.balanceText}>{balance} APT</Text>
+                    <Text style={styles.balanceText}>{formatNumber(balance)} APT</Text>
                     <View style={styles.addBtn}>
                     <Ionicons name="add" size={moderateScale(10)} color="#FFF" />
                     </View>
@@ -260,7 +260,7 @@ export default function HomeScreen({ navigation }) {
             >
                 <View style={styles.leoContent}>
                     <View style={styles.leoIconBox}>
-                        <Ionicons name="sparkles" size={24} color="#FFD700" />
+                        <MaterialCommunityIcons name="zodiac-leo" size={24} color="#FFD700" />
                     </View>
                     <View style={styles.leoTextContainer}>
                         <Text style={styles.leoTitle}>Ask Leo AI</Text>
@@ -412,17 +412,10 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     alignItems: 'center',
   },
   headerLogo: {
-    width: horizontalScale(36),
-    height: horizontalScale(36),
+    width: horizontalScale(120),
+    height: horizontalScale(80),
     resizeMode: 'contain',
-    borderRadius: moderateScale(10),
-  },
-  headerAppName: {
-    fontSize: getResponsiveFontSize(22),
-    fontWeight: '800',
-    color: theme.white,
-    marginLeft: horizontalScale(10),
-    letterSpacing: 1.5,
+    marginLeft: horizontalScale(-20),
   },
   balancePill: {
     borderRadius: moderateScale(20),
@@ -469,7 +462,7 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
   heroSubtitle: {
     fontSize: getResponsiveFontSize(32),
     fontWeight: '300',
-    color: theme.primary,
+    color: '#EBD5AB', // Bright accent color for visibility on primary background
     letterSpacing: 2,
     marginBottom: verticalScale(10),
     textAlign: 'center',

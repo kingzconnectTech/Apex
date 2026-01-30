@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Modal, Linking, TouchableWithoutFeedback } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -10,6 +10,7 @@ export default function SettingsScreen({ navigation }) {
   const { theme, isDarkMode, toggleTheme } = useTheme();
   const styles = createStyles(theme, isDarkMode);
   const user = auth().currentUser;
+  const [contactModalVisible, setContactModalVisible] = React.useState(false);
 
   const handleLogout = async () => {
     try {
@@ -45,11 +46,22 @@ export default function SettingsScreen({ navigation }) {
   };
 
   const handleContact = () => {
-    Alert.alert('Contact Support', 'Email us at support@apex.com');
+    setContactModalVisible(true);
   };
 
-  const handlePrivacyPolicy = () => {
-    Alert.alert('Privacy Policy', 'Privacy Policy placeholder...');
+  const openLink = async (url) => {
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        await Linking.openURL(url);
+      }
+    } catch (err) {
+      console.error('An error occurred', err);
+      Alert.alert('Error', 'Could not open the link.');
+    }
+    setContactModalVisible(false);
   };
 
   return (
@@ -95,10 +107,20 @@ export default function SettingsScreen({ navigation }) {
           
           <View style={[styles.separator, { backgroundColor: theme.bg }]} />
 
-          <TouchableOpacity style={styles.row} onPress={handlePrivacyPolicy}>
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('PrivacyPolicy')}>
             <View style={styles.rowLeft}>
               <Ionicons name="shield-checkmark-outline" size={moderateScale(22)} color={theme.icon} />
               <Text style={[styles.rowLabel, { color: theme.text }]}>Privacy Policy</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
+          </TouchableOpacity>
+
+          <View style={[styles.separator, { backgroundColor: theme.bg }]} />
+
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Terms')}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="document-text-outline" size={moderateScale(22)} color={theme.icon} />
+              <Text style={[styles.rowLabel, { color: theme.text }]}>Terms of Service</Text>
             </View>
             <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
           </TouchableOpacity>
@@ -126,6 +148,41 @@ export default function SettingsScreen({ navigation }) {
         
         <Text style={[styles.versionText, { color: theme.textSecondary }]}>Version 1.0.0</Text>
       </ScrollView>
+      
+      {/* Contact Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={contactModalVisible}
+        onRequestClose={() => setContactModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setContactModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.modalContent, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Contact Us</Text>
+                
+                <TouchableOpacity 
+                  style={[styles.contactOption, { borderBottomColor: theme.border, borderBottomWidth: 1 }]} 
+                  onPress={() => openLink('mailto:apexprediction01@gmail.com')}
+                >
+                  <Ionicons name="mail" size={moderateScale(24)} color={theme.primary} />
+                  <Text style={[styles.contactOptionText, { color: theme.text }]}>Email Support</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.contactOption} 
+                  onPress={() => openLink('https://wa.me/gr/FUTOXBPIVAY4J1')}
+                >
+                  <Ionicons name="logo-whatsapp" size={moderateScale(24)} color="#25D366" />
+                  <Text style={[styles.contactOptionText, { color: theme.text }]}>WhatsApp Support</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       <GlobalBannerAd />
     </View>
   );
@@ -201,5 +258,42 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     textAlign: 'center',
     marginBottom: verticalScale(30),
     fontSize: getResponsiveFontSize(12),
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '85%',
+    borderRadius: moderateScale(20),
+    padding: moderateScale(25),
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    borderWidth: 1,
+  },
+  modalTitle: {
+    fontSize: getResponsiveFontSize(20),
+    fontWeight: 'bold',
+    marginBottom: verticalScale(20),
+  },
+  contactOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: verticalScale(15),
+  },
+  contactOptionText: {
+    fontSize: getResponsiveFontSize(16),
+    marginLeft: horizontalScale(15),
+    fontWeight: '500',
   },
 });

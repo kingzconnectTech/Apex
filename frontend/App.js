@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import auth from '@react-native-firebase/auth';
@@ -18,6 +18,8 @@ import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import MatchDetailsScreen from './screens/MatchDetailsScreen';
 import LeoScreen from './screens/LeoScreen';
+import TermsScreen from './screens/TermsScreen';
+import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -123,6 +125,16 @@ function AppStack() {
         component={LeoScreen} 
         options={{ headerShown: false }}
       />
+      <RootStack.Screen 
+        name="Terms" 
+        component={TermsScreen} 
+        options={{ headerShown: false }}
+      />
+      <RootStack.Screen 
+        name="PrivacyPolicy" 
+        component={PrivacyPolicyScreen} 
+        options={{ headerShown: false }}
+      />
     </RootStack.Navigator>
   );
 }
@@ -138,6 +150,8 @@ function AuthStack() {
     >
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
+      <Stack.Screen name="Terms" component={TermsScreen} />
+      <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
     </Stack.Navigator>
   );
 }
