@@ -161,7 +161,15 @@ function AuthStack() {
 function AppContent() {
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState();
+  const [isConnected, setIsConnected] = useState(true);
   const { theme, isDarkMode } = useTheme();
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected !== false);
+    });
+    return unsubscribe;
+  }, []);
 
   // Handle user state changes
   function onAuthStateChanged(user) {
