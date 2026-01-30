@@ -194,7 +194,7 @@ export default function RegisterScreen({ navigation }) {
           email: email,
           registrationDate: new Date(), // Use client-side timestamp to avoid FieldValue issues
           lastActive: new Date(),
-          tokens: 30, // Initial token balance
+          tokens: 250, // Initial token balance
           fcmTokens: fcmToken ? [fcmToken] : [], // Initialize with FCM token if available
           name: name,
           dob: dob, // Date object is supported by Firestore

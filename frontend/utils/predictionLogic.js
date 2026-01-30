@@ -328,11 +328,14 @@ export const analyzeMatch = ({
             }
         } else {
             // --- BASKETBALL TOTALS LOGIC ---
-            let totalPoints = hAvgScored + aAvgScored; // Base expectation
+            // Improved Formula: (Home Offense + Away Defense)/2 + (Away Offense + Home Defense)/2
+            let homeExp = (hAvgScored + aAvgConceded) / 2;
+            let awayExp = (aAvgScored + hAvgConceded) / 2;
+            let totalPoints = homeExp + awayExp;
             
             // Adjust based on H2H history for Basketball
             if (h2hAvgGoals > 0) {
-                totalPoints = (totalPoints * 0.6) + (h2hAvgGoals * 0.4);
+                totalPoints = (totalPoints * 0.7) + (h2hAvgGoals * 0.3);
             }
 
             // Adjust with recent trend (last game)
@@ -373,29 +376,38 @@ export const analyzeMatch = ({
 
             // Generate Prediction Lines
             // Logic: If we project 230, we predict "Over 223.5" (safe margin)
-            const margin = 6.5; 
+            // Use percentage margin for league adaptability (3.5% of total)
+            const margin = Math.max(5, Math.round(projectedTotalPoints * 0.035)); 
             const overLine = Math.floor(projectedTotalPoints - margin) + 0.5;
             const underLine = Math.ceil(projectedTotalPoints + margin) - 0.5;
 
             // Determine Over/Under
-            if (projectedTotalPoints > 220) {
-                goalsPrediction = `Over ${overLine}`;
-                goalsConfidence = 70 + confidenceBoost;
-                factors.push({ label: `Proj. Total ${predictedLine} Pts`, side: "neutral", type: "success" });
-            } else if (projectedTotalPoints < 210) {
+            // Dynamic Logic: Bias towards Over unless strong indicators for Under exist
+            
+            let preferUnder = false;
+            let reasonForUnder = "";
+
+            // Signal 1: H2H is significantly lower than projection
+            if (h2hAvgGoals > 0 && h2hAvgGoals < projectedTotalPoints - 8) {
+                preferUnder = true;
+                reasonForUnder = "H2H Low";
+            }
+            
+            // Signal 2: Recent form is significantly trending down
+            const recentTrend = (hLastGamePts + aLastGamePts) / 2; // Last game sum
+            if (hLastGamePts > 0 && aLastGamePts > 0 && recentTrend < projectedTotalPoints - 10) {
+                preferUnder = true;
+                reasonForUnder = "Recent Games Low";
+            }
+
+            if (preferUnder) {
                 goalsPrediction = `Under ${underLine}`;
-                goalsConfidence = 70 + confidenceBoost;
-                factors.push({ label: `Proj. Total ${predictedLine} Pts`, side: "neutral", type: "warning" });
+                goalsConfidence = 65 + confidenceBoost;
+                factors.push({ label: `Trend: Low Scoring (${reasonForUnder})`, side: "neutral", type: "warning" });
             } else {
-                // Middle ground
-                if (hLastGamePts > projectedTotalPoints/2 && aLastGamePts > projectedTotalPoints/2) {
-                     goalsPrediction = `Over ${overLine}`;
-                     goalsConfidence = 65;
-                     factors.push({ label: "Recent Games High Scoring", side: "neutral", type: "info" });
-                } else {
-                     goalsPrediction = `Under ${underLine}`;
-                     goalsConfidence = 65;
-                }
+                goalsPrediction = `Over ${overLine}`;
+                goalsConfidence = 68 + confidenceBoost;
+                factors.push({ label: `Proj. Total ${predictedLine} Pts`, side: "neutral", type: "success" });
             }
         }
     }
