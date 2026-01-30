@@ -8,6 +8,8 @@ import { StatusBar } from 'expo-status-bar';
 import { moderateScale } from './utils/responsive';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { UserProvider } from './context/UserContext';
+import messaging from '@react-native-firebase/messaging';
+import { saveTokenToDatabase } from './services/notificationService';
 
 // Screens
 import HomeScreen from './screens/HomeScreen';
@@ -171,6 +173,21 @@ function AppContent() {
     const subscriber = auth().onAuthStateChanged(onAuthStateChanged);
     return subscriber; // unsubscribe on unmount
   }, []);
+
+  // Handle FCM Tokens
+  useEffect(() => {
+    if (user) {
+      // Save token when user logs in
+      saveTokenToDatabase(user.uid);
+
+      // Listen for token refresh
+      const unsubscribeToken = messaging().onTokenRefresh(token => {
+        saveTokenToDatabase(user.uid);
+      });
+
+      return unsubscribeToken;
+    }
+  }, [user]);
 
   if (initializing) return null; // Or a loading spinner
 

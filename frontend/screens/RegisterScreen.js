@@ -26,6 +26,7 @@ import {
   getResponsiveFontSize 
 } from '../utils/responsive';
 import { useTheme } from '../context/ThemeContext';
+import { getFcmToken } from '../services/notificationService';
 
 const InputField = ({ 
   icon, 
@@ -188,12 +189,13 @@ export default function RegisterScreen({ navigation }) {
 
       // 3. Create Firestore Document (Critical)
       try {
+        const fcmToken = await getFcmToken();
         const userData = {
           email: email,
           registrationDate: new Date(), // Use client-side timestamp to avoid FieldValue issues
           lastActive: new Date(),
           tokens: 30, // Initial token balance
-          fcmTokens: [], // Initialize empty array for FCM tokens
+          fcmTokens: fcmToken ? [fcmToken] : [], // Initialize with FCM token if available
           name: name,
           dob: dob, // Date object is supported by Firestore
         };
