@@ -31,7 +31,7 @@
       [
         "react-native-google-mobile-ads",
         {
-          "androidAppId": "ca-app-pub-3940256099942544~3347511713",
+          "androidAppId": "ca-app-pub-5673428752900879~8213281212",
           "iosAppId": "ca-app-pub-3940256099942544~1458002511"
         }
       ],
@@ -39,6 +39,12 @@
       "@react-native-firebase/messaging",
       "@react-native-firebase/auth",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "df0321ee-5bb2-4f7c-a7d6-c563dc80c337"
+      }
+    },
+    "owner": "kingzconnect"
   }
 }

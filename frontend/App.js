@@ -205,10 +205,17 @@ function AppContent() {
   };
 
   return (
-    <NavigationContainer theme={navigationTheme}>
-      <StatusBar style={isDarkMode ? "light" : "dark"} />
-      {user ? <AppStack /> : <AuthStack />}
-    </NavigationContainer>
+    <>
+      <NavigationContainer theme={navigationTheme}>
+        <StatusBar style={isDarkMode ? "light" : "dark"} />
+        {user ? <AppStack /> : <AuthStack />}
+      </NavigationContainer>
+      {!isConnected && (
+        <NoInternetScreen onRetry={() => {
+            NetInfo.fetch().then(state => setIsConnected(state.isConnected !== false));
+        }} />
+      )}
+    </>
   );
 }
 
