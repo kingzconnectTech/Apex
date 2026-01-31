@@ -250,34 +250,30 @@ export const analyzeMatch = ({
     let winPrediction = null;
     let winConfidence = 0;
 
-    if (diff > 25) {
-        winPrediction = `${homeName} to Win`;
-        winConfidence = Math.min(60 + (diff / 2), 95);
-    } else if (diff < -25) {
-        winPrediction = `${awayName} to Win`;
-        winConfidence = Math.min(60 + (Math.abs(diff) / 2), 95);
-    } else if (!isBasketball) {
-        // Double Chance only for Soccer
-        if (diff > 10) {
-            winPrediction = `1X (Home or Draw)`;
-            winConfidence = Math.min(70 + (diff / 2), 90);
-        } else if (diff < -10) {
-            winPrediction = `X2 (Away or Draw)`;
-            winConfidence = Math.min(70 + (Math.abs(diff) / 2), 90);
+    if (!isBasketball) {
+        if (diff > 25) {
+            winPrediction = `${homeName} to Win`;
+            winConfidence = Math.min(60 + (diff / 2), 95);
+        } else if (diff < -25) {
+            winPrediction = `${awayName} to Win`;
+            winConfidence = Math.min(60 + (Math.abs(diff) / 2), 95);
         } else {
-            winPrediction = "Draw / Close Match";
-            winConfidence = 50 + Math.abs(diff);
+            // Double Chance only for Soccer
+            if (diff > 10) {
+                winPrediction = `1X (Home or Draw)`;
+                winConfidence = Math.min(70 + (diff / 2), 90);
+            } else if (diff < -10) {
+                winPrediction = `X2 (Away or Draw)`;
+                winConfidence = Math.min(70 + (Math.abs(diff) / 2), 90);
+            } else {
+                winPrediction = "Draw / Close Match";
+                winConfidence = 50 + Math.abs(diff);
+            }
         }
     } else {
-        // Basketball Close Match
-        // If diff is small, we might not predict ML, but let's be generous if > 10
-        if (diff > 10) {
-             winPrediction = `${homeName} to Win`;
-             winConfidence = 55 + (diff / 2);
-        } else if (diff < -10) {
-             winPrediction = `${awayName} to Win`;
-             winConfidence = 55 + (Math.abs(diff) / 2);
-        }
+        // Basketball: No Straight Win / Moneyline Predictions
+        // User Request: Only O/U and Team O/U
+        winPrediction = null;
     }
 
     // B. Goals / Totals Logic (Only if detailed stats available)
@@ -509,9 +505,10 @@ export const analyzeMatch = ({
         
         const spreadBuffer = 3.5; 
         
-        // ENABLE SPREAD PREDICTION FOR BASKETBALL
+        // DISABLE SPREAD PREDICTION (User Request: Only O/U and Team O/U)
         // We still calculated projectedMargin above, which is needed for Team Totals.
-        if (projectedMargin > 5) {
+        // if (projectedMargin > 5) {
+        if (false && projectedMargin > 5) {
             // Home Favorite
             const line = Math.floor(projectedMargin - spreadBuffer) + 0.5; // e.g. 10 -> 6.5
             if (line > 0) {
@@ -519,7 +516,7 @@ export const analyzeMatch = ({
                 spreadConfidence = 75; // Baseline high for clear favorites
                 factors.push({ label: `Proj. Margin +${Math.round(projectedMargin)}`, side: "home", type: "success" });
             }
-        } else if (projectedMargin < -5) {
+        } else if (false && projectedMargin < -5) {
             // Away Favorite
             const line = Math.floor(Math.abs(projectedMargin) - spreadBuffer) + 0.5;
             if (line > 0) {
