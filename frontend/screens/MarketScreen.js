@@ -63,6 +63,7 @@ export default function MarketScreen({ navigation }) {
     const styles = createStyles(theme, isDarkMode);
     const { balance, addBalance, transferTokens } = useUser();
     const [loaded, setLoaded] = useState(false);
+    const [loadingAd, setLoadingAd] = useState(true);
     const [recipientEmail, setRecipientEmail] = useState('');
     const [transferAmount, setTransferAmount] = useState('');
     const [transferLoading, setTransferLoading] = useState(false);
@@ -70,14 +71,28 @@ export default function MarketScreen({ navigation }) {
     const scrollY = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        const ad = RewardedAd.createForAdRequest(adUnitId, {
-            requestNonPersonalizedAdsOnly: true,
-        });
+        if (!adUnitId) {
+            console.log('No Ad Unit ID found');
+            setLoadingAd(false);
+            return;
+        }
+
+        let ad;
+        try {
+            ad = RewardedAd.createForAdRequest(adUnitId, {
+                requestNonPersonalizedAdsOnly: true,
+            });
+        } catch (error) {
+            console.error('Failed to create rewarded ad:', error);
+            setLoadingAd(false);
+            return;
+        }
         
         rewardedAd.current = ad;
 
         const unsubscribeLoaded = ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
             setLoaded(true);
+            setLoadingAd(false);
         });
 
         const unsubscribeEarned = ad.addAdEventListener(
@@ -95,29 +110,57 @@ export default function MarketScreen({ navigation }) {
         
         const unsubscribeClosed = ad.addAdEventListener(AdEventType.CLOSED, () => {
             setLoaded(false);
+            setLoadingAd(true);
             ad.load();
         });
 
-        ad.load();
+        const unsubscribeError = ad.addAdEventListener(AdEventType.ERROR, (error) => {
+            console.log('Ad load error:', error);
+            setLoaded(false);
+            setLoadingAd(false);
+        });
+
+        try {
+            ad.load();
+        } catch (error) {
+             console.error('Failed to load ad:', error);
+             setLoadingAd(false);
+        }
 
         return () => {
             unsubscribeLoaded();
             unsubscribeEarned();
             unsubscribeClosed();
+            unsubscribeError();
         };
     }, []);
 
     const showAd = () => {
         if (loaded && rewardedAd.current) {
-            rewardedAd.current.show();
+            try {
+                rewardedAd.current.show();
+            } catch (error) {
+                console.error('Failed to show ad:', error);
+                Alert.alert("Error", "Ad failed to show. Please try again.");
+            }
         } else {
             Alert.alert("Ad not ready", "Please wait a moment for the ad to load.");
         }
     };
 
+    const handleAdPress = () => {
+        if (loaded) {
+            showAd();
+        } else if (!loadingAd) {
+            setLoadingAd(true);
+            rewardedAd.current?.load();
+        }
+    };
+
     const handleBuy = async (pack) => {
         const message = `Hello, I would like to purchase the ${pack.name} (${pack.tokens} APT) for ${pack.price}.`;
-        const url = `https://wa.me/gr/FUTOXBPIVAY4J1?text=${encodeURIComponent(message)}`;
+        // Use the new WhatsApp short link, appending the text if supported or falling back to the chat
+        const url = `https://wa.me/message/PQ6NYKN6KOQ3N1?text=${encodeURIComponent(message)}`;
 
         try {
             const supported = await Linking.canOpenURL(url);
@@ -225,9 +268,9 @@ export default function MarketScreen({ navigation }) {
             <View style={styles.sectionContainer}>
                 <Text style={styles.sectionTitle}>Daily Rewards</Text>
                 <TouchableOpacity 
-                    style={[styles.freeCard, !loaded && styles.disabledCard]} 
-                    onPress={showAd}
-                    disabled={!loaded}
+                    style={[styles.freeCard, (!loaded && loadingAd) && styles.disabledCard]} 
+                    onPress={handleAdPress}
+                    disabled={loadingAd}
                     activeOpacity={0.9}
                 >
                     <LinearGradient
@@ -250,9 +293,11 @@ export default function MarketScreen({ navigation }) {
                             </View>
                             <View style={styles.freeButton}>
                                     {loaded ? (
-                                    <Text style={styles.freeButtonText}>CLAIM</Text>
+                                        <Text style={styles.freeButtonText}>CLAIM</Text>
+                                    ) : loadingAd ? (
+                                        <ActivityIndicator size="small" color="#FFF" />
                                     ) : (
-                                    <ActivityIndicator size="small" color="#FFF" />
+                                        <Text style={styles.freeButtonText}>RETRY</Text>
                                     )}
                             </View>
                         </View>

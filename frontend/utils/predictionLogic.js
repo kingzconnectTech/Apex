@@ -250,14 +250,15 @@ export const analyzeMatch = ({
     let winPrediction = null;
     let winConfidence = 0;
 
-    if (!isBasketball) {
-        if (diff > 25) {
-            winPrediction = `${homeName} to Win`;
-            winConfidence = Math.min(60 + (diff / 2), 95);
-        } else if (diff < -25) {
-            winPrediction = `${awayName} to Win`;
-            winConfidence = Math.min(60 + (Math.abs(diff) / 2), 95);
-        } else if (diff > 10) {
+    if (diff > 25) {
+        winPrediction = `${homeName} to Win`;
+        winConfidence = Math.min(60 + (diff / 2), 95);
+    } else if (diff < -25) {
+        winPrediction = `${awayName} to Win`;
+        winConfidence = Math.min(60 + (Math.abs(diff) / 2), 95);
+    } else if (!isBasketball) {
+        // Double Chance only for Soccer
+        if (diff > 10) {
             winPrediction = `1X (Home or Draw)`;
             winConfidence = Math.min(70 + (diff / 2), 90);
         } else if (diff < -10) {
@@ -266,6 +267,16 @@ export const analyzeMatch = ({
         } else {
             winPrediction = "Draw / Close Match";
             winConfidence = 50 + Math.abs(diff);
+        }
+    } else {
+        // Basketball Close Match
+        // If diff is small, we might not predict ML, but let's be generous if > 10
+        if (diff > 10) {
+             winPrediction = `${homeName} to Win`;
+             winConfidence = 55 + (diff / 2);
+        } else if (diff < -10) {
+             winPrediction = `${awayName} to Win`;
+             winConfidence = 55 + (Math.abs(diff) / 2);
         }
     }
 
@@ -498,9 +509,8 @@ export const analyzeMatch = ({
         
         const spreadBuffer = 3.5; 
         
-        // DISABLE SPREAD PREDICTION FOR BASKETBALL (User Request: Only Totals or Team Totals)
+        // ENABLE SPREAD PREDICTION FOR BASKETBALL
         // We still calculated projectedMargin above, which is needed for Team Totals.
-        /*
         if (projectedMargin > 5) {
             // Home Favorite
             const line = Math.floor(projectedMargin - spreadBuffer) + 0.5; // e.g. 10 -> 6.5
@@ -529,7 +539,6 @@ export const analyzeMatch = ({
         // If Last Game Margin is consistent with Avg, boost confidence.
         const homeLastMargin = homeStats.lastMatches.length > 0 ? (parseInt(homeStats.lastMatches[0].pf) - parseInt(homeStats.lastMatches[0].pa)) : 0;
         if (Math.abs(homeLastMargin - homeRating) < 5) spreadConfidence += 5; // Consistent form
-        */
 
         // --- BASKETBALL TEAM TOTALS LOGIC ---
         // Implied Score = (Total + Margin) / 2
@@ -629,7 +638,11 @@ export const analyzeMatch = ({
     candidates.sort((a, b) => b.confidence - a.confidence);
 
     // 5. Select Best
-    const best = candidates[0];
+    const best = candidates.length > 0 ? candidates[0] : { 
+        text: "Too Close to Call", 
+        confidence: 45, 
+        color: COLORS.textSecondary 
+    };
     prediction = best.text;
     finalConfidence = best.confidence;
     color = best.color;

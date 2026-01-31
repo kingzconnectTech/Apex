@@ -4,6 +4,8 @@ import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { AdUnits } from '../constants/ads';
 
 export const GlobalBannerAd = () => {
+  if (!AdUnits.BANNER) return null;
+
   return (
     <View style={styles.container}>
       <BannerAd

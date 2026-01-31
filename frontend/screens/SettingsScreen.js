@@ -172,7 +172,7 @@ export default function SettingsScreen({ navigation }) {
 
                 <TouchableOpacity 
                   style={styles.contactOption} 
-                  onPress={() => openLink('https://wa.me/gr/FUTOXBPIVAY4J1')}
+                  onPress={() => openLink('https://wa.me/message/PQ6NYKN6KOQ3N1')}
                 >
                   <Ionicons name="logo-whatsapp" size={moderateScale(24)} color="#25D366" />
                   <Text style={[styles.contactOptionText, { color: theme.text }]}>WhatsApp Support</Text>

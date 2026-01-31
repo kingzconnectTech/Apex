@@ -10,6 +10,8 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { UserProvider } from './context/UserContext';
 import messaging from '@react-native-firebase/messaging';
 import { saveTokenToDatabase } from './services/notificationService';
+import mobileAds from 'react-native-google-mobile-ads';
+import NetInfo from '@react-native-community/netinfo';
 
 // Screens
 import HomeScreen from './screens/HomeScreen';
@@ -22,6 +24,7 @@ import MatchDetailsScreen from './screens/MatchDetailsScreen';
 import LeoScreen from './screens/LeoScreen';
 import TermsScreen from './screens/TermsScreen';
 import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen';
+import NoInternetScreen from './components/NoInternetScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -164,6 +167,16 @@ function AppContent() {
   const [isConnected, setIsConnected] = useState(true);
   const { theme, isDarkMode } = useTheme();
 
+  // Initialize Ads
+  useEffect(() => {
+    mobileAds()
+      .initialize()
+      .then(adapterStatuses => {
+        // console.log('Ads Initialized', adapterStatuses);
+      });
+  }, []);
+
+  // Monitor Internet Connection
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       setIsConnected(state.isConnected !== false);

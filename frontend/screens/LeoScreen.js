@@ -108,8 +108,7 @@ export default function LeoScreen({ navigation }) {
   };
 
   const handleChase = async () => {
-    const success = await subtractBalance(8);
-    if (!success) {
+    if (balance < 8) {
         Alert.alert(
             "Insufficient Balance", 
             "You need 8 APT to ask Leo for predictions.",
@@ -221,13 +220,15 @@ export default function LeoScreen({ navigation }) {
         .sort((a, b) => b.analysis.confidence - a.analysis.confidence)
         .slice(0, matchLimit);
 
-      setResults(bestPredictions);
-      
-      if (bestPredictions.length === 0) {
-        Alert.alert(
-            "Leo Says", 
-            "No matches found for your criteria. Try widening the date range or selecting more sports."
-        );
+      if (bestPredictions.length > 0) {
+          await subtractBalance(8);
+          setResults(bestPredictions);
+      } else {
+          setResults([]);
+          Alert.alert(
+              "Leo Says", 
+              "No matches found for your criteria. Try widening the date range or selecting more sports."
+          );
       }
 
     } catch (error) {
