@@ -26,7 +26,7 @@ const LEAGUES = [
   { sport: 'basketball', league: 'nba', name: 'NBA' },
   { sport: 'basketball', league: 'wnba', name: 'WNBA' },
   { sport: 'basketball', league: 'mens-college-basketball', name: 'NCAA Men' },
-  { sport: 'basketball', league: 'womens-college-basketball', name: 'NCAA Women' },
+  { sport: 'basketball', league: 'nba-g-league', name: 'NBA G League' },
 ];
 
 export const fetchMatches = async (days = 3, startDate = new Date()) => {

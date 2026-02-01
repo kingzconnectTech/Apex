@@ -2,11 +2,11 @@ Write-Host "Building Release App Bundle (.aab)..."
 
 if (Test-Path ".\gradlew.bat") {
     Write-Host "Already in android directory."
-    .\gradlew.bat bundleRelease
+    .\gradlew.bat clean bundleRelease -PdisableSplits=true
 } elseif (Test-Path ".\android\gradlew.bat") {
     Write-Host "Changing to android directory..."
     Push-Location android
-    .\gradlew.bat bundleRelease
+    .\gradlew.bat clean bundleRelease -PdisableSplits=true
     Pop-Location
 } else {
     Write-Error "Could not find gradlew.bat. Please run this script from 'frontend' or 'frontend/android' directory."
