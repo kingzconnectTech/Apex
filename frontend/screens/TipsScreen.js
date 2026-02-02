@@ -13,7 +13,7 @@ const CATEGORIES = ['Football', 'Basketball'];
 
 const LEAGUES_FILTER = {
   Football: ['All', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Eredivisie', 'Championship', 'Liga Portugal', 'Super Lig', 'Liga MX', 'Brasileirão', 'Libertadores', 'Champions League', 'Europa League', 'MLS', 'International'],
-  Basketball: ['All', 'NBA', 'WNBA', 'NCAA Men', 'NBA G League']
+  Basketball: ['All', 'NBA', 'WNBA', 'NCAA Men', 'NCAA Women', 'NBA G League']
 };
 
 export default function TipsScreen({ navigation }) {
