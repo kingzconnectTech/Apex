@@ -465,7 +465,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
                             end={{x: 1, y: 0}}
                             style={styles.unlockGradient}
                         >
-                            <Text style={styles.unlockText}>Unlock for 3 APT</Text>
+                            <Text style={styles.unlockText}>Unlock for 1 APT</Text>
                             <Ionicons name="key" size={16} color="#FFF" style={{ marginLeft: 8 }} />
                         </LinearGradient>
                     </TouchableOpacity>
