@@ -387,13 +387,13 @@ export default function MatchDetailsScreen({ route, navigation }) {
   };
 
   const handleUnlockPrediction = async () => {
-    const success = await subtractBalance(3);
+    const success = await subtractBalance(1);
     if (success) {
         setShowPrediction(true);
     } else {
         Alert.alert(
             "Insufficient Balance", 
-            "You need 3 APT to view this prediction.",
+            "You need 1 APT to view this prediction.",
             [
                 { text: "Cancel", style: "cancel" },
                 { text: "Get Tokens", onPress: () => navigation.navigate('Market') }

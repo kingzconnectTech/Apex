@@ -108,10 +108,10 @@ export default function LeoScreen({ navigation }) {
   };
 
   const handleChase = async () => {
-    if (balance < 8) {
+    if (balance < 5) {
         Alert.alert(
             "Insufficient Balance", 
-            "You need 8 APT to ask Leo for predictions.",
+            "You need 5 APT to ask Leo for predictions.",
             [
                 { text: "Cancel", style: "cancel" },
                 { text: "Get Tokens", onPress: () => navigation.navigate('Market') }
@@ -221,7 +221,7 @@ export default function LeoScreen({ navigation }) {
         .slice(0, matchLimit);
 
       if (bestPredictions.length > 0) {
-          await subtractBalance(8);
+          await subtractBalance(5);
           setResults(bestPredictions);
       } else {
           setResults([]);
@@ -389,7 +389,7 @@ export default function LeoScreen({ navigation }) {
                     </LinearGradient>
                 )}
             </TouchableOpacity>
-            <Text style={styles.costText}>Cost: 8 APT per chase</Text>
+            <Text style={styles.costText}>Cost: 5 APT per chase</Text>
         </View>
 
         {/* Scanning Animation */}

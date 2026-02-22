@@ -99,8 +99,8 @@ export default function MarketScreen({ navigation }) {
             RewardedAdEventType.EARNED_REWARD,
             async reward => {
                 try {
-                    await addBalance(2);
-                    Alert.alert("Success", "You earned 2 APT!");
+                    await addBalance(5);
+                    Alert.alert("Success", "You earned 5 APT!");
                 } catch (error) {
                     console.error("Error adding reward:", error);
                     Alert.alert("Error", "Could not add tokens. Please contact support.");
@@ -289,7 +289,7 @@ export default function MarketScreen({ navigation }) {
                             </LinearGradient>
                             <View style={styles.freeTextContainer}>
                                 <Text style={styles.freeTitle}>Watch Short Ad</Text>
-                                <Text style={styles.freeSubtitle}>Get +2 Free APT instantly</Text>
+                                <Text style={styles.freeSubtitle}>Get +5 Free APT instantly</Text>
                             </View>
                             <View style={styles.freeButton}>
                                     {loaded ? (
