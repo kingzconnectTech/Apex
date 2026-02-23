@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
-import { fetchMatches, fetchTeamDetails, fetchMatchAnalysis } from '../services/espn';
+import { fetchMatches, fetchTeamDetails, fetchMatchAnalysis, fetchGamesStats } from '../services/espn';
 import { analyzeMatch } from '../utils/predictionLogic';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
@@ -165,7 +165,6 @@ export default function LeoScreen({ navigation }) {
              fetchMatchAnalysis(match.sport, match.leagueSlug, match.id)
           ]);
 
-          // Extract H2H
           let h2h = null;
           if (matchAnalysis?.headToHeadGames) {
              const validH2H = matchAnalysis.headToHeadGames.filter(g => 
@@ -184,9 +183,16 @@ export default function LeoScreen({ navigation }) {
                 else if (isHomeHosting) { if (hScore > aScore) homeWins++; else awayWins++; }
                 else { if (aScore > hScore) homeWins++; else awayWins++; }
                 
-                return { score: g.score, date: g.gameDate };
+                return { score: g.score, date: g.gameDate, id: g.id };
              });
-             h2h = { homeWins, awayWins, draws, recent };
+
+             let deepStats = [];
+             if (validH2H.length > 0 && match.sport === 'soccer') {
+                const gameIds = validH2H.slice(0, 5).map(g => g.id);
+                deepStats = await fetchGamesStats(match.sport, match.leagueSlug, gameIds);
+             }
+
+             h2h = { homeWins, awayWins, draws, recent, deepStats };
           }
 
           // Re-Analyze with Details

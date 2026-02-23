@@ -280,30 +280,11 @@ export const analyzeMatch = ({
     let color = COLORS.textSecondary;
     let finalConfidence = 50;
     
-    // Normalize Score Difference
     const diff = homeScore - awayScore;
     const isBasketball = sport === 'basketball';
 
-    // A. Win / Double Chance Logic
     let winPrediction = null;
     let winConfidence = 0;
-
-    if (!isBasketball) {
-        if (diff > 10) {
-            winPrediction = `1X (Home or Draw)`;
-            winConfidence = Math.min(70 + (diff / 2), 90);
-        } else if (diff < -10) {
-            winPrediction = `X2 (Away or Draw)`;
-            winConfidence = Math.min(70 + (Math.abs(diff) / 2), 90);
-        } else {
-            winPrediction = "Draw / Close Match";
-            winConfidence = 50 + Math.abs(diff);
-        }
-    } else {
-        // Basketball: No Straight Win / Moneyline Predictions
-        // User Request: Only O/U and Team O/U
-        winPrediction = null;
-    }
 
     // B. Goals / Totals Logic (Only if detailed stats available)
     let goalsPrediction = null;
