@@ -1,8 +1,26 @@
+import { API_URL } from '../constants/config';
+
 const BASE_URL = 'http://site.api.espn.com/apis/site/v2/sports';
+const PROXY_BASE = `${API_URL}/api/proxy?target=`;
 
 const withCacheBuster = (url) => {
   const ts = Date.now();
   return url + (url.includes('?') ? `&_=${ts}` : `?_=${ts}`);
+};
+
+const fetchFromBackendOrESPN = async (relativePath) => {
+  // Try backend proxy first (uses server-side cache)
+  try {
+    const proxyResp = await fetch(`${PROXY_BASE}${encodeURIComponent(relativePath)}`);
+    if (proxyResp.ok) {
+      return await proxyResp.json();
+    }
+  } catch (e) {
+    // Fall through to ESPN
+  }
+  // Fallback to ESPN directly with cache-buster to avoid CDN staleness
+  const espnResp = await fetch(withCacheBuster(`${BASE_URL}/${relativePath}`));
+  return await espnResp.json();
 };
 
 const LEAGUES = [
@@ -41,8 +59,7 @@ export const fetchMatches = async (days = 3, startDate = new Date()) => {
     // This ensures we get the most accurate "Live" status
     const defaultPromises = LEAGUES.map(async ({ sport, league, name }) => {
       try {
-        const response = await fetch(withCacheBuster(`${BASE_URL}/${sport}/${league}/scoreboard`));
-        const data = await response.json();
+        const data = await fetchFromBackendOrESPN(`${sport}/${league}/scoreboard`);
         return processEvents(data.events || [], sport, league, name);
       } catch (error) {
         console.warn(`Failed to fetch default for ${name}:`, error);
@@ -64,8 +81,7 @@ export const fetchMatches = async (days = 3, startDate = new Date()) => {
     const futurePromises = LEAGUES.map(async ({ sport, league, name }) => {
       const leaguePromises = futureDates.map(async (date) => {
         try {
-          const response = await fetch(withCacheBuster(`${BASE_URL}/${sport}/${league}/scoreboard?dates=${date}`));
-          const data = await response.json();
+          const data = await fetchFromBackendOrESPN(`${sport}/${league}/scoreboard?dates=${date}`);
           return processEvents(data.events || [], sport, league, name);
         } catch (error) {
           console.warn(`Failed to fetch ${name} for ${date}:`, error);
@@ -144,16 +160,12 @@ const processEvents = (events, sport, league, name) => {
 // Fetch comprehensive team details
 export const fetchTeamDetails = async (sport, league, teamId) => {
   try {
-    // Parallel fetch for efficiency
-    const [teamResponse, newsResponse, scheduleResponse] = await Promise.all([
-      fetch(withCacheBuster(`${BASE_URL}/${sport}/${league}/teams/${teamId}`)),
-      fetch(withCacheBuster(`${BASE_URL}/${sport}/${league}/news?team=${teamId}&limit=5`)), // Team specific news
-      fetch(withCacheBuster(`${BASE_URL}/${sport}/${league}/teams/${teamId}/schedule`))
+    // Parallel fetch for efficiency (via backend proxy with fallback)
+    const [teamData, newsData, scheduleData] = await Promise.all([
+      fetchFromBackendOrESPN(`${sport}/${league}/teams/${teamId}`),
+      fetchFromBackendOrESPN(`${sport}/${league}/news?team=${teamId}&limit=5`),
+      fetchFromBackendOrESPN(`${sport}/${league}/teams/${teamId}/schedule`)
     ]);
-
-    const teamData = await teamResponse.json();
-    const newsData = await newsResponse.json();
-    const scheduleData = await scheduleResponse.json();
 
     const team = teamData.team;
     
@@ -220,8 +232,7 @@ export const fetchTeamDetails = async (sport, league, teamId) => {
 // Fetch Match Analysis (Boxscore, stats)
 export const fetchMatchAnalysis = async (sport, league, matchId) => {
   try {
-    const response = await fetch(withCacheBuster(`${BASE_URL}/${sport}/${league}/summary?event=${matchId}`));
-    const data = await response.json();
+    const data = await fetchFromBackendOrESPN(`${sport}/${league}/summary?event=${matchId}`);
 
     const boxscore = data.boxscore;
     const header = data.header;
@@ -314,8 +325,7 @@ export const fetchGamesStats = async (sport, league, gameIds) => {
   
   const promises = gameIds.map(async (id) => {
     try {
-      const response = await fetch(withCacheBuster(`${BASE_URL}/${sport}/${league}/summary?event=${id}`));
-      const data = await response.json();
+      const data = await fetchFromBackendOrESPN(`${sport}/${league}/summary?event=${id}`);
       const stats = data.boxscore?.teams || [];
       
       const findStat = (teamStats, statName) => {

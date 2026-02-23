@@ -2,6 +2,7 @@ const express = require('express');
 const admin = require('firebase-admin');
 const path = require('path');
 const cron = require('node-cron');
+const url = require('url');
 
 // Initialize Express app
 const app = express();
@@ -24,6 +25,96 @@ try {
 } catch (error) {
   console.warn('Firebase Admin SDK not initialized:', error.message);
 }
+
+// ----------------------------------------------------------
+// ESPN Proxy with Server-side Caching
+// ----------------------------------------------------------
+const ESPN_BASE = 'http://site.api.espn.com/apis/site/v2/sports';
+
+// Simple in-memory cache
+// key: full ESPN URL
+// value: { data: any, expiresAt: number }
+const cache = new Map();
+const DEFAULT_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+const now = () => Date.now();
+
+function setCache(key, data, ttl = DEFAULT_TTL_MS) {
+  cache.set(key, { data, expiresAt: now() + ttl });
+}
+
+function getCache(key) {
+  const item = cache.get(key);
+  if (!item) return null;
+  if (item.expiresAt < now()) {
+    cache.delete(key);
+    return null;
+  }
+  return item.data;
+}
+
+async function fetchJSON(targetUrl) {
+  const res = await fetch(targetUrl, {
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'apex-backend/1.0'
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Upstream error ${res.status} for ${targetUrl}`);
+  }
+  return res.json();
+}
+
+function isValidRelativeTarget(target) {
+  // Prevent path traversal and ensure it looks like "sport/league/..."
+  // Basic validation: no protocol, must not start with "//" or contain ".."
+  if (!target || typeof target !== 'string') return false;
+  if (target.includes('..')) return false;
+  if (target.startsWith('http://') || target.startsWith('https://') || target.startsWith('//')) return false;
+  return true;
+}
+
+// GET /api/proxy?target=soccer/eng.1/teams/382
+// Proxies to: ESPN_BASE/ + target
+app.get('/api/proxy', async (req, res) => {
+  try {
+    const { target } = req.query;
+    if (!isValidRelativeTarget(target)) {
+      return res.status(400).json({ error: 'Invalid target' });
+    }
+    const upstreamUrl = `${ESPN_BASE}/${target}`;
+
+    // Serve from cache if available
+    const cached = getCache(upstreamUrl);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    // Fetch upstream and cache
+    const data = await fetchJSON(upstreamUrl);
+    setCache(upstreamUrl, data);
+    return res.json(data);
+  } catch (e) {
+    console.error('Proxy error:', e.message);
+    return res.status(502).json({ error: 'Upstream fetch failed' });
+  }
+});
+
+// Periodic cache cleanup
+cron.schedule('*/30 * * * *', () => {
+  const nowTs = now();
+  let removed = 0;
+  for (const [key, entry] of cache.entries()) {
+    if (entry.expiresAt < nowTs) {
+      cache.delete(key);
+      removed++;
+    }
+  }
+  if (removed > 0) {
+    console.log(`Cache cleanup: removed ${removed} expired entries`);
+  }
+});
 
 // Basic route
 app.get('/', (req, res) => {
