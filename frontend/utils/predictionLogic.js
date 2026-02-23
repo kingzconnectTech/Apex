@@ -31,6 +31,8 @@ export const analyzeMatch = ({
     let homeTeamTotalConfidence = 0;
     let awayTeamTotalPrediction = null;
     let awayTeamTotalConfidence = 0;
+    let cornersPrediction = null;
+    let cornersConfidence = 0;
     
     // --- Helper: Parse Record (e.g., "10-5-2") ---
     const parseRecord = (record) => {
@@ -178,8 +180,44 @@ export const analyzeMatch = ({
         }
         
         // Deep Stats (Corners/Cards) - Only if provided
-        if (h2h.deepStats) {
-             // ... (Simplified for shared logic, can be expanded if passed)
+        if (h2h.deepStats && sport === 'soccer') {
+            const totals = [];
+            let maxCorners = 0;
+            let minCorners = 1000;
+
+            h2h.deepStats.forEach(game => {
+                const homeCorners = game?.homeStats?.corners || 0;
+                const awayCorners = game?.awayStats?.corners || 0;
+                const total = homeCorners + awayCorners;
+                if (total > 0) {
+                    totals.push(total);
+                    if (total > maxCorners) maxCorners = total;
+                    if (total < minCorners) minCorners = total;
+                }
+            });
+
+            if (totals.length > 0) {
+                const sum = totals.reduce((a, b) => a + b, 0);
+                const avgCorners = sum / totals.length;
+
+                const baseLine = Math.round(avgCorners);
+                const line = baseLine + 0.5;
+                const diffFromLine = avgCorners - line;
+
+                const direction = diffFromLine >= 0 ? 'Over' : 'Under';
+                const absDiff = Math.abs(diffFromLine);
+                const baseConfidence = 60;
+                const strengthBoost = Math.min(absDiff * 15, 25);
+
+                cornersPrediction = `${direction} ${line} Corners`;
+                cornersConfidence = baseConfidence + strengthBoost;
+
+                factors.push({
+                    label: `H2H Avg Corners ${avgCorners.toFixed(1)}`,
+                    side: "neutral",
+                    type: "info"
+                });
+            }
         }
     }
 
@@ -251,24 +289,15 @@ export const analyzeMatch = ({
     let winConfidence = 0;
 
     if (!isBasketball) {
-        if (diff > 25) {
-            winPrediction = `${homeName} to Win`;
-            winConfidence = Math.min(60 + (diff / 2), 95);
-        } else if (diff < -25) {
-            winPrediction = `${awayName} to Win`;
-            winConfidence = Math.min(60 + (Math.abs(diff) / 2), 95);
+        if (diff > 10) {
+            winPrediction = `1X (Home or Draw)`;
+            winConfidence = Math.min(70 + (diff / 2), 90);
+        } else if (diff < -10) {
+            winPrediction = `X2 (Away or Draw)`;
+            winConfidence = Math.min(70 + (Math.abs(diff) / 2), 90);
         } else {
-            // Double Chance only for Soccer
-            if (diff > 10) {
-                winPrediction = `1X (Home or Draw)`;
-                winConfidence = Math.min(70 + (diff / 2), 90);
-            } else if (diff < -10) {
-                winPrediction = `X2 (Away or Draw)`;
-                winConfidence = Math.min(70 + (Math.abs(diff) / 2), 90);
-            } else {
-                winPrediction = "Draw / Close Match";
-                winConfidence = 50 + Math.abs(diff);
-            }
+            winPrediction = "Draw / Close Match";
+            winConfidence = 50 + Math.abs(diff);
         }
     } else {
         // Basketball: No Straight Win / Moneyline Predictions
@@ -629,7 +658,16 @@ export const analyzeMatch = ({
         });
     }
 
-    // 4. Sort by confidence (descending)
+    // 5. Corners Total Candidate
+    if (cornersPrediction) {
+        candidates.push({
+            text: cornersPrediction,
+            confidence: cornersConfidence,
+            color: COLORS.info
+        });
+    }
+
+    // 6. Sort by confidence (descending)
     // If tie, stable sort preserves order (Win > Goals > Spread priority if needed, but here we trust score)
     // We can add a secondary sort priority if needed, but "highest confidence" is the requested logic.
     candidates.sort((a, b) => b.confidence - a.confidence);

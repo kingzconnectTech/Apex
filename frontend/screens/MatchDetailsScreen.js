@@ -230,6 +230,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
   };
 
   const h2h = getH2HStats();
+  const h2hWithDeepStats = { ...h2h, deepStats: h2hDeepStats };
 
   // Advanced Metrics Calculations
   const getAdvancedMetrics = () => {
@@ -355,7 +356,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
             lastMatches: awayDetails.lastMatches,
             news: awayDetails.news 
         },
-        h2h: h2h,
+        h2h: h2hWithDeepStats,
         sport: match.sport,
         isDetailed: true
     });
