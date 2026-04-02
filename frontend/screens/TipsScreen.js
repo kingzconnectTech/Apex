@@ -77,7 +77,16 @@ export default function TipsScreen({ navigation }) {
     return matches.filter(match => {
       const matchSport = match.sport === 'soccer' ? 'Football' : 'Basketball';
       if (matchSport !== selectedCategory) return false;
-      if (selectedLeague !== 'All' && match.league !== selectedLeague) return false;
+      
+      if (selectedLeague !== 'All') {
+        if (selectedLeague === 'International') {
+          const internationalLeagues = ['International Friendlies', 'Nations League', 'Euros', 'World Cup'];
+          if (!internationalLeagues.includes(match.league)) return false;
+        } else if (match.league !== selectedLeague) {
+          return false;
+        }
+      }
+      
       return true;
     }).sort((a, b) => {
         return a.status === 'in' ? -1 : 1;
