@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: apex-xgrw
+    runtime: docker
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      # You should add these secrets in the Render dashboard:
+      # - FIREBASE_SERVICE_ACCOUNT_JSON (The content of serviceAccountKey.json)
+    healthCheckPath: /
+    autoDeploy: true
+    plan: free # or starter, standard, etc.

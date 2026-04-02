@@ -13,11 +13,17 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Initialize Firebase Admin SDK
-// Note: You need to generate a private key file from Firebase Console
-// Project Settings > Service accounts > Generate new private key
-// Save it as 'serviceAccountKey.json' in this directory
+// Priority: 1. FIREBASE_SERVICE_ACCOUNT_JSON env var, 2. serviceAccountKey.json file
 try {
-  const serviceAccount = require('./serviceAccountKey.json');
+  let serviceAccount;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    console.log('Firebase Admin SDK initialized using environment variable');
+  } else {
+    serviceAccount = require('./serviceAccountKey.json');
+    console.log('Firebase Admin SDK initialized using serviceAccountKey.json');
+  }
+  
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
   });
