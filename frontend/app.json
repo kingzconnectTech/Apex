@@ -44,5 +44,9 @@
       }
     },
     "owner": "kingzconnect"
+  },
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-5673428752900879~8213281212",
+    "ios_app_id": "ca-app-pub-3940256099942544~1458002511"
   }
 }
