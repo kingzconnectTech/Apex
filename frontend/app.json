@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/Logo_A.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/Logo_B.png",
       "resizeMode": "contain",
@@ -21,8 +20,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.kingzconnect.apx",
-      "googleServicesFile": "./google-services.json",
-      "edgeToEdgeEnabled": true
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -36,8 +34,8 @@
         }
       ],
       "@react-native-firebase/app",
-      "@react-native-firebase/messaging",
       "@react-native-firebase/auth",
+      "@react-native-firebase/messaging",
       "@react-native-community/datetimepicker"
     ],
     "extra": {
