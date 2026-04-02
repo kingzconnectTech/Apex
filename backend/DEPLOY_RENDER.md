@@ -35,6 +35,14 @@ Make sure you've pushed all the recent changes to your repository, including:
 2.  Once the build is complete, you should see "Live" status.
 3.  You can access your API at `https://apex-xgrw.onrender.com/`.
 
+## Step 5: Prevent Service Sleeping (Keep-Alive)
+Render's free tier spins down services after 15 minutes of inactivity. To prevent this, set up an external monitor to ping your backend:
+1.  Sign up for a free account at [UptimeRobot](https://uptimerobot.com/) or [FastCron](https://www.fastcron.com/).
+2.  Create a new **HTTP(s) Monitor**.
+3.  Set the URL to: `https://apex-xgrw.onrender.com/health`
+4.  Set the interval to every **10–12 minutes**.
+5.  This will keep your backend "awake" and responsive for your users.
+
 ## Why Docker?
 We use a Docker-based deployment on Render because the backend requires both **Node.js** (for the main server) and **Python 3** (for the prediction engine) along with specialized libraries like `pandas` and `numpy`. Docker ensures all these dependencies are correctly installed in the environment.
 

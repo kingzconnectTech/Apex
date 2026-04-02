@@ -10,6 +10,6 @@ services:
         value: 3000
       # You should add these secrets in the Render dashboard:
       # - FIREBASE_SERVICE_ACCOUNT_JSON (The content of serviceAccountKey.json)
-    healthCheckPath: /
+    healthCheckPath: /health
     autoDeploy: true
     plan: free # or starter, standard, etc.

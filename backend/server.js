@@ -127,6 +127,11 @@ app.get('/', (req, res) => {
   res.send('Apex API is running');
 });
 
+// Health check endpoint (for monitoring and keeping the service alive)
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Example route for prediction engine integration
 app.post('/api/predict', (req, res) => {
   // This would communicate with the Python Prediction Engine
