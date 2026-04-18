@@ -116,10 +116,13 @@ class EspnClient:
             "avg_goals_conceded": 0
         }
 
-        # Process completed events
+        # Process completed and live events
         for event in events:
-            status = event.get('competitions', [{}])[0].get('status', {}).get('type', {}).get('state')
-            if status == 'post': # Completed match
+            status_obj = event.get('competitions', [{}])[0].get('status', {}).get('type', {})
+            state = status_obj.get('state')
+            
+            # 'post' = finished, 'in' = live
+            if state in ['post', 'in']:
                 form_data['match_count'] += 1
                 
                 # Extract score
@@ -156,7 +159,8 @@ class EspnClient:
                             "date": event.get('date'),
                             "opponent": opp_team['team']['displayName'],
                             "score": f"{my_score}-{opp_score}",
-                            "result": result
+                            "result": result,
+                            "is_live": state == 'in'
                         })
                     except (ValueError, TypeError):
                         pass

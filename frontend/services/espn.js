@@ -169,10 +169,13 @@ export const fetchTeamDetails = async (sport, league, teamId) => {
 
     const team = teamData.team;
     
-    // Process Form (Last 5 matches)
+    // Process Form (Last 5 matches, including live ones)
     const events = scheduleData.events || [];
-    const completedEvents = events.filter(e => e.competitions[0].status.type.state === 'post');
-    const last5 = completedEvents.slice(-5).reverse(); // Most recent first
+    const validEvents = events.filter(e => {
+      const state = e.competitions[0].status.type.state;
+      return state === 'post' || state === 'in';
+    });
+    const last5 = validEvents.slice(-5).reverse(); // Most recent first
     
     const form = last5.map(event => {
       const competition = event.competitions[0];
