@@ -1,3 +1,11 @@
 requests
 numpy
 pandas
+statsmodels
+prophet
+tensorflow
+scikit-optimize
+scikit-learn
+joblib
+matplotlib
+protobuf==5.29.6
