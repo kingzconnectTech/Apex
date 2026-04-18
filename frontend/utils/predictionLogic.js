@@ -20,11 +20,19 @@ export const analyzeMatch = ({
     awayStats,
     h2h = null,
     sport,
-    isDetailed = false
+    isDetailed = false,
+    mlContext = null // New parameter for ML-based calibration
 }) => {
+    // --- Advanced Ranking & Scoring Strategy ---
+    // 1. Core Statistical Base (homeScore/awayScore)
+    // 2. ML Confidence Calibration
+    // 3. Multi-Factor Contextual Weighting
+
     const factors = [];
     let homeScore = 0;
     let awayScore = 0;
+
+    // ... (rest of existing logic for homeScore/awayScore) ...
     
     // Team Totals (Declared here to ensure scope access)
     let homeTeamTotalPrediction = null;

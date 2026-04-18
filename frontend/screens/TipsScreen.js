@@ -40,8 +40,11 @@ export default function TipsScreen({ navigation }) {
     loadMatches(dateFilter, true);
   };
 
+  const [visibleMatchesCount, setVisibleMatchesCount] = useState(10);
+
   const loadMatches = async (date, isRefreshing = false) => {
     if (!isRefreshing) setLoading(true);
+    setVisibleMatchesCount(10); // Reset visible count on date change
     Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start();
     
     try {
@@ -56,6 +59,12 @@ export default function TipsScreen({ navigation }) {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const loadMoreTips = () => {
+    if (visibleMatchesCount < filteredTips.length) {
+      setVisibleMatchesCount(prev => prev + 10);
     }
   };
 
@@ -222,11 +231,16 @@ export default function TipsScreen({ navigation }) {
         </View>
       ) : (
         <FlatList
-            data={filteredTips}
+            data={filteredTips.slice(0, visibleMatchesCount)}
             renderItem={renderTipCard}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}
+            initialNumToRender={5}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            onEndReached={loadMoreTips}
+            onEndReachedThreshold={0.5}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} colors={[theme.primary]} />
             }
@@ -235,6 +249,13 @@ export default function TipsScreen({ navigation }) {
                     <Ionicons name="stats-chart-outline" size={60} color={theme.textSecondary} style={{ opacity: 0.3 }} />
                     <Text style={styles.emptyText}>No matches scheduled.</Text>
                 </View>
+            }
+            ListFooterComponent={
+              visibleMatchesCount < filteredTips.length ? (
+                <View style={{ paddingVertical: 20 }}>
+                  <ActivityIndicator color={theme.primary} />
+                </View>
+              ) : null
             }
         />
       )}

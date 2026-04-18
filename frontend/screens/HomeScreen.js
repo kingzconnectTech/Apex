@@ -78,6 +78,7 @@ export default function HomeScreen({ navigation }) {
     }
 
     if (filter === 'All') {
+      // Lazy load only 10 matches initially, then more as user scrolls
       setUpcomingMatches(matches.slice(0, 10));
     } else {
       const targetDate = new Date();
@@ -90,7 +91,14 @@ export default function HomeScreen({ navigation }) {
         const itemDate = new Date(item.date);
         return itemDate.toDateString() === targetDate.toDateString();
       });
-      setUpcomingMatches(filtered);
+      setUpcomingMatches(filtered.slice(0, 10)); // Initial chunk for filtered results
+    }
+  };
+
+  const loadMoreUpcoming = () => {
+    if (dateFilter === 'All' && upcomingMatches.length < allUpcomingMatches.length) {
+      const nextBatch = allUpcomingMatches.slice(0, upcomingMatches.length + 10);
+      setUpcomingMatches(nextBatch);
     }
   };
 
@@ -349,22 +357,30 @@ export default function HomeScreen({ navigation }) {
             <ActivityIndicator size="large" color={theme.primary} />
             <Text style={styles.loadingText}>Analyzing market data...</Text>
           </View>
-        ) : upcomingMatches.length > 0 ? (
-          <FlatList
-            data={upcomingMatches}
-            renderItem={renderMatchItem}
-            keyExtractor={item => item.id}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.matchesList}
-            snapToInterval={CARD_WIDTH + SPACING}
-            decelerationRate="fast"
-          />
         ) : (
-          <View style={styles.emptyState}>
-            <Ionicons name="football-outline" size={moderateScale(48)} color={theme.textSecondary} style={{ opacity: 0.3 }} />
-            <Text style={styles.noMatchesText}>No matches scheduled.</Text>
-          </View>
+          <>
+            <FlatList
+              data={upcomingMatches}
+              renderItem={renderMatchItem}
+              keyExtractor={(item) => item.id}
+              scrollEnabled={false}
+              initialNumToRender={5}
+              maxToRenderPerBatch={5}
+              windowSize={5}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Ionicons name="football-outline" size={moderateScale(48)} color={theme.textSecondary} style={{ opacity: 0.3 }} />
+                  <Text style={styles.noMatchesText}>No matches scheduled.</Text>
+                </View>
+              }
+            />
+            
+            {dateFilter === 'All' && upcomingMatches.length < allUpcomingMatches.length && (
+              <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMoreUpcoming}>
+                 <Text style={styles.loadMoreText}>View More Matches</Text>
+              </TouchableOpacity>
+            )}
+          </>
         )}
       </View>
       </ScrollView>

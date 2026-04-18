@@ -28,8 +28,11 @@ const logger = winston.createLogger({
   ]
 });
 
+const compression = require('compression');
+
 // Initialize Express app
 const app = express();
+app.use(compression()); // Enable Gzip compression
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -229,13 +232,49 @@ cron.schedule('*/5 * * * *', () => {
   }
 });
 
+// Performance Monitoring Endpoint
+app.get('/api/monitoring/performance', (req, res) => {
+  const stats = {
+    cacheSize: cache.size,
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage(),
+    timestamp: new Date().toISOString()
+  };
+  res.json(stats);
+});
+
 // Basic route
 app.get('/', (req, res) => {
   res.send('Apex API is running');
 });
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString(), traceId: req.traceId });
+app.get('/api/monitoring/accuracy', (req, res) => {
+  const metaPath = path.join(__dirname, 'prediction_engine', 'models', 'winning_model.meta');
+  if (fs.existsSync(metaPath)) {
+    const meta = joblib.load(metaPath);
+    const accuracy = meta.precision || 0;
+    const status = accuracy >= 0.85 ? 'HEALTHY' : 'ALERT';
+    
+    if (status === 'ALERT') {
+       logger.warn('PREDICTION ACCURACY DROP ALERT', { accuracy, threshold: 0.85 });
+    }
+    
+    res.json({ accuracy, status, lastUpdated: meta.updated_at });
+  } else {
+    res.status(404).json({ error: 'No model metadata found' });
+  }
+});
+
+app.post('/api/feedback/correction', async (req, res) => {
+  const { matchId, actualOutcome, predictedOutcome, traceId } = req.body;
+  logger.info('User feedback received for retraining loop', { matchId, actualOutcome, predictedOutcome });
+  
+  // Store feedback for next nightly retraining batch
+  const feedbackPath = path.join(__dirname, 'prediction_engine', 'feedback_loop.jsonl');
+  const entry = JSON.stringify({ matchId, actualOutcome, predictedOutcome, timestamp: new Date() }) + '\n';
+  fs.appendFileSync(feedbackPath, entry);
+  
+  res.json({ success: true, message: 'Feedback recorded for model improvement' });
 });
 
 const { spawn } = require('child_process');
