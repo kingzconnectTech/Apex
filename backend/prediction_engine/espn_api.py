@@ -32,17 +32,114 @@ class EspnClient:
         Fetch matches for a predefined list of popular leagues.
         """
         leagues = [
+            # Soccer
             ("soccer", "eng.1"),       # Premier League
+            ("soccer", "eng.2"),       # Championship
+            ("soccer", "eng.3"),       # League One
             ("soccer", "esp.1"),       # La Liga
+            ("soccer", "esp.2"),       # La Liga 2
             ("soccer", "ita.1"),       # Serie A
+            ("soccer", "ita.2"),       # Serie B
             ("soccer", "ger.1"),       # Bundesliga
+            ("soccer", "ger.2"),       # 2. Bundesliga
             ("soccer", "fra.1"),       # Ligue 1
-            ("soccer", "uefa.champions"), # UCL
+            ("soccer", "fra.2"),       # Ligue 2
+            ("soccer", "ned.1"),       # Eredivisie
+            ("soccer", "por.1"),       # Liga Portugal
+            ("soccer", "por.2"),       # Liga Portugal 2
+            ("soccer", "tur.1"),       # Super Lig
+            ("soccer", "rus.1"),       # Russian Premier League
+            ("soccer", "ukr.1"),       # Ukrainian Premier League
+            ("soccer", "bel.1"),       # Belgian Pro League
+            ("soccer", "sct.1"),       # Scottish Premiership
+            ("soccer", "aut.1"),       # Austrian Bundesliga
+            ("soccer", "grc.1"),       # Super League Greece
+            ("soccer", "dnk.1"),       # Danish Superliga
+            ("soccer", "swe.1"),       # Allsvenskan
+            ("soccer", "nor.1"),       # Eliteserien
+            ("soccer", "cze.1"),       # Czech First League
+            ("soccer", "hun.1"),       # Nemzeti Bajnokság I
+            ("soccer", "pol.1"),       # Ekstraklasa
+            ("soccer", "mex.1"),       # Liga MX
+            ("soccer", "mex.2"),       # Liga de Expansión MX
+            ("soccer", "bra.1"),       # Brasileirão Série A
+            ("soccer", "bra.2"),       # Brasileirão Série B
+            ("soccer", "arg.1"),       # Argentine Primera División
+            ("soccer", "chl.1"),       # Chilean Primera División
+            ("soccer", "col.1"),       # Categoría Primera A
+            ("soccer", "per.1"),       # Peruvian Liga 1
+            ("soccer", "uru.1"),       # Uruguayan Primera División
             ("soccer", "usa.1"),       # MLS
+            ("soccer", "usa.2"),       # USL Championship
+            ("soccer", "usa.nwsl"),    # NWSL
+            ("soccer", "can.1"),       # Canadian Premier League
+            ("soccer", "jpn.1"),       # J1 League
+            ("soccer", "jpn.2"),       # J2 League
+            ("soccer", "kor.1"),       # K League 1
+            ("soccer", "chn.1"),       # Chinese Super League
+            ("soccer", "aus.1"),       # A-League Men
+            ("soccer", "aus.2"),       # A-League Women
+            ("soccer", "saudi.1"),     # Saudi Pro League
+            ("soccer", "uae.1"),       # UAE Pro League
+            ("soccer", "qat.1"),       # Qatar Stars League
+            ("soccer", "egy.1"),       # Egyptian Premier League
+            ("soccer", "ngr.1"),       # Nigerian Professional Football League
+            ("soccer", "conmebol.libertadores"), # Copa Libertadores
+            ("soccer", "conmebol.sudamericana"), # Copa Sudamericana
+            ("soccer", "conmebol.copaamerica"), # Copa America
+            ("soccer", "concacaf.goldcup"), # Gold Cup
+            ("soccer", "concacaf.champions"), # CONCACAF Champions Cup
+            ("soccer", "concacaf.nationsleague"), # CONCACAF Nations League
+            ("soccer", "uefa.champions"), # Champions League
+            ("soccer", "uefa.europa"), # Europa League
+            ("soccer", "uefa.europaconference"), # Europa Conference League
+            ("soccer", "uefa.nations"), # Nations League
+            ("soccer", "uefa.euro"),   # UEFA European Championship
+            ("soccer", "uefa.womenseuro"), # UEFA Women's Championship
+            ("soccer", "fifa.world"),  # FIFA World Cup
+            ("soccer", "fifa.womens-world-cup"), # FIFA Women's World Cup
+            ("soccer", "fifa.friendly"), # International Friendlies
+            
+            # Basketball
             ("basketball", "nba"),     # NBA
-            ("basketball", "mens-college-basketball"), # NCAA
-            ("basketball", "womens-college-basketball"), # NCAA Women
+            ("basketball", "nba-g-league"), # NBA G League
             ("basketball", "wnba"),    # WNBA
+            ("basketball", "mens-college-basketball"), # NCAA Men
+            ("basketball", "womens-college-basketball"), # NCAA Women
+            ("basketball", "euroleague"), # EuroLeague
+            ("basketball", "eurocup"), # EuroCup
+            ("basketball", "eurochamp"), # FIBA EuroBasket
+            ("basketball", "fibawc"),  # FIBA Basketball World Cup
+            ("basketball", "acb"),     # Liga ACB (Spain)
+            ("basketball", "legabasket"), # Lega Basket Serie A (Italy)
+            ("basketball", "bbl"),     # Basketball Bundesliga (Germany)
+            ("basketball", "betclic"), # Betclic Élite (France)
+            ("basketball", "australia.nbl"), # NBL Australia
+            ("basketball", "cba"),     # CBA (China)
+            ("basketball", "bcl"),     # Basketball Champions League
+            ("basketball", "nbca"),    # NBA Summer League
+            
+            # Tennis
+            ("tennis", "grand-slam"),  # Grand Slams
+            ("tennis", "atp"),         # ATP Tour
+            ("tennis", "atp.masters"), # ATP Masters 1000
+            ("tennis", "atp.500"),     # ATP 500
+            ("tennis", "atp.250"),     # ATP 250
+            ("tennis", "atp.challenger"), # ATP Challenger Tour
+            ("tennis", "atp.finals"),  # ATP Finals
+            ("tennis", "wta"),         # WTA Tour
+            ("tennis", "wta.premier"), # WTA Premier
+            ("tennis", "wta.1000"),    # WTA 1000
+            ("tennis", "wta.500"),     # WTA 500
+            ("tennis", "wta.250"),     # WTA 250
+            ("tennis", "wta.125"),     # WTA 125
+            ("tennis", "wta.finals"),  # WTA Finals
+            ("tennis", "itf"),         # ITF Tour
+            ("tennis", "davis-cup"),   # Davis Cup
+            ("tennis", "billie-jean-king-cup"), # Billie Jean King Cup
+            ("tennis", "laver-cup"),   # Laver Cup
+            ("tennis", "hopman-cup"),  # Hopman Cup
+            ("tennis", "next-gen-atp-finals"), # Next Gen ATP Finals
         ]
         
         results = {}

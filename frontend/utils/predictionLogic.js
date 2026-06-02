@@ -32,7 +32,7 @@ export const analyzeMatch = ({
     let homeScore = 0;
     let awayScore = 0;
 
-    // ... (rest of existing logic for homeScore/awayScore) ...
+
     
     // Team Totals (Declared here to ensure scope access)
     let homeTeamTotalPrediction = null;
@@ -111,16 +111,61 @@ export const analyzeMatch = ({
         // Weight: 20% (Reduced from 30 to prevent flipping Record prediction too easily)
         if (homeFormPts > awayFormPts + 3) {
             homeScore += 20;
-            factors.push({ label: "Better Recent Form", side: "home", type: "success" });
+            factors.push({ label: "Stronger Recent Form", side: "home", type: "success" });
         } else if (awayFormPts > homeFormPts + 3) {
             awayScore += 20;
-            factors.push({ label: "Better Recent Form", side: "away", type: "success" });
+            factors.push({ label: "Stronger Recent Form", side: "away", type: "success" });
         } else {
-            factors.push({ label: "Similar Recent Form", side: "neutral", type: "info" });
+            factors.push({ label: "Competitive Recent Form", side: "neutral", type: "info" });
+        }
+
+        // Additional Detail: Streaks and Clean Sheets
+        const processDetails = (matches, side) => {
+            if (!matches || matches.length === 0) return;
+            const last3 = matches.slice(0, 3);
+            
+            // Clean Sheet Check (Soccer)
+            if (sport === 'soccer') {
+                const cleanSheets = last3.filter(m => m.pa === 0).length;
+                if (cleanSheets >= 2) {
+                    side === 'home' ? homeScore += 10 : awayScore += 10;
+                    factors.push({ label: `Solid Defense (${cleanSheets} Clean Sheets)`, side, type: "success" });
+                }
+
+                // Scoring Streak
+                const failedToScore = matches.filter(m => m.pf === 0).length;
+                if (failedToScore >= 2) {
+                    side === 'home' ? homeScore -= 10 : awayScore -= 10;
+                    factors.push({ label: "Struggling to Score", side, type: "error" });
+                }
+            }
+        };
+
+        if (isDetailed) {
+            processDetails(homeStats.lastMatches, 'home');
+            processDetails(awayStats.lastMatches, 'away');
+
+            // Trend check: Improving vs Declining
+            const getTrend = (matches) => {
+                if (!matches || matches.length < 3) return 0;
+                // Sum points of last 2 vs previous 2
+                const p = (m) => m.result === 'W' ? 3 : (m.result === 'D' ? 1 : 0);
+                return (p(matches[0]) + p(matches[1])) - (p(matches[2]) + (matches[3] ? p(matches[3]) : 1));
+            };
+
+            const hTrend = getTrend(homeStats.lastMatches);
+            const aTrend = getTrend(awayStats.lastMatches);
+
+            if (hTrend > aTrend + 1) {
+                homeScore += 5;
+                factors.push({ label: "Upward Performance Trend", side: "home", type: "success" });
+            } else if (aTrend > hTrend + 1) {
+                awayScore += 5;
+                factors.push({ label: "Upward Performance Trend", side: "away", type: "success" });
+            }
         }
     } else {
-        // If no form, we can't award points, but we shouldn't penalize.
-        // The 35 points from record become the main driver.
+        // ...
     }
 
     // --- 3. Head to Head ---
@@ -293,6 +338,47 @@ export const analyzeMatch = ({
 
     let winPrediction = null;
     let winConfidence = 0;
+
+    // A. Win Prediction Logic (Moneyline/Double Chance)
+    if (diff > 12) {
+        if (isBasketball) {
+            winPrediction = `${homeName} Win`;
+            winConfidence = Math.min(65 + diff, 95);
+        } else {
+            // Soccer: Strong favorite
+            winPrediction = `${homeName} Win`;
+            winConfidence = Math.min(65 + diff, 92);
+        }
+    } else if (diff < -12) {
+        if (isBasketball) {
+            winPrediction = `${awayName} Win`;
+            winConfidence = Math.min(65 + Math.abs(diff), 95);
+        } else {
+            // Soccer: Strong favorite
+            winPrediction = `${awayName} Win`;
+            winConfidence = Math.min(65 + Math.abs(diff), 92);
+        }
+    } else {
+        if (isBasketball) {
+            // Basketball rarely has draws, but could be a "coin flip"
+            winPrediction = diff > 0 ? `${homeName} Slight Edge` : `${awayName} Slight Edge`;
+            winConfidence = 55 + Math.abs(diff);
+        } else {
+            // Soccer: Close match / Draw potential
+            if (diff > 5) {
+                winPrediction = `1X (Home Win or Draw)`;
+                winConfidence = 65;
+            } else if (diff < -5) {
+                winPrediction = `X2 (Away Win or Draw)`;
+                winConfidence = 65;
+            } else {
+                winPrediction = "Competitive / Draw Potential";
+                winConfidence = 55;
+            }
+        }
+    }
+
+    let winPredictionValue = winPrediction; // Internal tracking
 
     // B. Goals / Totals Logic (Only if detailed stats available)
     let goalsPrediction = null;
@@ -499,13 +585,8 @@ export const analyzeMatch = ({
             h2h.recent.forEach(game => {
                  if (game.score && game.score.includes('-')) {
                     const parts = game.score.split('-').map(s => parseInt(s, 10));
-                    // Note: We need to ensure we know who is home. 
-                    // Assuming standard H-A order in H2H list might be risky without parsing names.
-                    // For now, skip specific margin calc from H2H to avoid flipping signs error.
-                    // Or rely on h2h.homeWins dominance earlier.
                  }
             });
-            // Simplified: If Home dominates H2H (>60% wins), boost margin
             const total = h2h.homeWins + h2h.awayWins;
             if (total > 0) {
                 if (h2h.homeWins / total > 0.6) projectedMargin += 3;
@@ -513,172 +594,182 @@ export const analyzeMatch = ({
             }
         }
 
-        // 5. Generate Spread Line
-        // We output a "Handicap" prediction.
-        // e.g. "Lakers -5.5"
-        
-        // Safety Buffer: We want Value.
-        // If we project +10, we recommend -6.5 to be safe.
-        // If we project +3, we might skip or recommend ML.
-        
-        const spreadBuffer = 3.5; 
-        
-        // DISABLE SPREAD PREDICTION (User Request: Only O/U and Team O/U)
-        // We still calculated projectedMargin above, which is needed for Team Totals.
-        // if (projectedMargin > 5) {
-        if (false && projectedMargin > 5) {
-            // Home Favorite
-            const line = Math.floor(projectedMargin - spreadBuffer) + 0.5; // e.g. 10 -> 6.5
-            if (line > 0) {
-                spreadPrediction = `${homeName} ${-line}`; // e.g. "Lakers -6.5"
-                spreadConfidence = 75; // Baseline high for clear favorites
-                factors.push({ label: `Proj. Margin +${Math.round(projectedMargin)}`, side: "home", type: "success" });
-            }
-        } else if (false && projectedMargin < -5) {
-            // Away Favorite
-            const line = Math.floor(Math.abs(projectedMargin) - spreadBuffer) + 0.5;
-            if (line > 0) {
-                spreadPrediction = `${awayName} ${-line}`; // e.g. "Celtics -6.5"
-                spreadConfidence = 75;
-                factors.push({ label: `Proj. Margin ${Math.round(projectedMargin)}`, side: "away", type: "success" });
-            }
-        } else {
-            // Close game - Predicting spread is risky without knowing book line.
-            // Maybe predict "Cover +X"?
-            // Let's stick to Moneyline for close games unless user wants specific spread logic.
-            spreadConfidence = 50; 
+        // 5. Margin Precision Logic (Winning Margin Range)
+        let winningMarginNode = null;
+        if (Math.abs(projectedMargin) > 0) {
+            const absMargin = Math.abs(projectedMargin);
+            let range = "";
+            if (absMargin <= 5) range = "1-5 Pts";
+            else if (absMargin <= 10) range = "6-10 Pts";
+            else if (absMargin <= 15) range = "11-15 Pts";
+            else range = "16+ Pts";
+            
+            winningMarginNode = {
+                type: 'MARGIN',
+                label: 'Winning Margin',
+                value: `${projectedMargin > 0 ? homeName : awayName} by ${range}`,
+                confidence: Math.round(Math.min(65 + (5 / Math.max(1, absMargin % 5)), 85)),
+                color: projectedMargin > 0 ? COLORS.success : COLORS.error
+            };
         }
 
-        // 6. Confidence Boosters
-        // Check Consistency (Std Dev proxy: diff between Avg Margin and Last Game Margin)
-        // If Last Game Margin is consistent with Avg, boost confidence.
-        const homeLastMargin = homeStats.lastMatches.length > 0 ? (parseInt(homeStats.lastMatches[0].pf) - parseInt(homeStats.lastMatches[0].pa)) : 0;
-        if (Math.abs(homeLastMargin - homeRating) < 5) spreadConfidence += 5; // Consistent form
+        // 6. 1st Half Prediction
+        // Basketball: If Home start strong (record), they likely win 1st half
+        let firstHalfNode = {
+            type: 'HALF',
+            label: '1st Half Winner',
+            value: projectedMargin > 2 ? homeName : (projectedMargin < -2 ? awayName : "Draw / Close"),
+            confidence: 68,
+            color: projectedMargin > 2 ? COLORS.success : (projectedMargin < -2 ? COLORS.error : COLORS.textSecondary)
+        };
+    }
 
-        // --- BASKETBALL TEAM TOTALS LOGIC ---
-        // Implied Score = (Total + Margin) / 2
-        // e.g. Total 220, Home +10. Home = 115, Away = 105.
-        
-        if (projectedTotalPoints > 0) {
-            const impliedHomeScore = (projectedTotalPoints + projectedMargin) / 2;
-            const impliedAwayScore = (projectedTotalPoints - projectedMargin) / 2;
-            
-            const teamTotalBuffer = 4.5; // Safety margin
-            
-            // Home Team Total Prediction
-            const homeLine = Math.floor(impliedHomeScore - teamTotalBuffer) + 0.5;
-            if (impliedHomeScore > 100) { // Basic sanity check
-                 homeTeamTotalPrediction = `${homeName} Over ${homeLine}`;
-                 // Confidence based on how strong the scoring data is
-                 homeTeamTotalConfidence = 65; 
-                 if (homeStats.lastMatches && homeStats.lastMatches.length > 0) {
-                     const avg = homeStats.lastMatches.reduce((s, m) => s + parseInt(m.pf), 0) / homeStats.lastMatches.length;
-                     if (avg > homeLine + 5) homeTeamTotalConfidence += 10;
-                 }
-                 factors.push({ label: `Implied Home Score ${Math.round(impliedHomeScore)}`, side: "home", type: "info" });
-            }
+    // C. SECURE & VALUE RECOMMENDATIONS (Multi-Outcome)
+    const recommendations = [];
 
-            // Away Team Total Prediction
-            const awayLine = Math.floor(impliedAwayScore - teamTotalBuffer) + 0.5;
-             if (impliedAwayScore > 100) {
-                 awayTeamTotalPrediction = `${awayName} Over ${awayLine}`;
-                 awayTeamTotalConfidence = 65;
-                 if (awayStats.lastMatches && awayStats.lastMatches.length > 0) {
-                     const avg = awayStats.lastMatches.reduce((s, m) => s + parseInt(m.pf), 0) / awayStats.lastMatches.length;
-                     if (avg > awayLine + 5) awayTeamTotalConfidence += 10;
-                 }
-                 factors.push({ label: `Implied Away Score ${Math.round(impliedAwayScore)}`, side: "away", type: "info" });
+    // 1. Double Chance (Soccer Only)
+    if (!isBasketball) {
+        if (Math.abs(diff) < 15) { // If it's fairly competitive
+            if (diff > 4) {
+                 recommendations.push({
+                    type: 'DC',
+                    label: 'Double Chance',
+                    value: `1X (${homeName} or Draw)`,
+                    confidence: 75,
+                    color: '#4dabf7'
+                });
+            } else if (diff < -4) {
+                 recommendations.push({
+                    type: 'DC',
+                    label: 'Double Chance',
+                    value: `X2 (${awayName} or Draw)`,
+                    confidence: 75,
+                    color: '#ff8787'
+                });
             }
         }
     }
 
-    // C. Select Best Prediction (Highest Confidence Wins)
-    // Strategy: Compare all generated predictions and pick the one with the highest confidence score.
-
-    const candidates = [];
-
-    // 1. Win Prediction Candidate
+    // 2. Win Prediction (Moneyline)
     if (winPrediction) {
         let winColor = COLORS.textSecondary;
         if (winPrediction.includes(homeName)) winColor = COLORS.success;
         else if (winPrediction.includes(awayName)) winColor = COLORS.error;
-        else if (winPrediction.includes('1X')) winColor = '#4dabf7'; 
-        else if (winPrediction.includes('X2')) winColor = '#ff8787'; 
         
-        candidates.push({
-            text: winPrediction,
+        recommendations.push({
+            type: 'WIN',
+            label: 'Moneyline',
+            value: winPrediction,
             confidence: winConfidence,
             color: winColor
         });
     }
 
-    // 2. Goals/Total Prediction Candidate
+    // 3. Totals (Goals/Points)
     if (goalsPrediction) {
-        candidates.push({
-            text: goalsPrediction,
+        recommendations.push({
+            type: 'TOTAL',
+            label: 'Over/Under',
+            value: goalsPrediction,
             confidence: goalsConfidence,
             color: COLORS.accent
         });
     }
 
-    // 3. Spread/Handicap Prediction Candidate
-    if (spreadPrediction) {
-         const spreadColor = spreadPrediction.includes(homeName) ? COLORS.success : COLORS.error;
-         candidates.push({
-            text: spreadPrediction,
-            confidence: spreadConfidence,
-            color: spreadColor
-         });
+    // 4. Both Teams to Score (Soccer Only)
+    if (!isBasketball && hAvgScored > 0 && aAvgScored > 0) {
+        const bttsProb = (hAvgScored > 0.8 && aAvgScored > 0.8) ? (hAvgScored + aAvgScored) / 4 : 0.5;
+        const result = bttsProb > 0.6 ? 'BTTS: Yes' : (bttsProb < 0.4 ? 'BTTS: No' : null);
+        if (result) {
+            recommendations.push({
+                type: 'BTTS',
+                label: 'Goals',
+                value: result,
+                confidence: Math.round(Math.min(60 + (Math.abs(bttsProb - 0.5) * 100), 88)),
+                color: '#ae3ec9'
+            });
+        }
     }
 
-    // 4. Team Totals Candidates
-    if (homeTeamTotalPrediction) {
-        candidates.push({
-            text: homeTeamTotalPrediction,
-            confidence: homeTeamTotalConfidence,
-            color: COLORS.info
-        });
-    }
-    if (awayTeamTotalPrediction) {
-        candidates.push({
-            text: awayTeamTotalPrediction,
-            confidence: awayTeamTotalConfidence,
-            color: COLORS.info
-        });
+    // 5. Total Bookings (Soccer Only)
+    // Using H2H card data as a primary indicator
+    if (!isBasketball && h2h && h2h.deepStats && h2h.deepStats.length > 0) {
+        const cardTotals = h2h.deepStats.map(g => (g.homeStats?.yellowCards || 0) + (g.awayStats?.yellowCards || 0));
+        const avgCards = cardTotals.reduce((a, b) => a + b, 0) / cardTotals.length;
+        
+        if (avgCards > 0) {
+            const line = avgCards > 4.5 ? 4.5 : 3.5;
+            const direction = avgCards > line ? 'Over' : 'Under';
+            recommendations.push({
+                type: 'CARDS',
+                label: 'Bookings',
+                value: `${direction} ${line} Cards`,
+                confidence: Math.round(65 + (Math.abs(avgCards - line) * 10)),
+                color: '#fcc419'
+            });
+        }
     }
 
-    // 5. Corners Total Candidate
+    // 6. Basketball Spreads
+    if (isBasketball && projectedMargin !== 0) {
+        const spreadBuffer = 3.5;
+        const line = Math.floor(Math.abs(projectedMargin) - spreadBuffer) + 0.5;
+        if (line > 2) {
+             const favorite = projectedMargin > 0 ? homeName : awayName;
+             recommendations.push({
+                type: 'SPREAD',
+                label: 'Handicap',
+                value: `${favorite} -${line}`,
+                confidence: 72,
+                color: projectedMargin > 0 ? COLORS.success : COLORS.error
+            });
+        }
+    }
+
+    // 7. Team Totals (Basketball)
+    if (isBasketball) {
+        if (homeTeamTotalPrediction) {
+            recommendations.push({
+                type: 'TEAM_TOTAL',
+                label: 'Home Total',
+                value: homeTeamTotalPrediction.replace(homeName, '').trim(),
+                confidence: homeTeamTotalConfidence,
+                color: COLORS.success
+            });
+        }
+        if (awayTeamTotalPrediction) {
+            recommendations.push({
+                type: 'TEAM_TOTAL',
+                label: 'Away Total',
+                value: awayTeamTotalPrediction.replace(awayName, '').trim(),
+                confidence: awayTeamTotalConfidence,
+                color: COLORS.error
+            });
+        }
+        // New Basketball-specific nodes
+        if (typeof winningMarginNode !== 'undefined' && winningMarginNode) recommendations.push(winningMarginNode);
+        if (typeof firstHalfNode !== 'undefined' && firstHalfNode) recommendations.push(firstHalfNode);
+    }
+
+    // 8. Corners Candidate
     if (cornersPrediction) {
-        candidates.push({
-            text: cornersPrediction,
+        recommendations.push({
+            type: 'CORNERS',
+            label: 'Corners',
+            value: cornersPrediction,
             confidence: cornersConfidence,
             color: COLORS.info
         });
     }
 
-    // 6. Sort by confidence (descending)
-    // If tie, stable sort preserves order (Win > Goals > Spread priority if needed, but here we trust score)
-    // We can add a secondary sort priority if needed, but "highest confidence" is the requested logic.
-    candidates.sort((a, b) => b.confidence - a.confidence);
-
-    // 5. Select Best
-    const best = candidates.length > 0 ? candidates[0] : { 
-        text: "Too Close to Call", 
-        confidence: 45, 
-        color: COLORS.textSecondary 
-    };
-    prediction = best.text;
-    finalConfidence = best.confidence;
-    color = best.color;
-
-    // Debug log to verify selection logic (optional, for development)
-    // console.log("Prediction Candidates:", candidates);
-
+    // Sort by confidence so the "Best" is first but all are available
+    recommendations.sort((a, b) => b.confidence - a.confidence);
 
     return {
-        prediction,
-        confidence: Math.round(finalConfidence),
-        color,
+        prediction: recommendations.length > 0 ? recommendations[0].value : "Too Close to Call",
+        confidence: recommendations.length > 0 ? recommendations[0].confidence : 45,
+        color: recommendations.length > 0 ? recommendations[0].color : COLORS.textSecondary,
+        recommendations: recommendations, // All tips returned!
         factors
     };
 };

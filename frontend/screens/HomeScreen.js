@@ -26,6 +26,7 @@ export default function HomeScreen({ navigation }) {
   // Animation values
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const loadMoreScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     loadMatches();
@@ -111,6 +112,20 @@ export default function HomeScreen({ navigation }) {
     await loadMatches(false);
     setRefreshing(false);
   }, [dateFilter]);
+
+  const handleLoadMorePressIn = () => {
+    Animated.spring(loadMoreScale, {
+      toValue: 0.95,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleLoadMorePressOut = () => {
+    Animated.spring(loadMoreScale, {
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const renderLiveMatchItem = ({ item }) => (
     <TouchableOpacity 
@@ -363,7 +378,11 @@ export default function HomeScreen({ navigation }) {
               data={upcomingMatches}
               renderItem={renderMatchItem}
               keyExtractor={(item) => item.id}
-              scrollEnabled={false}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.matchesList}
+              snapToInterval={CARD_WIDTH + SPACING}
+              decelerationRate="fast"
               initialNumToRender={5}
               maxToRenderPerBatch={5}
               windowSize={5}
@@ -376,9 +395,26 @@ export default function HomeScreen({ navigation }) {
             />
             
             {dateFilter === 'All' && upcomingMatches.length < allUpcomingMatches.length && (
-              <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMoreUpcoming}>
-                 <Text style={styles.loadMoreText}>View More Matches</Text>
-              </TouchableOpacity>
+              <Animated.View style={{ transform: [{ scale: loadMoreScale }], alignSelf: 'center' }}>
+                <TouchableOpacity
+                  style={styles.loadMoreBtn}
+                  onPress={loadMoreUpcoming}
+                  onPressIn={handleLoadMorePressIn}
+                  onPressOut={handleLoadMorePressOut}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={isDarkMode ? [theme.primary, '#0056b3'] : [theme.primary, '#007bff']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.loadMoreGradient}
+                  >
+                    <Ionicons name="add-circle-outline" size={moderateScale(18)} color="#fff" style={{ marginRight: horizontalScale(8) }} />
+                    <Text style={styles.loadMoreText}>View More Matches</Text>
+                    <Ionicons name="arrow-down" size={moderateScale(18)} color="#fff" style={{ marginLeft: horizontalScale(8) }} />
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
             )}
           </>
         )}
@@ -829,5 +865,27 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     marginTop: verticalScale(16),
     fontSize: getResponsiveFontSize(14),
     fontWeight: '500',
+  },
+  loadMoreBtn: {
+    borderRadius: moderateScale(16),
+    shadowColor: theme.primary,
+    shadowOffset: { width: 0, height: verticalScale(4) },
+    shadowOpacity: 0.4,
+    shadowRadius: moderateScale(8),
+    elevation: 6,
+    marginVertical: verticalScale(20),
+  },
+  loadMoreGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: verticalScale(14),
+    paddingHorizontal: horizontalScale(28),
+    borderRadius: moderateScale(16),
+  },
+  loadMoreText: {
+    color: '#fff',
+    fontSize: getResponsiveFontSize(15),
+    fontWeight: '700',
   },
 });

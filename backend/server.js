@@ -8,6 +8,7 @@ const winston = require('winston');
 const http = require('http');
 const { Server } = require('socket.io');
 const crypto = require('crypto');
+const fs = require('fs');
 
 // Logger Configuration
 const logger = winston.createLogger({
@@ -106,6 +107,22 @@ function getCache(key) {
     return null;
   }
   return item;
+}
+
+// Helper function to fetch data (using cache if available)
+async function fetchFromBackendOrESPN(target) {
+  const upstreamUrl = `${ESPN_BASE}/${target}`;
+  
+  // Check cache first
+  const cached = getCache(upstreamUrl);
+  if (cached) {
+    return cached.data;
+  }
+  
+  // Fetch fresh data
+  const data = await fetchWithRetry(upstreamUrl, uuidv4());
+  setCache(upstreamUrl, data);
+  return data;
 }
 
 async function fetchWithRetry(targetUrl, traceId, retries = 3) {
@@ -232,6 +249,76 @@ cron.schedule('*/5 * * * *', () => {
   }
 });
 
+// Automated stats update for all leagues (every 15 minutes)
+const leaguesToRefresh = [
+  // Top Soccer Leagues
+  { sport: 'soccer', league: 'eng.1' },
+  { sport: 'soccer', league: 'esp.1' },
+  { sport: 'soccer', league: 'ita.1' },
+  { sport: 'soccer', league: 'ger.1' },
+  { sport: 'soccer', league: 'fra.1' },
+  { sport: 'soccer', league: 'ned.1' },
+  { sport: 'soccer', league: 'por.1' },
+  { sport: 'soccer', league: 'tur.1' },
+  { sport: 'soccer', league: 'uefa.champions' },
+  { sport: 'soccer', league: 'uefa.europa' },
+  { sport: 'soccer', league: 'uefa.europaconference' },
+  { sport: 'soccer', league: 'mex.1' },
+  { sport: 'soccer', league: 'bra.1' },
+  { sport: 'soccer', league: 'arg.1' },
+  { sport: 'soccer', league: 'usa.1' },
+  { sport: 'soccer', league: 'saudi.1' },
+  
+  // Top Basketball Leagues
+  { sport: 'basketball', league: 'nba' },
+  { sport: 'basketball', league: 'wnba' },
+  { sport: 'basketball', league: 'euroleague' },
+  { sport: 'basketball', league: 'eurocup' },
+  { sport: 'basketball', league: 'acb' },
+  { sport: 'basketball', league: 'legabasket' },
+  { sport: 'basketball', league: 'bbl' },
+  
+  // Top Tennis Leagues
+  { sport: 'tennis', league: 'grand-slam' },
+  { sport: 'tennis', league: 'atp.masters' },
+  { sport: 'tennis', league: 'atp' },
+  { sport: 'tennis', league: 'wta.1000' },
+  { sport: 'tennis', league: 'wta' }
+];
+
+cron.schedule('*/15 * * * *', async () => {
+  const traceId = uuidv4();
+  logger.info('Starting automated stats refresh for all leagues...', { traceId });
+  
+  let successCount = 0;
+  let errorCount = 0;
+  
+  for (const leagueConfig of leaguesToRefresh) {
+    const { sport, league } = leagueConfig;
+    try {
+      const target = `${sport}/${league}/scoreboard`;
+      const upstreamUrl = `${ESPN_BASE}/${target}`;
+      await refreshAndNotify(upstreamUrl, traceId);
+      successCount++;
+      logger.debug('Refreshed league stats', { traceId, sport, league });
+    } catch (err) {
+      errorCount++;
+      logger.error('Failed to refresh league stats', {
+        traceId,
+        sport,
+        league,
+        error: err.message
+      });
+    }
+  }
+  
+  logger.info('Automated stats refresh complete', {
+    traceId,
+    successCount,
+    errorCount
+  });
+});
+
 // Performance Monitoring Endpoint
 app.get('/api/monitoring/performance', (req, res) => {
   const stats = {
@@ -313,6 +400,115 @@ app.post('/api/predict', (req, res) => {
   pythonProcess.stderr.on('data', (data) => {
     logger.error('Prediction engine stderr', { traceId, error: data.toString() });
   });
+});
+
+// Live game predictions endpoint for matches past halfway
+app.get('/api/live-predictions', async (req, res) => {
+  const { traceId } = req;
+  logger.info('Live predictions request received', { traceId });
+  
+  try {
+    const leaguesToCheck = [
+      { sport: 'soccer', league: 'eng.1' },
+      { sport: 'soccer', league: 'esp.1' },
+      { sport: 'soccer', league: 'ita.1' },
+      { sport: 'basketball', league: 'nba' },
+      { sport: 'basketball', league: 'wnba' }
+    ];
+    
+    const livePredictions = [];
+    
+    for (const { sport, league } of leaguesToCheck) {
+      try {
+        const target = `${sport}/${league}/scoreboard`;
+        const scoreboardData = await fetchFromBackendOrESPN(target);
+        
+        if (scoreboardData && scoreboardData.events) {
+          for (const event of scoreboardData.events) {
+            const competition = event.competitions?.[0];
+            const status = competition?.status?.type?.state;
+            
+            if (status === 'in') {
+              const clock = competition?.status?.displayClock;
+              const period = competition?.status?.period;
+              
+              // Check if match is past halfway
+              let isPastHalfway = false;
+              if (sport === 'soccer') {
+                // Soccer: 2nd half (period 2) or more
+                isPastHalfway = period >= 2 || (period === 1 && clock?.includes('45'));
+              } else if (sport === 'basketball') {
+                // Basketball: 3rd quarter or later (NBA has 4 quarters)
+                isPastHalfway = period >= 3 || (period === 2 && clock?.includes('6'));
+              }
+              
+              if (isPastHalfway) {
+                // Generate live prediction based on current score
+                const competitors = competition?.competitors || [];
+                if (competitors.length === 2) {
+                  const home = competitors.find(c => c.homeAway === 'home');
+                  const away = competitors.find(c => c.homeAway === 'away');
+                  
+                  if (home && away) {
+                    const homeScore = parseInt(home.score?.value || 0);
+                    const awayScore = parseInt(away.score?.value || 0);
+                    
+                    let prediction, confidence;
+                    if (homeScore > awayScore) {
+                      prediction = home.team?.displayName || 'Home Team';
+                      confidence = 0.7 + Math.min(0.2, (homeScore - awayScore) * 0.05);
+                    } else if (awayScore > homeScore) {
+                      prediction = away.team?.displayName || 'Away Team';
+                      confidence = 0.7 + Math.min(0.2, (awayScore - homeScore) * 0.05);
+                    } else {
+                      prediction = 'Draw/No Clear Favorite';
+                      confidence = 0.5;
+                    }
+                    
+                    livePredictions.push({
+                      id: event.id,
+                      name: event.name,
+                      league: league,
+                      sport: sport,
+                      time: clock,
+                      period: period,
+                      homeTeam: {
+                        name: home.team?.displayName,
+                        score: homeScore,
+                        logo: home.team?.logo
+                      },
+                      awayTeam: {
+                        name: away.team?.displayName,
+                        score: awayScore,
+                        logo: away.team?.logo
+                      },
+                      prediction: prediction,
+                      confidence: Math.round(confidence * 100) / 100
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        logger.error('Error fetching scoreboard for league', {
+          traceId,
+          sport,
+          league,
+          error: err.message
+        });
+      }
+    }
+    
+    res.json({ livePredictions, traceId, count: livePredictions.length });
+  } catch (error) {
+    logger.error('Error fetching live predictions', {
+      traceId,
+      error: error.message
+    });
+    res.status(500).json({ error: 'Failed to fetch live predictions', traceId });
+  }
 });
 
 // Nightly Retraining Cron

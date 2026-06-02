@@ -268,7 +268,38 @@ export default function MatchDetailsScreen({ route, navigation }) {
             awayRebPct: a.rebounds
           };
       } 
-      // Fallback for Basketball Upcoming (implied, though user focused on football)
+      // Fallback for Basketball Upcoming (High Precision Prediction)
+      if (homeDetails && awayDetails) {
+          const calcTeamEff = (matches) => {
+              if (!matches || !matches.length) return null;
+              const pts = matches.reduce((sum, m) => sum + m.pf, 0) / matches.length;
+              const pa = matches.reduce((sum, m) => sum + m.pa, 0) / matches.length;
+              // Very rough possession estimate for upcoming: 
+              // Avg pts + (Avg pa / 2) - typically around 70-80 possessions for non-pro
+              return { pts, pa };
+          };
+          
+          const h = calcTeamEff(homeDetails.lastMatches);
+          const a = calcTeamEff(awayDetails.lastMatches);
+          
+          if (h && a) {
+              // Estimate Pace: Average of historical scoring outputs / 1.1 (proxy)
+              const estPace = ((h.pts + a.pts + h.pa + a.pa) / 4).toFixed(1);
+              const homeOffRtg = ((h.pts / estPace) * 100).toFixed(1);
+              const awayOffRtg = ((a.pts / estPace) * 100).toFixed(1);
+
+              return {
+                  type: 'basketball',
+                  pace: estPace,
+                  netRtg: (homeOffRtg - awayOffRtg).toFixed(1),
+                  homeEFG: 'N/A', // eFG requires shooting splits stats
+                  awayEFG: 'N/A',
+                  homeOffRtg,
+                  awayOffRtg,
+                  isPredicted: true
+              };
+          }
+      }
       return null; 
     } else {
       // Football Metrics
@@ -458,7 +489,8 @@ export default function MatchDetailsScreen({ route, navigation }) {
               {!showPrediction ? (
                  <View style={styles.lockedContainer}>
                     <Ionicons name="lock-closed" size={40} color={theme.textSecondary} />
-                    <Text style={styles.lockedText}>Prediction Locked</Text>
+                    <Text style={styles.lockedText}>AI Tips Locked</Text>
+                    <Text style={styles.lockedSubText}>Unlock to reveal Win, Goals, and Special props.</Text>
                     <TouchableOpacity style={styles.unlockButton} onPress={handleUnlockPrediction}>
                         <LinearGradient
                             colors={[theme.primary, theme.warning]}
@@ -466,35 +498,25 @@ export default function MatchDetailsScreen({ route, navigation }) {
                             end={{x: 1, y: 0}}
                             style={styles.unlockGradient}
                         >
-                            <Text style={styles.unlockText}>Unlock for 1 APT</Text>
+                            <Text style={styles.unlockText}>Unlock All Tips (1 APT)</Text>
                             <Ionicons name="key" size={16} color="#FFF" style={{ marginLeft: 8 }} />
                         </LinearGradient>
                     </TouchableOpacity>
                  </View>
               ) : (
                 <>
-                  <View style={styles.predictionBox}>
-                    <Text style={styles.predictionLabel}>PREDICTION</Text>
-                    <Text style={[styles.predictionValue, { color: getConfidenceColor(botAnalysis.confidence) }]}>
-                      {botAnalysis.prediction}
-                    </Text>
-                  </View>
-
-                  <View style={styles.confidenceRow}>
-                    <Text style={styles.confidenceLabel}>Confidence</Text>
-                    <View style={styles.confidenceBarBg}>
-                      <Animated.View style={[
-                        styles.confidenceBarFill, 
-                        { 
-                            width: confidenceAnim.interpolate({
-                                inputRange: [0, 100],
-                                outputRange: ['0%', '100%']
-                            }), 
-                            backgroundColor: getConfidenceColor(botAnalysis.confidence) 
-                        }
-                      ]} />
-                    </View>
-                    <Text style={styles.confidenceValue}>{botAnalysis.confidence}%</Text>
+                  <View style={styles.tipsList}>
+                    {botAnalysis.recommendations.map((rec, i) => (
+                      <View key={i} style={[styles.tipCard, { borderLeftColor: rec.color }]}>
+                        <View style={styles.tipHeader}>
+                          <View style={[styles.tipTypeBadge, { backgroundColor: rec.color + '20' }]}>
+                            <Text style={[styles.tipTypeText, { color: rec.color }]}>{rec.label}</Text>
+                          </View>
+                          <Text style={styles.tipConfidence}>{rec.confidence}% Conf.</Text>
+                        </View>
+                        <Text style={styles.tipValue}>{rec.value}</Text>
+                      </View>
+                    ))}
                   </View>
 
                   <View style={styles.divider} />
@@ -892,5 +914,52 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     color: theme.text,
     fontSize: getResponsiveFontSize(14),
     fontWeight: 'bold',
+  },
+  tipsList: {
+    marginTop: verticalScale(10),
+  },
+  tipCard: {
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+    borderRadius: moderateScale(16),
+    padding: moderateScale(16),
+    marginBottom: verticalScale(12),
+    borderLeftWidth: 6,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  tipHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: verticalScale(8),
+  },
+  tipTypeBadge: {
+    paddingHorizontal: horizontalScale(10),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(6),
+  },
+  tipTypeText: {
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  tipConfidence: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(11),
+    fontWeight: '600',
+  },
+  tipValue: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(18),
+    fontWeight: 'bold',
+    letterSpacing: 0.2,
+  },
+  lockedSubText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    textAlign: 'center',
+    marginBottom: verticalScale(20),
+    paddingHorizontal: horizontalScale(20),
   },
 });

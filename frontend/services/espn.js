@@ -1,6 +1,6 @@
 import { API_URL } from '../constants/config';
 
-const BASE_URL = 'http://site.api.espn.com/apis/site/v2/sports';
+const BASE_URL = 'https://site.api.espn.com/apis/site/v2/sports';
 const PROXY_BASE = `${API_URL}/api/proxy?target=`;
 
 const withCacheBuster = (url) => {
@@ -39,11 +39,18 @@ const LEAGUES = [
   { sport: 'soccer', league: 'conmebol.libertadores', name: 'Libertadores' },
   { sport: 'soccer', league: 'uefa.champions', name: 'Champions League' },
   { sport: 'soccer', league: 'uefa.europa', name: 'Europa League' },
+  { sport: 'soccer', league: 'uefa.europaconference', name: 'Europa Conference League' },
   { sport: 'soccer', league: 'usa.1', name: 'MLS' },
+  { sport: 'soccer', league: 'usa.nwsl', name: 'NWSL' },
   { sport: 'soccer', league: 'fifa.friendly', name: 'International Friendlies' },
   { sport: 'soccer', league: 'uefa.nations', name: 'Nations League' },
   { sport: 'soccer', league: 'uefa.euro', name: 'Euros' },
   { sport: 'soccer', league: 'fifa.world', name: 'World Cup' },
+  { sport: 'soccer', league: 'fifa.womens-world-cup', name: "Women's World Cup" },
+  { sport: 'soccer', league: 'conmebol.copaamerica', name: 'Copa America' },
+  { sport: 'soccer', league: 'concacaf.goldcup', name: 'Gold Cup' },
+  { sport: 'soccer', league: 'arg.1', name: 'Argentine Primera División' },
+  { sport: 'soccer', league: 'col.1', name: 'Categoría Primera A' },
   
   // Basketball
   { sport: 'basketball', league: 'nba', name: 'NBA' },
@@ -51,6 +58,16 @@ const LEAGUES = [
   { sport: 'basketball', league: 'mens-college-basketball', name: 'NCAA Men' },
   { sport: 'basketball', league: 'womens-college-basketball', name: 'NCAA Women' },
   { sport: 'basketball', league: 'nba-g-league', name: 'NBA G League' },
+  { sport: 'basketball', league: 'euroleague', name: 'EuroLeague' },
+  { sport: 'basketball', league: 'eurocup', name: 'EuroCup' },
+  { sport: 'basketball', league: 'australia.nbl', name: 'NBL Australia' },
+  
+  // Tennis
+  { sport: 'tennis', league: 'atp', name: 'ATP Tour' },
+  { sport: 'tennis', league: 'wta', name: 'WTA Tour' },
+  { sport: 'tennis', league: 'grand-slam', name: 'Grand Slams' },
+  { sport: 'tennis', league: 'atp.masters', name: 'ATP Masters 1000' },
+  { sport: 'tennis', league: 'wta.premier', name: 'WTA Premier' },
 ];
 
 export const fetchMatches = async (days = 3, startDate = new Date()) => {
@@ -161,10 +178,11 @@ const processEvents = (events, sport, league, name) => {
 export const fetchTeamDetails = async (sport, league, teamId) => {
   try {
     // Parallel fetch for efficiency (via backend proxy with fallback)
+    // We use directly ESPN endpoints with cache-buster for schedule to ensure we get the latest results
     const [teamData, newsData, scheduleData] = await Promise.all([
       fetchFromBackendOrESPN(`${sport}/${league}/teams/${teamId}`),
       fetchFromBackendOrESPN(`${sport}/${league}/news?team=${teamId}&limit=5`),
-      fetchFromBackendOrESPN(`${sport}/${league}/teams/${teamId}/schedule`)
+      fetch(`${BASE_URL}/${sport}/${league}/teams/${teamId}/schedule?_=${Date.now()}`).then(res => res.json())
     ]);
 
     const team = teamData.team;
@@ -179,9 +197,20 @@ export const fetchTeamDetails = async (sport, league, teamId) => {
     
     const form = last5.map(event => {
       const competition = event.competitions[0];
-      const competitor = competition.competitors.find(c => String(c.team.id) === String(teamId));
-      const outcome = competitor?.winner ? 'W' : (competition.status.type.description === 'Draw' ? 'D' : 'L'); // Simplified
-      return outcome;
+      const teamComp = competition.competitors.find(c => String(c.team.id) === String(teamId));
+      const oppComp = competition.competitors.find(c => String(c.team.id) !== String(teamId));
+      
+      if (!teamComp || !oppComp) return '-';
+      
+      const teamScore = parseInt(teamComp.score?.value || 0);
+      const oppScore = parseInt(oppComp.score?.value || 0);
+      const state = competition.status.type.state;
+      
+      if (state === 'in') return 'LIVE'; // Or just exclude it if desired
+      
+      if (teamScore > oppScore) return 'W';
+      if (teamScore < oppScore) return 'L';
+      return 'D';
     });
 
     return {

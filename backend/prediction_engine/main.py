@@ -12,6 +12,9 @@ from model_prophet import ProphetModel
 from model_lstm import LSTMModel
 from ensemble_manager import EnsembleManager
 
+# Import ESPN client
+from espn_api import EspnClient
+
 class PredictionEngine:
     def __init__(self, model_dir="models"):
         self.model_dir = model_dir
@@ -20,6 +23,7 @@ class PredictionEngine:
         
         self.ensemble = EnsembleManager(model_dir=model_dir)
         self.load_models()
+        self.espn_client = EspnClient()
 
     def load_models(self):
         try:
@@ -27,18 +31,60 @@ class PredictionEngine:
         except Exception as e:
             print(f"Error loading models: {e}")
 
-    def predict(self, team_id, sport, league):
+    def predict(self, team_or_athlete_id, sport, league):
         """
-        Generate a prediction for a team's next performance metric.
+        Generate a prediction for a team's or player's next performance.
         """
-        # 1. Fetch historical data for the team
-        # (This would use EspnClient to get historical stats)
-        # For demonstration, we'll assume we have a time series of a metric
+        # 1. Fetch historical data
+        if sport == "tennis":
+            # For tennis, get player form and stats
+            player_form = self.espn_client.analyze_athlete_form(sport, league, team_or_athlete_id)
+            # For tennis, let's create a simple prediction based on recent form
+            prediction = self._predict_tennis(player_form, team_or_athlete_id, league)
+            return prediction
+        else:
+            # For other sports, use existing logic
+            team_form = self.espn_client.analyze_team_form(sport, league, team_or_athlete_id)
+            result = self.ensemble.predict(team_or_athlete_id, sport, league)
+            # Add form data to result
+            if team_form:
+                result["form"] = team_form
+            return result
+
+    def _predict_tennis(self, player_form, player_id, league):
+        """
+        Simple prediction logic for tennis matches using form data.
+        """
+        if not player_form or player_form["match_count"] == 0:
+            return {
+                "prediction": "unknown",
+                "confidence": 0.0,
+                "player_id": player_id,
+                "league": league,
+                "form": player_form
+            }
         
-        # 2. Get predictions from the ensemble
-        result = self.ensemble.predict(team_id, sport, league)
+        # Calculate win rate
+        win_rate = player_form["wins"] / player_form["match_count"]
+        confidence = min(0.95, 0.5 + (win_rate * 0.4))
         
-        return result
+        prediction = "win" if win_rate > 0.5 else "loss"
+        
+        # Adjust based on streaks
+        if player_form.get("win_streak", 0) >= 3:
+            confidence = min(0.98, confidence + 0.1)
+            prediction = "win"
+        elif player_form.get("loss_streak", 0) >= 3:
+            confidence = min(0.98, confidence + 0.05)
+            prediction = "loss"
+        
+        return {
+            "prediction": prediction,
+            "confidence": round(confidence, 2),
+            "player_id": player_id,
+            "league": league,
+            "form": player_form
+        }
 
     def train_nightly(self):
         """
