@@ -82,8 +82,8 @@ const ESPN_BASE = 'http://site.api.espn.com/apis/site/v2/sports';
 // key: full ESPN URL
 // value: { data: any, expiresAt: number, lastModified: string, hash: string }
 const cache = new Map();
-const DEFAULT_TTL_MS = 60 * 1000; // 1 minute
-const STALE_TTL_MS = 1000; // Trigger fresh fetch if data is older than 1 second
+const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const STALE_TTL_MS = 30 * 1000; // Trigger fresh fetch if data is older than 30 seconds
 
 const getHash = (data) => crypto.createHash('md5').update(JSON.stringify(data)).digest('hex');
 
@@ -195,30 +195,21 @@ app.get('/api/proxy', async (req, res) => {
 
     const cached = getCache(upstreamUrl);
     
-    // If we have cached data and it's NOT stale, return it immediately
-    if (cached && !force && (Date.now() - cached.lastUpdated <= STALE_TTL_MS)) {
+    // If we have cached data, return it immediately
+    if (cached) {
+      // Check if we should refresh in the background
+      if (force || (Date.now() - cached.lastUpdated > STALE_TTL_MS)) {
+        logger.info('Returning cached data and refreshing in background', { traceId, target });
+        refreshAndNotify(upstreamUrl, traceId);
+      }
       return res.json(cached.data);
     }
 
-    // If it's stale or force=true, we FETCH NEW DATA and wait for it
-    // This ensures the client always gets the most up-to-date performance data
-    logger.info('Fetching fresh data (stale or forced)', { traceId, target, isStale: !!cached });
+    // If no cache, fetch fresh data
+    logger.info('No cached data found, fetching fresh', { traceId, target });
     const data = await fetchWithRetry(upstreamUrl, traceId);
-    
-    // Check if data actually changed before updating cache and notifying
-    const oldHash = cached ? cached.hash : null;
-    const newHash = getHash(data);
-    
-    if (oldHash !== newHash) {
-      setCache(upstreamUrl, data);
-      io.emit('data_updated', { url: upstreamUrl, traceId, timestamp: Date.now() });
-      logger.info('Cache updated and clients notified', { traceId, target });
-    } else {
-      // Just update the lastUpdated timestamp so we don't re-fetch for another 500ms
-      cached.lastUpdated = Date.now();
-      cached.expiresAt = Date.now() + DEFAULT_TTL_MS;
-    }
-    
+    setCache(upstreamUrl, data);
+    io.emit('data_updated', { url: upstreamUrl, traceId, timestamp: Date.now() });
     return res.json(data);
   } catch (e) {
     logger.error('Proxy error', { traceId, target, error: e.message });
@@ -293,7 +284,7 @@ cron.schedule('*/15 * * * *', async () => {
   let successCount = 0;
   let errorCount = 0;
   
-  for (const leagueConfig of leaguesToRefresh) {
+  const refreshPromises = leaguesToRefresh.map(async (leagueConfig) => {
     const { sport, league } = leagueConfig;
     try {
       const target = `${sport}/${league}/scoreboard`;
@@ -310,7 +301,9 @@ cron.schedule('*/15 * * * *', async () => {
         error: err.message
       });
     }
-  }
+  });
+  
+  await Promise.all(refreshPromises);
   
   logger.info('Automated stats refresh complete', {
     traceId,
@@ -418,7 +411,7 @@ app.get('/api/live-predictions', async (req, res) => {
     
     const livePredictions = [];
     
-    for (const { sport, league } of leaguesToCheck) {
+    const leaguePromises = leaguesToCheck.map(async ({ sport, league }) => {
       try {
         const target = `${sport}/${league}/scoreboard`;
         const scoreboardData = await fetchFromBackendOrESPN(target);
@@ -499,7 +492,9 @@ app.get('/api/live-predictions', async (req, res) => {
           error: err.message
         });
       }
-    }
+    });
+    
+    await Promise.all(leaguePromises);
     
     res.json({ livePredictions, traceId, count: livePredictions.length });
   } catch (error) {

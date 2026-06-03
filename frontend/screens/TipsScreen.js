@@ -9,11 +9,12 @@ import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, w
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
 import { useTheme } from '../context/ThemeContext';
 
-const CATEGORIES = ['Football', 'Basketball'];
+const CATEGORIES = ['Football', 'Basketball', 'Tennis'];
 
 const LEAGUES_FILTER = {
-  Football: ['All', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Eredivisie', 'Championship', 'Liga Portugal', 'Super Lig', 'Liga MX', 'Brasileirão', 'Libertadores', 'Champions League', 'Europa League', 'MLS', 'International'],
-  Basketball: ['All', 'NBA', 'WNBA', 'NCAA Men', 'NCAA Women', 'NBA G League']
+  Football: ['Live', 'All', 'Premier League', 'Championship', 'League One', 'La Liga', 'La Liga 2', 'Serie A', 'Serie B', 'Bundesliga', '2. Bundesliga', 'Ligue 1', 'Ligue 2', 'Eredivisie', 'Liga Portugal', 'Liga Portugal 2', 'Super Lig', 'Liga MX', 'Liga de Expansión MX', 'Brasileirão Série A', 'Brasileirão Série B', 'Libertadores', 'Copa Sudamericana', 'Champions League', 'Europa League', 'Europa Conference League', 'MLS', 'NWSL', 'USL Championship', 'International'],
+  Basketball: ['Live', 'All', 'NBA', 'WNBA', 'NCAA Men', 'NCAA Women', 'NBA G League', 'EuroLeague', 'EuroCup', 'FIBA EuroBasket', 'FIBA Basketball World Cup', 'NBL Australia', 'NBA Summer League'],
+  Tennis: ['Live', 'All', 'Grand Slams', 'ATP Tour', 'ATP Masters 1000', 'ATP 500', 'ATP 250', 'ATP Challenger Tour', 'ATP Finals', 'WTA Tour', 'WTA Premier', 'WTA 1000', 'WTA 500', 'WTA 250', 'WTA Finals']
 };
 
 export default function TipsScreen({ navigation }) {
@@ -24,7 +25,7 @@ export default function TipsScreen({ navigation }) {
   const [selectedLeague, setSelectedLeague] = useState('All');
   const [dateFilter, setDateFilter] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [matches, setMatches] = useState([]);
+  const [allMatches, setAllMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -48,10 +49,11 @@ export default function TipsScreen({ navigation }) {
     Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start();
     
     try {
-      const { all } = await fetchMatches(1, date);
+      const { live, all } = await fetchMatches(1, date);
       const targetDateStr = date.toDateString();
       const dateMatches = all.filter(m => new Date(m.date).toDateString() === targetDateStr);
-      setMatches(dateMatches);
+      const allMatchesWithLive = [...live, ...dateMatches.filter(m => m.status !== 'in')];
+      setAllMatches(allMatchesWithLive);
       
       Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }).start();
     } catch (error) {
@@ -83,13 +85,20 @@ export default function TipsScreen({ navigation }) {
   const datesList = generateDates();
 
   const getFilteredMatches = () => {
-    return matches.filter(match => {
-      const matchSport = match.sport === 'soccer' ? 'Football' : 'Basketball';
+    return allMatches.filter(match => {
+      let matchSport;
+      if (match.sport === 'soccer') matchSport = 'Football';
+      else if (match.sport === 'basketball') matchSport = 'Basketball';
+      else if (match.sport === 'tennis') matchSport = 'Tennis';
+      else matchSport = match.sport;
+      
       if (matchSport !== selectedCategory) return false;
       
-      if (selectedLeague !== 'All') {
-        if (selectedLeague === 'International') {
-          const internationalLeagues = ['International Friendlies', 'Nations League', 'Euros', 'World Cup'];
+      if (selectedLeague === 'Live') {
+        if (match.status !== 'in') return false;
+      } else if (selectedLeague !== 'All') {
+        if (selectedLeague === 'International' && selectedCategory === 'Football') {
+          const internationalLeagues = ['International Friendlies', 'Nations League', 'Euros', 'World Cup', "Women's World Cup", 'Copa America', 'Gold Cup'];
           if (!internationalLeagues.includes(match.league)) return false;
         } else if (match.league !== selectedLeague) {
           return false;
@@ -98,7 +107,7 @@ export default function TipsScreen({ navigation }) {
       
       return true;
     }).sort((a, b) => {
-        return a.status === 'in' ? -1 : 1;
+      return a.status === 'in' ? -1 : 1;
     });
   };
 
@@ -111,10 +120,16 @@ export default function TipsScreen({ navigation }) {
     return (
       <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [50, 0] }) }] }}>
         <TouchableOpacity 
-          style={styles.cardContainer}
+          style={[styles.cardContainer, item.status === 'in' && styles.cardContainerLive]}
           activeOpacity={0.8}
           onPress={() => navigation.navigate('MatchDetails', { match: item })}
         >
+          {item.status === 'in' && (
+            <LinearGradient
+              colors={['rgba(255, 68, 68, 0.1)', 'transparent']}
+              style={styles.cardGradient}
+            />
+          )}
           <View style={styles.cardContent}>
               {/* Header: League & Time */}
               <View style={styles.cardHeader}>
@@ -136,7 +151,13 @@ export default function TipsScreen({ navigation }) {
                   </View>
                   
                   <View style={styles.vsWrapper}>
+                    {item.status === 'in' ? (
+                      <Text style={[styles.scoreText, {fontSize: getResponsiveFontSize(18)}]}>
+                        {item.homeTeam.score} - {item.awayTeam.score}
+                      </Text>
+                    ) : (
                       <Text style={styles.vsText}>VS</Text>
+                    )}
                   </View>
 
                   <View style={styles.teamWrapper}>
@@ -409,6 +430,16 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: theme.border,
+  },
+  cardContainerLive: {
+    borderColor: theme.error,
+  },
+  cardGradient: {
+      ...StyleSheet.absoluteFillObject,
+  },
+  scoreText: {
+    color: theme.text,
+    fontWeight: 'bold',
   },
   cardContent: {
     padding: moderateScale(20),
