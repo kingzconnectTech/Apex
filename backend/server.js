@@ -186,12 +186,13 @@ function isValidRelativeTarget(target) {
 app.get('/api/proxy', async (req, res) => {
   const { traceId } = req;
   const { target, force } = req.query;
+  let upstreamUrl;
 
   try {
     if (!isValidRelativeTarget(target)) {
       return res.status(400).json({ error: 'Invalid target', traceId });
     }
-    const upstreamUrl = `${ESPN_BASE}/${target}`;
+    upstreamUrl = `${ESPN_BASE}/${target}`;
 
     const cached = getCache(upstreamUrl);
     
@@ -215,10 +216,12 @@ app.get('/api/proxy', async (req, res) => {
     logger.error('Proxy error', { traceId, target, error: e.message });
     
     // Fallback: If fetch fails but we have stale data, return it as a last resort
-    const cached = getCache(upstreamUrl);
-    if (cached) {
-      logger.warn('Returning stale data after fetch failure', { traceId, target });
-      return res.json(cached.data);
+    if (upstreamUrl) {
+      const cached = getCache(upstreamUrl);
+      if (cached) {
+        logger.warn('Returning stale data after fetch failure', { traceId, target });
+        return res.json(cached.data);
+      }
     }
     
     return res.status(502).json({ error: 'Upstream fetch failed', traceId });
