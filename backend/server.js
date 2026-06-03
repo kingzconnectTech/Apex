@@ -256,27 +256,17 @@ const leaguesToRefresh = [
   { sport: 'soccer', league: 'tur.1' },
   { sport: 'soccer', league: 'uefa.champions' },
   { sport: 'soccer', league: 'uefa.europa' },
-  { sport: 'soccer', league: 'uefa.europaconference' },
   { sport: 'soccer', league: 'mex.1' },
   { sport: 'soccer', league: 'bra.1' },
   { sport: 'soccer', league: 'arg.1' },
   { sport: 'soccer', league: 'usa.1' },
-  { sport: 'soccer', league: 'saudi.1' },
   
   // Top Basketball Leagues
   { sport: 'basketball', league: 'nba' },
   { sport: 'basketball', league: 'wnba' },
-  { sport: 'basketball', league: 'euroleague' },
-  { sport: 'basketball', league: 'eurocup' },
-  { sport: 'basketball', league: 'acb' },
-  { sport: 'basketball', league: 'legabasket' },
-  { sport: 'basketball', league: 'bbl' },
   
   // Top Tennis Leagues
-  { sport: 'tennis', league: 'grand-slam' },
-  { sport: 'tennis', league: 'atp.masters' },
   { sport: 'tennis', league: 'atp' },
-  { sport: 'tennis', league: 'wta.1000' },
   { sport: 'tennis', league: 'wta' }
 ];
 
