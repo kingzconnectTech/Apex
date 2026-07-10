@@ -496,6 +496,26 @@ class EspnClient:
                 live_matches.append(event)
                 
         return live_matches
+        
+    async def extract_match_stats_from_summary(self, match_summary: Dict[str, Any]):
+        """Extract relevant stats (goal kicks, throw-ins if available) from match summary."""
+        home_stats = {}
+        away_stats = {}
+        try:
+            # ESPN typically puts stats in boxscore or teams sections
+            if "boxscore" in match_summary and "teams" in match_summary["boxscore"]:
+                for idx, team in enumerate(match_summary["boxscore"]["teams"]):
+                    stats_dict = {}
+                    for stat in team.get("statistics", []):
+                        stats_dict[stat.get("name", "").lower()] = stat.get("displayValue", "")
+                    if idx ==0:
+                        home_stats = stats_dict
+                    else:
+                        away_stats = stats_dict
+        except Exception as e:
+            print(f"Error extracting match stats: {e}")
+            
+        return {"home": home_stats, "away": away_stats}
 
 if __name__ == "__main__":
     import asyncio

@@ -393,6 +393,813 @@ app.post('/api/predict', (req, res) => {
   });
 });
 
+// ----------------------------------------------------------
+// SERVER-SIDE MATCH PREDICTION ENGINE
+// Ported from frontend/utils/predictionLogic.js — pure Node.js,
+// no React/COLORS imports. Colors are inlined as hex strings.
+// ----------------------------------------------------------
+
+/**
+ * Parse a record string like "10-5-2" or "10-5" into win/loss/draw counts.
+ * @param {string} record
+ * @param {string} sport
+ */
+function parseRecord(record, sport) {
+  if (!record) return { w: 0, l: 0, d: 0, played: 0, winPct: 0 };
+  const parts = record.split(/[-–]/).map(s => parseInt(s, 10));
+  let w = 0, l = 0, d = 0;
+  if (sport === 'basketball' && parts.length >= 2) {
+    w = parts[0]; l = parts[1];
+  } else if (parts.length === 3) {
+    w = parts[0]; d = parts[1]; l = parts[2];
+  } else if (parts.length === 2) {
+    w = parts[0]; l = parts[1];
+  }
+  const played = w + l + d;
+  return { w, l, d, played, winPct: played ? (w / played) * 100 : 0 };
+}
+
+/**
+ * Core server-side prediction algorithm.
+ * Mirrors frontend/utils/predictionLogic.js analyzeMatch() exactly.
+ *
+ * @param {Object} params
+ * @param {string} params.homeName
+ * @param {string} params.awayName
+ * @param {Object} params.homeStats  - { record, lastMatches, news, form }
+ * @param {Object} params.awayStats  - { record, lastMatches, news, form }
+ * @param {Object|null} params.h2h   - { homeWins, awayWins, draws, recent, deepStats }
+ * @param {string} params.sport      - 'soccer' | 'basketball'
+ * @param {boolean} params.isDetailed
+ * @returns {Object} prediction result
+ */
+function analyzeMatchServer({
+  homeName,
+  awayName,
+  homeStats,
+  awayStats,
+  h2h = null,
+  sport,
+  isDetailed = true,
+}) {
+  // Colour palette (hex, no React dependency)
+  const COLORS = {
+    success: '#40c057',
+    error: '#ff6b6b',
+    warning: '#ffa94d',
+    info: '#4dabf7',
+    textSecondary: '#868e96',
+    accent: '#ffd43b',
+  };
+
+  const factors = [];
+  let homeScore = 0;
+  let awayScore = 0;
+
+  // Team Totals
+  let homeTeamTotalPrediction = null;
+  let homeTeamTotalConfidence = 0;
+  let awayTeamTotalPrediction = null;
+  let awayTeamTotalConfidence = 0;
+  let cornersPrediction = null;
+  let cornersConfidence = 0;
+
+  const homeRecord = parseRecord(homeStats.record, sport);
+  const awayRecord = parseRecord(awayStats.record, sport);
+
+  // --- 1. Team Strength (Base on Record) --- Weight: 35%
+  const recordWeight = 35;
+  if (homeRecord.winPct > awayRecord.winPct + 15) {
+    homeScore += recordWeight;
+    factors.push({ label: 'Better Season Record', side: 'home', type: 'success' });
+  } else if (awayRecord.winPct > homeRecord.winPct + 15) {
+    awayScore += recordWeight;
+    factors.push({ label: 'Better Season Record', side: 'away', type: 'success' });
+  }
+
+  // --- 2. Form Analysis (Last 5 matches) ---
+  let homeFormPts = 0;
+  let awayFormPts = 0;
+  let hasForm = false;
+
+  if (homeStats.lastMatches && awayStats.lastMatches) {
+    const getFormPoints = (matches) => {
+      if (!matches) return 0;
+      return matches.reduce(
+        (acc, m) => acc + (m.result === 'W' ? 3 : m.result === 'D' ? 1 : 0),
+        0
+      );
+    };
+    homeFormPts = getFormPoints(homeStats.lastMatches);
+    awayFormPts = getFormPoints(awayStats.lastMatches);
+    hasForm = true;
+  } else if (homeStats.form && awayStats.form) {
+    const parseStreak = (s) => {
+      if (!s) return 0;
+      const type = s.charAt(0);
+      const count = parseInt(s.substring(1)) || 1;
+      if (type === 'W') return count * 3;
+      if (type === 'D') return count * 1;
+      return 0;
+    };
+    homeFormPts = parseStreak(homeStats.form);
+    awayFormPts = parseStreak(awayStats.form);
+    hasForm = true;
+  }
+
+  if (hasForm) {
+    if (homeFormPts > awayFormPts + 3) {
+      homeScore += 20;
+      factors.push({ label: 'Stronger Recent Form', side: 'home', type: 'success' });
+    } else if (awayFormPts > homeFormPts + 3) {
+      awayScore += 20;
+      factors.push({ label: 'Stronger Recent Form', side: 'away', type: 'success' });
+    } else {
+      factors.push({ label: 'Competitive Recent Form', side: 'neutral', type: 'info' });
+    }
+
+    const processDetails = (matches, side) => {
+      if (!matches || matches.length === 0) return;
+      const last3 = matches.slice(0, 3);
+      if (sport === 'soccer') {
+        const cleanSheets = last3.filter(m => m.pa === 0).length;
+        if (cleanSheets >= 2) {
+          side === 'home' ? (homeScore += 10) : (awayScore += 10);
+          factors.push({ label: `Solid Defense (${cleanSheets} Clean Sheets)`, side, type: 'success' });
+        }
+        const failedToScore = matches.filter(m => m.pf === 0).length;
+        if (failedToScore >= 2) {
+          side === 'home' ? (homeScore -= 10) : (awayScore -= 10);
+          factors.push({ label: 'Struggling to Score', side, type: 'error' });
+        }
+      }
+    };
+
+    if (isDetailed) {
+      processDetails(homeStats.lastMatches, 'home');
+      processDetails(awayStats.lastMatches, 'away');
+
+      const getTrend = (matches) => {
+        if (!matches || matches.length < 3) return 0;
+        const p = (m) => (m.result === 'W' ? 3 : m.result === 'D' ? 1 : 0);
+        return (p(matches[0]) + p(matches[1])) - (p(matches[2]) + (matches[3] ? p(matches[3]) : 1));
+      };
+
+      const hTrend = getTrend(homeStats.lastMatches);
+      const aTrend = getTrend(awayStats.lastMatches);
+
+      if (hTrend > aTrend + 1) {
+        homeScore += 5;
+        factors.push({ label: 'Upward Performance Trend', side: 'home', type: 'success' });
+      } else if (aTrend > hTrend + 1) {
+        awayScore += 5;
+        factors.push({ label: 'Upward Performance Trend', side: 'away', type: 'success' });
+      }
+    }
+  }
+
+  // --- 3. Head to Head ---
+  let h2hAvgGoals = 0;
+  let h2hMaxPoints = 0;
+  let h2hMinPoints = 1000;
+
+  if (h2h) {
+    const totalMeetings = h2h.homeWins + h2h.awayWins + h2h.draws;
+    if (totalMeetings > 0) {
+      const hWinPct = (h2h.homeWins / totalMeetings) * 100;
+      const aWinPct = (h2h.awayWins / totalMeetings) * 100;
+      if (hWinPct > 50) {
+        homeScore += 15;
+        factors.push({ label: 'Dominates H2H', side: 'home', type: 'success' });
+      } else if (aWinPct > 50) {
+        awayScore += 15;
+        factors.push({ label: 'Dominates H2H', side: 'away', type: 'success' });
+      }
+    }
+
+    if (h2h.recent && h2h.recent.length > 0) {
+      let totalGoals = 0;
+      let validGames = 0;
+      h2h.recent.forEach(game => {
+        if (game.score && game.score.includes('-')) {
+          const parts = game.score.split('-').map(s => parseInt(s, 10));
+          if (!isNaN(parts[0]) && !isNaN(parts[1])) {
+            const gameTotal = parts[0] + parts[1];
+            totalGoals += gameTotal;
+            if (gameTotal > h2hMaxPoints) h2hMaxPoints = gameTotal;
+            if (gameTotal < h2hMinPoints) h2hMinPoints = gameTotal;
+            validGames++;
+          }
+        }
+      });
+      if (validGames > 0) {
+        h2hAvgGoals = totalGoals / validGames;
+        const label = sport === 'basketball' ? 'Points' : 'Goals';
+        if (sport !== 'basketball') {
+          if (h2hAvgGoals > 2.8)
+            factors.push({ label: `H2H Avg > 2.8 ${label}`, side: 'neutral', type: 'info' });
+          else if (h2hAvgGoals < 1.8)
+            factors.push({ label: `H2H Avg < 1.8 ${label}`, side: 'neutral', type: 'info' });
+        } else {
+          if (h2hAvgGoals > 225)
+            factors.push({ label: `H2H Avg > 225 ${label}`, side: 'neutral', type: 'info' });
+        }
+      }
+    }
+
+    if (h2h.deepStats && sport === 'soccer') {
+      const totals = [];
+      let maxCorners = 0;
+      let minCorners = 1000;
+      h2h.deepStats.forEach(game => {
+        const homeCorners = game?.homeStats?.corners || 0;
+        const awayCorners = game?.awayStats?.corners || 0;
+        const total = homeCorners + awayCorners;
+        if (total > 0) {
+          totals.push(total);
+          if (total > maxCorners) maxCorners = total;
+          if (total < minCorners) minCorners = total;
+        }
+      });
+      if (totals.length > 0) {
+        const sum = totals.reduce((a, b) => a + b, 0);
+        const avgCorners = sum / totals.length;
+        const baseLine = Math.round(avgCorners);
+        const line = baseLine + 0.5;
+        const diffFromLine = avgCorners - line;
+        const direction = diffFromLine >= 0 ? 'Over' : 'Under';
+        const absDiff = Math.abs(diffFromLine);
+        const baseConfidence = 60;
+        const strengthBoost = Math.min(absDiff * 15, 25);
+        cornersPrediction = `${direction} ${line} Corners`;
+        cornersConfidence = baseConfidence + strengthBoost;
+        factors.push({ label: `H2H Avg Corners ${avgCorners.toFixed(1)}`, side: 'neutral', type: 'info' });
+      }
+    }
+  }
+
+  // --- 4. Goal / Points Analysis ---
+  let hAvgScored = 0, aAvgScored = 0;
+  let hAvgConceded = 0, aAvgConceded = 0;
+  let hLastGamePts = 0, aLastGamePts = 0;
+
+  if (homeStats.lastMatches && awayStats.lastMatches) {
+    const calcAvg = (matches, key) =>
+      matches.reduce((sum, m) => sum + (m[key] || 0), 0) / matches.length;
+    hAvgScored = calcAvg(homeStats.lastMatches, 'pf');
+    aAvgScored = calcAvg(awayStats.lastMatches, 'pf');
+    hAvgConceded = calcAvg(homeStats.lastMatches, 'pa');
+    aAvgConceded = calcAvg(awayStats.lastMatches, 'pa');
+
+    if (homeStats.lastMatches.length > 0) {
+      const last = homeStats.lastMatches[0];
+      hLastGamePts = (parseFloat(last.pf) || 0) + (parseFloat(last.pa) || 0);
+    }
+    if (awayStats.lastMatches.length > 0) {
+      const last = awayStats.lastMatches[0];
+      aLastGamePts = (parseFloat(last.pf) || 0) + (parseFloat(last.pa) || 0);
+    }
+  }
+
+  if (hAvgScored > 0 && aAvgScored > 0) {
+    if (hAvgScored > aAvgScored + 0.5) {
+      homeScore += 15;
+      factors.push({ label: `High Scoring (${hAvgScored.toFixed(1)} avg)`, side: 'home', type: 'info' });
+    } else if (aAvgScored > hAvgScored + 0.5) {
+      awayScore += 15;
+      factors.push({ label: `High Scoring (${aAvgScored.toFixed(1)} avg)`, side: 'away', type: 'info' });
+    }
+  }
+
+  // --- 5. News / Injuries ---
+  if (homeStats.news && awayStats.news) {
+    const checkNews = (news) => {
+      if (!news) return false;
+      const keywords = ['injury', 'injured', 'out', 'miss', 'suspended', 'surgery'];
+      return news.some(n =>
+        keywords.some(
+          k =>
+            n.headline.toLowerCase().includes(k) ||
+            (n.description && n.description.toLowerCase().includes(k))
+        )
+      );
+    };
+    if (checkNews(homeStats.news)) {
+      homeScore -= 15;
+      factors.push({ label: 'Roster Issues', side: 'home', type: 'error' });
+    }
+    if (checkNews(awayStats.news)) {
+      awayScore -= 15;
+      factors.push({ label: 'Roster Issues', side: 'away', type: 'error' });
+    }
+  }
+
+  // --- FINAL PREDICTION LOGIC ---
+  const diff = homeScore - awayScore;
+  const isBasketball = sport === 'basketball';
+
+  let winPrediction = null;
+  let winConfidence = 0;
+
+  if (diff > 12) {
+    winPrediction = `${homeName} Win`;
+    winConfidence = Math.min(65 + diff, isBasketball ? 95 : 92);
+  } else if (diff < -12) {
+    winPrediction = `${awayName} Win`;
+    winConfidence = Math.min(65 + Math.abs(diff), isBasketball ? 95 : 92);
+  } else {
+    if (isBasketball) {
+      winPrediction = diff > 0 ? `${homeName} Slight Edge` : `${awayName} Slight Edge`;
+      winConfidence = 55 + Math.abs(diff);
+    } else {
+      if (diff > 5) { winPrediction = '1X (Home Win or Draw)'; winConfidence = 65; }
+      else if (diff < -5) { winPrediction = 'X2 (Away Win or Draw)'; winConfidence = 65; }
+      else { winPrediction = 'Competitive / Draw Potential'; winConfidence = 55; }
+    }
+  }
+
+  // B. Goals / Totals
+  let goalsPrediction = null;
+  let goalsConfidence = 0;
+  let projectedTotalPoints = 0;
+  let projectedMargin = 0;
+
+  if (hAvgScored > 0 && aAvgScored > 0) {
+    if (!isBasketball) {
+      let expHomeGoals = (hAvgScored + aAvgConceded) / 2;
+      let expAwayGoals = (aAvgScored + hAvgConceded) / 2;
+      let totalExpGoals = expHomeGoals + expAwayGoals;
+
+      if (h2hAvgGoals > 0) {
+        totalExpGoals = totalExpGoals * 0.7 + h2hAvgGoals * 0.3;
+      }
+
+      const thresholds = [1.5, 2.5, 3.5, 4.5, 5.5];
+      let bestGoalPred = null;
+      let bestGoalConf = 0;
+
+      thresholds.forEach(t => {
+        if (totalExpGoals > t + 0.35) {
+          const conf = Math.min(60 + (totalExpGoals - t) * 30, 95);
+          if (conf > bestGoalConf) { bestGoalConf = conf; bestGoalPred = `Over ${t} Goals`; }
+        }
+        if (totalExpGoals < t - 0.35) {
+          const conf = Math.min(60 + (t - totalExpGoals) * 30, 95);
+          if (conf > bestGoalConf) { bestGoalConf = conf; bestGoalPred = `Under ${t} Goals`; }
+        }
+      });
+
+      if (bestGoalPred) {
+        goalsPrediction = bestGoalPred;
+        goalsConfidence = bestGoalConf;
+        if (totalExpGoals > 2.8)
+          factors.push({ label: `High Goal Expectancy (${totalExpGoals.toFixed(1)})`, side: 'neutral', type: 'success' });
+        else if (totalExpGoals < 2.2)
+          factors.push({ label: `Low Goal Expectancy (${totalExpGoals.toFixed(1)})`, side: 'neutral', type: 'warning' });
+      }
+    } else {
+      // Basketball totals
+      let homeExp = (hAvgScored + aAvgConceded) / 2;
+      let awayExp = (aAvgScored + hAvgConceded) / 2;
+      let totalPoints = homeExp + awayExp;
+      if (h2hAvgGoals > 0) totalPoints = totalPoints * 0.7 + h2hAvgGoals * 0.3;
+      if (hLastGamePts > 0 && aLastGamePts > 0) {
+        const recentTrend = (hLastGamePts + aLastGamePts) / 2;
+        totalPoints = totalPoints * 0.8 + recentTrend * 0.2;
+      }
+      projectedTotalPoints = totalPoints;
+
+      const predictedLine = Math.round(totalPoints);
+      let confidenceBoost = 0;
+      if (h2hAvgGoals > 0) {
+        if (h2hMinPoints > predictedLine - 10) { confidenceBoost += 5; factors.push({ label: `H2H Floor High (> ${h2hMinPoints})`, side: 'neutral', type: 'info' }); }
+        if (h2hMaxPoints < predictedLine + 10) { confidenceBoost += 5; factors.push({ label: `H2H Ceiling Low (< ${h2hMaxPoints})`, side: 'neutral', type: 'info' }); }
+      }
+      if (hLastGamePts > 0) {
+        if (hLastGamePts > predictedLine / 2 + 10) factors.push({ label: `${homeName} Last Game High (${hLastGamePts})`, side: 'home', type: 'info' });
+        else if (hLastGamePts < predictedLine / 2 - 10) factors.push({ label: `${homeName} Last Game Low (${hLastGamePts})`, side: 'home', type: 'info' });
+      }
+
+      const margin = Math.max(5, Math.round(projectedTotalPoints * 0.035));
+      const overLine = Math.floor(projectedTotalPoints - margin) + 0.5;
+      const underLine = Math.ceil(projectedTotalPoints + margin) - 0.5;
+
+      let preferUnder = false;
+      let reasonForUnder = '';
+      let underConfidenceBoost = 0;
+      const recentTrend = (hLastGamePts + aLastGamePts) / 2;
+
+      if (h2hAvgGoals > 0 && h2hAvgGoals < projectedTotalPoints - 8) { preferUnder = true; reasonForUnder = 'H2H Low'; underConfidenceBoost += 5; }
+      if (hLastGamePts > 0 && aLastGamePts > 0 && recentTrend < projectedTotalPoints - 10) { preferUnder = true; reasonForUnder = reasonForUnder ? reasonForUnder + ' & Recent Low' : 'Recent Games Low'; underConfidenceBoost += 5; }
+      if (projectedTotalPoints < 210) { preferUnder = true; reasonForUnder = reasonForUnder ? reasonForUnder + ' & Low Proj' : 'Defensive Matchup'; underConfidenceBoost += 5; }
+
+      if (preferUnder) {
+        goalsPrediction = `Under ${underLine}`;
+        goalsConfidence = 65 + confidenceBoost + underConfidenceBoost;
+        factors.push({ label: `Trend: Low Scoring (${reasonForUnder})`, side: 'neutral', type: 'warning' });
+      } else {
+        goalsPrediction = `Over ${overLine}`;
+        goalsConfidence = 68 + confidenceBoost;
+        factors.push({ label: `Proj. Total ${predictedLine} Pts`, side: 'neutral', type: 'success' });
+      }
+    }
+  }
+
+  // --- Basketball Spread ---
+  let spreadPrediction = null;
+  let spreadConfidence = 0;
+
+  if (isBasketball && homeStats.lastMatches && awayStats.lastMatches) {
+    const getMargin = (matches) => {
+      if (!matches || matches.length === 0) return 0;
+      return matches.reduce((sum, m) => sum + (parseInt(m.pf) - parseInt(m.pa)), 0) / matches.length;
+    };
+    const homeAtHome = homeStats.lastMatches.filter(m => m.isHome);
+    const awayAtAway = awayStats.lastMatches.filter(m => !m.isHome);
+    const homeRating = homeAtHome.length >= 2 ? getMargin(homeAtHome) : getMargin(homeStats.lastMatches) + 3;
+    const awayRating = awayAtAway.length >= 2 ? getMargin(awayAtAway) : getMargin(awayStats.lastMatches) - 3;
+    projectedMargin = homeRating - awayRating;
+
+    const checkFatigue = (matches) => {
+      if (!matches || matches.length === 0) return false;
+      const lastDate = new Date(matches[0].date);
+      const today = new Date();
+      const diffDays = Math.ceil(Math.abs(today - lastDate) / (1000 * 60 * 60 * 24));
+      return diffDays <= 2;
+    };
+
+    if (checkFatigue(homeStats.lastMatches)) { projectedMargin -= 4; factors.push({ label: 'Home Fatigue (Short Rest)', side: 'away', type: 'warning' }); }
+    if (checkFatigue(awayStats.lastMatches)) { projectedMargin += 4; factors.push({ label: 'Away Fatigue (Short Rest)', side: 'home', type: 'success' }); }
+
+    if (h2h && h2h.homeWins !== undefined) {
+      const total = h2h.homeWins + h2h.awayWins;
+      if (total > 0) {
+        if (h2h.homeWins / total > 0.6) projectedMargin += 3;
+        if (h2h.awayWins / total > 0.6) projectedMargin -= 3;
+      }
+    }
+  }
+
+  // --- C. Recommendations ---
+  const recommendations = [];
+
+  if (!isBasketball) {
+    if (Math.abs(diff) < 15) {
+      if (diff > 4) {
+        recommendations.push({ type: 'DC', label: 'Double Chance', value: `1X (${homeName} or Draw)`, confidence: 75, color: '#4dabf7' });
+      } else if (diff < -4) {
+        recommendations.push({ type: 'DC', label: 'Double Chance', value: `X2 (${awayName} or Draw)`, confidence: 75, color: '#ff8787' });
+      } else {
+        recommendations.push({ type: 'DC', label: 'Double Chance', value: 'X (Draw)', confidence: 68, color: '#9775fa' });
+      }
+    }
+  }
+
+  recommendations.push({ type: '10MIN', label: '10min 1X2', value: 'Draw in first 10 mins', confidence: 62, color: '#40c057' });
+
+  if (!isBasketball) {
+    recommendations.push({ type: 'GK', label: 'Total Goal Kicks', value: 'Over 12.5 Goal Kicks', confidence: 60, color: '#ffa94d' });
+    recommendations.push({ type: 'TI', label: 'Total Thrown-Ins', value: 'Over 24.5 Thrown-Ins', confidence: 58, color: '#3bc9db' });
+  }
+
+  if (goalsPrediction) {
+    recommendations.unshift({ type: 'GOALS', label: sport === 'basketball' ? 'Total Points' : 'Total Goals', value: goalsPrediction, confidence: Math.round(goalsConfidence), color: '#ffd43b' });
+  }
+
+  if (winPrediction) {
+    recommendations.unshift({ type: 'WIN', label: 'Match Winner', value: winPrediction, confidence: Math.round(winConfidence), color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96') });
+  }
+
+  return {
+    prediction: recommendations.length > 0 ? recommendations[0].value : 'Too Close to Call',
+    confidence: recommendations.length > 0 ? recommendations[0].confidence : 45,
+    color: recommendations.length > 0 ? recommendations[0].color : '#868e96',
+    recommendations,
+    factors,
+  };
+}
+
+// Prediction result cache (separate from ESPN proxy cache)
+const predictionCache = new Map();
+const PREDICTION_TTL_MS = 2 * 60 * 1000; // 2 minutes
+
+function getPredictionFromCache(key) {
+  const item = predictionCache.get(key);
+  if (!item) return null;
+  if (item.expiresAt < Date.now()) { predictionCache.delete(key); return null; }
+  return item.data;
+}
+
+function setPredictionCache(key, data) {
+  predictionCache.set(key, { data, expiresAt: Date.now() + PREDICTION_TTL_MS });
+}
+
+/**
+ * Validate sport slug — must be one of the known ESPN sport identifiers.
+ */
+const VALID_SPORTS = new Set(['soccer', 'basketball', 'tennis']);
+
+/**
+ * Validate league slug — alphanumeric, dots, hyphens only, max 40 chars.
+ */
+function isValidLeagueSlug(slug) {
+  return typeof slug === 'string' && /^[a-zA-Z0-9.\-]{1,40}$/.test(slug);
+}
+
+/**
+ * Validate a team/match ID — digits only, 1–15 chars.
+ */
+function isValidId(id) {
+  return typeof id === 'string' && /^\d{1,15}$/.test(id);
+}
+
+/**
+ * Helper: Process ESPN schedule events into the lastMatches format
+ * expected by analyzeMatchServer.
+ */
+function processScheduleForTeam(events, teamId) {
+  const validEvents = events.filter(e => {
+    const state = e.competitions?.[0]?.status?.type?.state;
+    return state === 'post' || state === 'in';
+  });
+  const last5 = validEvents.slice(-5).reverse();
+
+  return last5.map(event => {
+    const competition = event.competitions?.[0];
+    if (!competition) return null;
+    const teamComp = competition.competitors?.find(c => String(c?.team?.id) === String(teamId));
+    const oppComp = competition.competitors?.find(c => String(c?.team?.id) !== String(teamId));
+    if (!teamComp || !oppComp) return null;
+
+    const teamScore = parseInt(teamComp.score?.value || 0);
+    const oppScore = parseInt(oppComp.score?.value || 0);
+    const state = competition.status?.type?.state;
+
+    let result;
+    if (state === 'in') result = 'D';
+    else if (teamScore > oppScore) result = 'W';
+    else if (teamScore < oppScore) result = 'L';
+    else result = 'D';
+
+    return {
+      date: event.date,
+      pf: teamScore,
+      pa: oppScore,
+      isHome: teamComp?.homeAway === 'home',
+      result,
+      opponentId: oppComp?.team?.id,
+    };
+  }).filter(Boolean);
+}
+
+/**
+ * Helper: Build H2H object from headToHeadGames (ESPN summary data).
+ */
+function buildH2H(headToHeadGames, matchId, homeTeamId, awayTeamId) {
+  if (!headToHeadGames || headToHeadGames.length === 0) return null;
+
+  const validH2H = headToHeadGames.filter(
+    g =>
+      String(g.id) !== String(matchId) &&
+      g.homeTeamScore !== undefined &&
+      g.awayTeamScore !== undefined
+  );
+
+  if (validH2H.length === 0) return null;
+
+  let homeWins = 0;
+  let awayWins = 0;
+  let draws = 0;
+
+  const recent = validH2H.slice(0, 5).map(game => {
+    const hScore = parseInt(game.homeTeamScore || 0);
+    const aScore = parseInt(game.awayTeamScore || 0);
+    const isCurrentHomeHosting = String(game.homeTeamId) === String(homeTeamId);
+
+    if (hScore === aScore) draws++;
+    else if (isCurrentHomeHosting) {
+      if (hScore > aScore) homeWins++;
+      else awayWins++;
+    } else {
+      if (aScore > hScore) homeWins++;
+      else awayWins++;
+    }
+
+    return {
+      date: game.gameDate,
+      score: game.score ? game.score.replace(/\s/g, '') : '?-?',
+      id: game.id,
+    };
+  });
+
+  return { homeWins, awayWins, draws, recent };
+}
+
+/**
+ * POST /api/match-prediction
+ *
+ * Body: { matchId, sport, leagueSlug, homeTeamId, awayTeamId }
+ *
+ * Fetches all required ESPN data server-side, runs the full prediction
+ * algorithm, caches the result for 2 minutes, and returns structured
+ * prediction output to the frontend.
+ */
+app.post('/api/match-prediction', async (req, res) => {
+  const { traceId } = req;
+
+  // --- Input Validation ---
+  const { matchId, sport, leagueSlug, homeTeamId, awayTeamId } = req.body || {};
+
+  if (!matchId || !sport || !leagueSlug || !homeTeamId || !awayTeamId) {
+    return res.status(400).json({
+      error: 'Missing required fields: matchId, sport, leagueSlug, homeTeamId, awayTeamId',
+      traceId,
+    });
+  }
+
+  if (!VALID_SPORTS.has(sport)) {
+    return res.status(400).json({
+      error: `Invalid sport "${sport}". Must be one of: soccer, basketball, tennis`,
+      traceId,
+    });
+  }
+
+  if (!isValidLeagueSlug(leagueSlug)) {
+    return res.status(400).json({
+      error: 'Invalid leagueSlug format. Alphanumeric, dots and hyphens only, max 40 chars.',
+      traceId,
+    });
+  }
+
+  if (!isValidId(String(matchId)) || !isValidId(String(homeTeamId)) || !isValidId(String(awayTeamId))) {
+    return res.status(400).json({
+      error: 'Invalid matchId, homeTeamId, or awayTeamId. Must be numeric strings.',
+      traceId,
+    });
+  }
+
+  const cacheKey = `prediction:${sport}:${leagueSlug}:${matchId}`;
+
+  // --- Serve from cache if available ---
+  const cached = getPredictionFromCache(cacheKey);
+  if (cached) {
+    logger.info('Prediction served from cache', { traceId, cacheKey });
+    return res.json({ ...cached, traceId, fromCache: true });
+  }
+
+  logger.info('Match prediction requested', { traceId, matchId, sport, leagueSlug, homeTeamId, awayTeamId });
+
+  // --- Fetch ESPN Data (server-side) ---
+  let homeTeamData, awayTeamData, matchAnalysisData;
+  let homeScheduleData, awayScheduleData;
+  let homeNewsData, awayNewsData;
+
+  try {
+    [homeTeamData, awayTeamData, matchAnalysisData, homeScheduleData, awayScheduleData, homeNewsData, awayNewsData] =
+      await Promise.all([
+        fetchFromBackendOrESPN(`${sport}/${leagueSlug}/teams/${homeTeamId}`),
+        fetchFromBackendOrESPN(`${sport}/${leagueSlug}/teams/${awayTeamId}`),
+        fetchFromBackendOrESPN(`${sport}/${leagueSlug}/summary?event=${matchId}`),
+        fetchFromBackendOrESPN(`${sport}/${leagueSlug}/teams/${homeTeamId}/schedule`),
+        fetchFromBackendOrESPN(`${sport}/${leagueSlug}/teams/${awayTeamId}/schedule`),
+        fetchFromBackendOrESPN(`${sport}/${leagueSlug}/news?team=${homeTeamId}&limit=5`),
+        fetchFromBackendOrESPN(`${sport}/${leagueSlug}/news?team=${awayTeamId}&limit=5`),
+      ]);
+  } catch (espnError) {
+    logger.error('ESPN API fetch failed for match prediction', {
+      traceId,
+      matchId,
+      sport,
+      leagueSlug,
+      error: espnError.message,
+    });
+    return res.status(502).json({
+      error: 'Failed to fetch match data from ESPN API. Please try again later.',
+      traceId,
+    });
+  }
+
+  // --- Parse ESPN Data ---
+  let homeName, awayName, homeRecord, awayRecord;
+  let homeLastMatches = [];
+  let awayLastMatches = [];
+  let homeNews = [];
+  let awayNews = [];
+  let h2h = null;
+  let headToHeadGames = [];
+
+  try {
+    const homeTeam = homeTeamData?.team;
+    const awayTeam = awayTeamData?.team;
+
+    homeName = homeTeam?.displayName || `Team ${homeTeamId}`;
+    awayName = awayTeam?.displayName || `Team ${awayTeamId}`;
+    homeRecord = homeTeam?.record?.items?.[0]?.summary;
+    awayRecord = awayTeam?.record?.items?.[0]?.summary;
+
+    // Process last 5 matches from schedule
+    homeLastMatches = processScheduleForTeam(homeScheduleData?.events || [], homeTeamId);
+    awayLastMatches = processScheduleForTeam(awayScheduleData?.events || [], awayTeamId);
+
+    // Process news
+    homeNews = (homeNewsData?.articles || []).map(a => ({
+      headline: a.headline || '',
+      description: a.description || '',
+    }));
+    awayNews = (awayNewsData?.articles || []).map(a => ({
+      headline: a.headline || '',
+      description: a.description || '',
+    }));
+
+    // Process H2H from match summary
+    let rawH2H = matchAnalysisData?.headToHeadGames || [];
+    if (rawH2H.length > 0 && rawH2H[0]?.events) {
+      rawH2H = rawH2H.flatMap(item => item.events || []);
+      rawH2H = [...new Map(rawH2H.map(item => [item.id, item])).values()];
+    }
+    headToHeadGames = rawH2H;
+    h2h = buildH2H(headToHeadGames, matchId, homeTeamId, awayTeamId);
+
+  } catch (parseError) {
+    logger.error('ESPN data parsing error', {
+      traceId,
+      matchId,
+      error: parseError.message,
+      stack: parseError.stack,
+    });
+    return res.status(500).json({
+      error: 'Failed to parse ESPN API response data.',
+      traceId,
+    });
+  }
+
+  // --- Run Prediction Algorithm ---
+  let prediction;
+  try {
+    prediction = analyzeMatchServer({
+      homeName,
+      awayName,
+      homeStats: {
+        record: homeRecord,
+        lastMatches: homeLastMatches,
+        news: homeNews,
+      },
+      awayStats: {
+        record: awayRecord,
+        lastMatches: awayLastMatches,
+        news: awayNews,
+      },
+      h2h,
+      sport,
+      isDetailed: true,
+    });
+  } catch (algoError) {
+    logger.error('Prediction algorithm error', {
+      traceId,
+      matchId,
+      error: algoError.message,
+      stack: algoError.stack,
+    });
+    return res.status(500).json({
+      error: 'Prediction algorithm encountered an unexpected error.',
+      traceId,
+    });
+  }
+
+  // --- Build Response ---
+  const result = {
+    matchId,
+    sport,
+    leagueSlug,
+    homeName,
+    awayName,
+    ...prediction,
+    meta: {
+      homeRecord: homeRecord || 'N/A',
+      awayRecord: awayRecord || 'N/A',
+      homeFormMatches: homeLastMatches.length,
+      awayFormMatches: awayLastMatches.length,
+      h2hGamesAnalyzed: h2h ? (h2h.recent?.length || 0) : 0,
+      generatedAt: new Date().toISOString(),
+    },
+  };
+
+  // Cache the result
+  setPredictionCache(cacheKey, result);
+
+  logger.info('Match prediction generated successfully', {
+    traceId,
+    matchId,
+    sport,
+    homeName,
+    awayName,
+    topPrediction: result.prediction,
+    confidence: result.confidence,
+  });
+
+  return res.json({ ...result, traceId });
+});
+
 // Bulk match predictions endpoint (optimized, with caching)
 app.get('/api/match-predictions', async (req, res) => {
     const { traceId } = req;

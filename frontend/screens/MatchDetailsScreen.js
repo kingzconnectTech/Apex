@@ -5,8 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
 import { fetchTeamDetails, fetchMatchAnalysis, fetchGamesStats } from '../services/espn';
-import { checkBackendHealth } from '../services/api';
-import { analyzeMatch } from '../utils/predictionLogic';
+import { checkBackendHealth, fetchMatchPrediction } from '../services/api';
 import { useUser } from '../context/UserContext';
 import { Alert } from 'react-native';
 import { InterstitialAd, AdEventType } from 'react-native-google-mobile-ads';
@@ -25,7 +24,11 @@ export default function MatchDetailsScreen({ route, navigation }) {
   const [awayDetails, setAwayDetails] = useState(null);
   const [matchAnalysis, setMatchAnalysis] = useState(null);
   const [h2hDeepStats, setH2HDeepStats] = useState([]);
-  const [showPrediction, setShowPrediction] = useState(false); // Default to false now
+  const [showPrediction, setShowPrediction] = useState(false);
+  // Backend prediction state
+  const [botAnalysis, setBotAnalysis] = useState(null);
+  const [predictionLoading, setPredictionLoading] = useState(false);
+  const [predictionError, setPredictionError] = useState(null);
   const [adLoaded, setAdLoaded] = useState(false);
   const interstitialRef = useRef(null);
   const pendingActionRef = useRef(null);
@@ -86,7 +89,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
     const loadData = async () => {
       if (match?.sport && match?.leagueSlug && match?.id) {
         setLoading(true);
-        
+
         // Check Backend Status (Public IP)
         checkBackendHealth().then(status => console.log('Backend Connection Status:', status));
 
@@ -97,28 +100,53 @@ export default function MatchDetailsScreen({ route, navigation }) {
             fetchTeamDetails(match.sport, match.leagueSlug, getTeamId(match.awayTeam)),
             fetchMatchAnalysis(match.sport, match.leagueSlug, match.id)
           ]);
-          
+
           setHomeDetails(home);
           setAwayDetails(away);
           setMatchAnalysis(analysis);
 
           // Fetch Deep Stats for H2H (Cards, Corners)
           if (analysis?.headToHeadGames?.length > 0) {
-             // Filter out current game (if present) and non-final games
-             const validH2H = analysis.headToHeadGames.filter(g => 
-                 String(g.id) !== String(match.id) && 
-                 g.homeTeamScore !== undefined && 
-                 g.awayTeamScore !== undefined
-             );
+            const validH2H = analysis.headToHeadGames.filter(g =>
+              String(g.id) !== String(match.id) &&
+              g.homeTeamScore !== undefined &&
+              g.awayTeamScore !== undefined
+            );
+            if (validH2H.length > 0) {
+              const gameIds = validH2H.slice(0, 5).map(g => g.id);
+              const deepStats = await fetchGamesStats(match.sport, match.leagueSlug, gameIds);
+              setH2HDeepStats(deepStats);
+            }
+          }
 
-             if (validH2H.length > 0) {
-                const gameIds = validH2H.slice(0, 5).map(g => g.id);
-                const deepStats = await fetchGamesStats(match.sport, match.leagueSlug, gameIds);
-                setH2HDeepStats(deepStats);
-             }
+          // --- Fetch prediction from backend (server-side ESPN data + algorithm) ---
+          const homeId = getTeamId(match.homeTeam);
+          const awayId = getTeamId(match.awayTeam);
+          if (homeId && awayId) {
+            setPredictionLoading(true);
+            setPredictionError(null);
+            try {
+              const predResult = await fetchMatchPrediction(
+                match.id,
+                match.sport,
+                match.leagueSlug,
+                homeId,
+                awayId
+              );
+              if (predResult && predResult.recommendations) {
+                setBotAnalysis(predResult);
+              } else {
+                setPredictionError('Prediction data unavailable. Try again later.');
+              }
+            } catch (predErr) {
+              console.warn('Prediction fetch failed:', predErr);
+              setPredictionError('Could not generate prediction. Check your connection.');
+            } finally {
+              setPredictionLoading(false);
+            }
           }
         } catch (error) {
-          console.error("Failed to load match details", error);
+          console.error('Failed to load match details', error);
         } finally {
           setLoading(false);
         }
@@ -370,31 +398,6 @@ export default function MatchDetailsScreen({ route, navigation }) {
 
   const advancedMetrics = getAdvancedMetrics();
 
-  // --- BOT ANALYSIS ENGINE ---
-  const getBotAnalysis = () => {
-    if (!homeDetails || !awayDetails) return null;
-
-    return analyzeMatch({
-        homeName,
-        awayName,
-        homeStats: { 
-            record: homeDetails.stats?.record, 
-            lastMatches: homeDetails.lastMatches,
-            news: homeDetails.news 
-        },
-        awayStats: { 
-            record: awayDetails.stats?.record, 
-            lastMatches: awayDetails.lastMatches,
-            news: awayDetails.news 
-        },
-        h2h: h2hWithDeepStats,
-        sport: match.sport,
-        isDetailed: true
-    });
-  };
-
-  const botAnalysis = getBotAnalysis();
-
   // Animation for confidence bar
   const confidenceAnim = useRef(new Animated.Value(0)).current;
 
@@ -480,29 +483,43 @@ export default function MatchDetailsScreen({ route, navigation }) {
         </View>
       ) : (
         <View style={styles.contentContainer}>
-          {botAnalysis && (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>AI Match Analysis</Text>
+          {/* AI Match Analysis — powered by backend prediction engine */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>AI Match Analysis</Text>
+              {botAnalysis?.meta && (
+                <Text style={styles.predictionMeta}>via live ESPN data</Text>
+              )}
+            </View>
+
+            {predictionLoading ? (
+              <View style={styles.predictionLoadingContainer}>
+                <ActivityIndicator size="small" color={theme.primary} />
+                <Text style={styles.predictionLoadingText}>Generating prediction...</Text>
               </View>
-              
-              {!showPrediction ? (
-                 <View style={styles.lockedContainer}>
-                    <Ionicons name="lock-closed" size={40} color={theme.textSecondary} />
-                    <Text style={styles.lockedText}>AI Tips Locked</Text>
-                    <Text style={styles.lockedSubText}>Unlock to reveal Win, Goals, and Special props.</Text>
-                    <TouchableOpacity style={styles.unlockButton} onPress={handleUnlockPrediction}>
-                        <LinearGradient
-                            colors={[theme.primary, theme.warning]}
-                            start={{x: 0, y: 0}}
-                            end={{x: 1, y: 0}}
-                            style={styles.unlockGradient}
-                        >
-                            <Text style={styles.unlockText}>Unlock All Tips (1 APT)</Text>
-                            <Ionicons name="key" size={16} color="#FFF" style={{ marginLeft: 8 }} />
-                        </LinearGradient>
-                    </TouchableOpacity>
-                 </View>
+            ) : predictionError ? (
+              <View style={styles.predictionErrorContainer}>
+                <Ionicons name="cloud-offline-outline" size={32} color={theme.textSecondary} />
+                <Text style={styles.predictionErrorText}>{predictionError}</Text>
+              </View>
+            ) : botAnalysis ? (
+              !showPrediction ? (
+                <View style={styles.lockedContainer}>
+                  <Ionicons name="lock-closed" size={40} color={theme.textSecondary} />
+                  <Text style={styles.lockedText}>AI Tips Locked</Text>
+                  <Text style={styles.lockedSubText}>Unlock to reveal Win, Goals, and Special props.</Text>
+                  <TouchableOpacity style={styles.unlockButton} onPress={handleUnlockPrediction}>
+                    <LinearGradient
+                      colors={[theme.primary, theme.warning]}
+                      start={{x: 0, y: 0}}
+                      end={{x: 1, y: 0}}
+                      style={styles.unlockGradient}
+                    >
+                      <Text style={styles.unlockText}>Unlock All Tips (1 APT)</Text>
+                      <Ionicons name="key" size={16} color="#FFF" style={{ marginLeft: 8 }} />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <>
                   <View style={styles.tipsList}>
@@ -522,15 +539,15 @@ export default function MatchDetailsScreen({ route, navigation }) {
                   <View style={styles.divider} />
 
                   <View style={styles.formSection}>
-                      <Text style={styles.subTitle}>Recent Form</Text>
-                      <View style={styles.teamFormRow}>
-                          <Text style={styles.teamFormName} numberOfLines={1}>{homeName}</Text>
-                          {renderForm(homeStats)}
-                      </View>
-                      <View style={styles.teamFormRow}>
-                          <Text style={styles.teamFormName} numberOfLines={1}>{awayName}</Text>
-                          {renderForm(awayStats)}
-                      </View>
+                    <Text style={styles.subTitle}>Recent Form</Text>
+                    <View style={styles.teamFormRow}>
+                      <Text style={styles.teamFormName} numberOfLines={1}>{homeName}</Text>
+                      {renderForm(homeStats)}
+                    </View>
+                    <View style={styles.teamFormRow}>
+                      <Text style={styles.teamFormName} numberOfLines={1}>{awayName}</Text>
+                      {renderForm(awayStats)}
+                    </View>
                   </View>
 
                   <View style={styles.divider} />
@@ -539,18 +556,25 @@ export default function MatchDetailsScreen({ route, navigation }) {
                   {botAnalysis.factors.map((factor, i) => (
                     <View key={i} style={styles.factorRow}>
                       <View style={[
-                        styles.factorDot, 
+                        styles.factorDot,
                         { backgroundColor: factor.side === 'home' ? theme.success : (factor.side === 'away' ? theme.error : theme.textSecondary) }
                       ]} />
                       <Text style={styles.factorText}>
-                        <Text style={{fontWeight: 'bold'}}>{factor.side === 'home' ? homeName : (factor.side === 'away' ? awayName : 'Both')}</Text>: {factor.label}
+                        <Text style={{fontWeight: 'bold'}}>
+                          {factor.side === 'home' ? homeName : (factor.side === 'away' ? awayName : 'Both')}
+                        </Text>: {factor.label}
                       </Text>
                     </View>
                   ))}
                 </>
-              )}
-            </View>
-          )}
+              )
+            ) : (
+              <View style={styles.predictionErrorContainer}>
+                <Ionicons name="analytics-outline" size={32} color={theme.textSecondary} />
+                <Text style={styles.predictionErrorText}>Prediction not available for this match.</Text>
+              </View>
+            )}
+          </View>
 
           {advancedMetrics && (
             <View style={styles.card}>
@@ -962,4 +986,36 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     marginBottom: verticalScale(20),
     paddingHorizontal: horizontalScale(20),
   },
+  // --- Backend prediction UI styles ---
+  predictionMeta: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(11),
+    fontStyle: 'italic',
+    marginTop: verticalScale(2),
+  },
+  predictionLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: verticalScale(20),
+    gap: 10,
+  },
+  predictionLoadingText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(13),
+    marginLeft: horizontalScale(8),
+  },
+  predictionErrorContainer: {
+    alignItems: 'center',
+    paddingVertical: verticalScale(24),
+    gap: 10,
+  },
+  predictionErrorText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(13),
+    textAlign: 'center',
+    marginTop: verticalScale(8),
+    paddingHorizontal: horizontalScale(10),
+  },
 });
+
