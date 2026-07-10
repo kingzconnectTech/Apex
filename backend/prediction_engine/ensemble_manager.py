@@ -1,7 +1,9 @@
 import os
+import json
 import joblib
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from skopt import BayesSearchCV
 from sklearn.metrics import mean_absolute_error, precision_score
 from model_arima import ARIMAModel
@@ -105,7 +107,10 @@ class EnsembleManager:
             "benchmark_improvement": self._calculate_improvement(results[self.winning_model_name]['mae'])
         }
         
+        # Save both joblib (for Python) and JSON (for Node.js)
         joblib.dump(self.meta, os.path.join(self.model_dir, "winning_model.meta"))
+        with open(os.path.join(self.model_dir, "winning_model.json"), 'w') as f:
+            json.dump(self.meta, f)
         return results
 
     def _evaluate_direction_precision(self, model, data):

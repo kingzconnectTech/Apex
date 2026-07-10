@@ -322,17 +322,22 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/monitoring/accuracy', (req, res) => {
-  const metaPath = path.join(__dirname, 'prediction_engine', 'models', 'winning_model.meta');
+  const metaPath = path.join(__dirname, 'prediction_engine', 'models', 'winning_model.json');
   if (fs.existsSync(metaPath)) {
-    const meta = joblib.load(metaPath);
-    const accuracy = meta.precision || 0;
-    const status = accuracy >= 0.85 ? 'HEALTHY' : 'ALERT';
-    
-    if (status === 'ALERT') {
-       logger.warn('PREDICTION ACCURACY DROP ALERT', { accuracy, threshold: 0.85 });
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      const accuracy = meta.precision || 0;
+      const status = accuracy >= 0.85 ? 'HEALTHY' : 'ALERT';
+      
+      if (status === 'ALERT') {
+         logger.warn('PREDICTION ACCURACY DROP ALERT', { accuracy, threshold: 0.85 });
+      }
+      
+      res.json({ accuracy, status, lastUpdated: meta.updated_at });
+    } catch (err) {
+      logger.error('Error parsing model metadata', { error: err.message });
+      res.status(500).json({ error: 'Failed to parse model metadata' });
     }
-    
-    res.json({ accuracy, status, lastUpdated: meta.updated_at });
   } else {
     res.status(404).json({ error: 'No model metadata found' });
   }
@@ -388,115 +393,212 @@ app.post('/api/predict', (req, res) => {
   });
 });
 
-// Live game predictions endpoint for matches past halfway
-app.get('/api/live-predictions', async (req, res) => {
-  const { traceId } = req;
-  logger.info('Live predictions request received', { traceId });
-  
-  try {
-    const leaguesToCheck = [
-      { sport: 'soccer', league: 'eng.1' },
-      { sport: 'soccer', league: 'esp.1' },
-      { sport: 'soccer', league: 'ita.1' },
-      { sport: 'basketball', league: 'nba' },
-      { sport: 'basketball', league: 'wnba' }
-    ];
+// Bulk match predictions endpoint (optimized, with caching)
+app.get('/api/match-predictions', async (req, res) => {
+    const { traceId } = req;
+    const { sport, league } = req.query;
+    logger.info('Match predictions request received', { traceId, sport, league });
     
-    const livePredictions = [];
+    try {
+        // We'll spawn a Python process to use our PredictionEngine
+        const args = [
+            path.join(__dirname, 'prediction_engine', 'main.py'),
+            '--predictions',
+            sport,
+            league
+        ];
+        
+        const pythonProcess = spawn('python', args);
+        
+        let dataString = '';
+        let errorString = '';
+        
+        pythonProcess.stdout.on('data', (data) => {
+            dataString += data.toString();
+        });
+        
+        pythonProcess.stderr.on('data', (data) => {
+            errorString += data.toString();
+            logger.error('Prediction engine stderr', { traceId, error: data.toString() });
+        });
+        
+        pythonProcess.on('close', (code) => {
+            if (code !== 0) {
+                return res.status(500).json({ 
+                    error: 'Prediction engine failed', 
+                    traceId, 
+                    stderr: errorString 
+                });
+            }
+            
+            try {
+                const result = JSON.parse(dataString);
+                res.json({ ...result, traceId });
+            } catch (err) {
+                logger.error('Error parsing predictions JSON', { 
+                    traceId, 
+                    error: err.message,
+                    output: dataString 
+                });
+                res.status(500).json({ error: 'Failed to parse predictions', traceId });
+            }
+        });
+        
+    } catch (error) {
+        logger.error('Error fetching match predictions', {
+            traceId,
+            error: error.message
+        });
+        res.status(500).json({ error: 'Failed to fetch match predictions', traceId });
+    }
+});
+
+// Live games only endpoint
+app.get('/api/live-games', async (req, res) => {
+    const { traceId } = req;
+    const { sport, league } = req.query;
+    logger.info('Live games request received', { traceId, sport, league });
     
-    const leaguePromises = leaguesToCheck.map(async ({ sport, league }) => {
-      try {
+    try {
+        if (!isValidRelativeTarget(`${sport}/${league}`)) {
+            return res.status(400).json({ error: 'Invalid sport/league', traceId });
+        }
+        
         const target = `${sport}/${league}/scoreboard`;
         const scoreboardData = await fetchFromBackendOrESPN(target);
         
-        if (scoreboardData && scoreboardData.events) {
-          for (const event of scoreboardData.events) {
-            const competition = event.competitions?.[0];
-            const status = competition?.status?.type?.state;
-            
-            if (status === 'in') {
-              const clock = competition?.status?.displayClock;
-              const period = competition?.status?.period;
-              
-              // Check if match is past halfway
-              let isPastHalfway = false;
-              if (sport === 'soccer') {
-                // Soccer: 2nd half (period 2) or more
-                isPastHalfway = period >= 2 || (period === 1 && clock?.includes('45'));
-              } else if (sport === 'basketball') {
-                // Basketball: 3rd quarter or later (NBA has 4 quarters)
-                isPastHalfway = period >= 3 || (period === 2 && clock?.includes('6'));
-              }
-              
-              if (isPastHalfway) {
-                // Generate live prediction based on current score
-                const competitors = competition?.competitors || [];
-                if (competitors.length === 2) {
-                  const home = competitors.find(c => c.homeAway === 'home');
-                  const away = competitors.find(c => c.homeAway === 'away');
-                  
-                  if (home && away) {
-                    const homeScore = parseInt(home.score?.value || 0);
-                    const awayScore = parseInt(away.score?.value || 0);
-                    
-                    let prediction, confidence;
-                    if (homeScore > awayScore) {
-                      prediction = home.team?.displayName || 'Home Team';
-                      confidence = 0.7 + Math.min(0.2, (homeScore - awayScore) * 0.05);
-                    } else if (awayScore > homeScore) {
-                      prediction = away.team?.displayName || 'Away Team';
-                      confidence = 0.7 + Math.min(0.2, (awayScore - homeScore) * 0.05);
-                    } else {
-                      prediction = 'Draw/No Clear Favorite';
-                      confidence = 0.5;
-                    }
-                    
-                    livePredictions.push({
-                      id: event.id,
-                      name: event.name,
-                      league: league,
-                      sport: sport,
-                      time: clock,
-                      period: period,
-                      homeTeam: {
-                        name: home.team?.displayName,
-                        score: homeScore,
-                        logo: home.team?.logo
-                      },
-                      awayTeam: {
-                        name: away.team?.displayName,
-                        score: awayScore,
-                        logo: away.team?.logo
-                      },
-                      prediction: prediction,
-                      confidence: Math.round(confidence * 100) / 100
-                    });
-                  }
-                }
-              }
-            }
-          }
+        if (!scoreboardData || !scoreboardData.events) {
+            return res.json({ liveGames: [], traceId });
         }
-      } catch (err) {
-        logger.error('Error fetching scoreboard for league', {
-          traceId,
-          sport,
-          league,
-          error: err.message
+        
+        const liveGames = scoreboardData.events.filter(event => 
+            event.competitions?.[0]?.status?.type?.state === 'in'
+        );
+        
+        res.json({ liveGames, traceId, count: liveGames.length });
+    } catch (error) {
+        logger.error('Error fetching live games', {
+            traceId,
+            error: error.message
         });
-      }
-    });
+        res.status(500).json({ error: 'Failed to fetch live games', traceId });
+    }
+});
+
+// Live game predictions endpoint for matches past halfway
+app.get('/api/live-predictions', async (req, res) => {
+    const { traceId } = req;
+    logger.info('Live predictions request received', { traceId });
     
-    await Promise.all(leaguePromises);
-    
-    res.json({ livePredictions, traceId, count: livePredictions.length });
-  } catch (error) {
-    logger.error('Error fetching live predictions', {
-      traceId,
-      error: error.message
-    });
-    res.status(500).json({ error: 'Failed to fetch live predictions', traceId });
-  }
+    try {
+        const leaguesToCheck = [
+            { sport: 'soccer', league: 'eng.1' },
+            { sport: 'soccer', league: 'esp.1' },
+            { sport: 'soccer', league: 'ita.1' },
+            { sport: 'basketball', league: 'nba' },
+            { sport: 'basketball', league: 'wnba' },
+            { sport: 'tennis', league: 'atp' },
+            { sport: 'tennis', league: 'wta' }
+        ];
+        
+        const livePredictions = [];
+        
+        const leaguePromises = leaguesToCheck.map(async ({ sport, league }) => {
+            try {
+                const target = `${sport}/${league}/scoreboard`;
+                const scoreboardData = await fetchFromBackendOrESPN(target);
+                
+                if (scoreboardData && scoreboardData.events) {
+                    for (const event of scoreboardData.events) {
+                        const competition = event.competitions?.[0];
+                        const status = competition?.status?.type?.state;
+                        
+                        if (status === 'in') {
+                            const clock = competition?.status?.displayClock;
+                            const period = competition?.status?.period;
+                            
+                            // Check if match is past halfway
+                            let isPastHalfway = false;
+                            if (sport === 'soccer') {
+                                // Soccer: 2nd half (period 2) or more
+                                isPastHalfway = period >= 2 || (period === 1 && clock?.includes('45'));
+                            } else if (sport === 'basketball') {
+                                // Basketball: 3rd quarter or later (NBA has 4 quarters)
+                                isPastHalfway = period >= 3 || (period === 2 && clock?.includes('6'));
+                            } else if (sport === 'tennis') {
+                                // Tennis: 2nd set or later, or 1st set past 3 games
+                                isPastHalfway = period >= 2 || true; // For tennis, include all live
+                            }
+                            
+                            if (isPastHalfway) {
+                                // Generate live prediction based on current score
+                                const competitors = competition?.competitors || [];
+                                if (competitors.length === 2) {
+                                    const home = competitors.find(c => c.homeAway === 'home');
+                                    const away = competitors.find(c => c.homeAway === 'away');
+                                    
+                                    if (home && away) {
+                                        const homeScore = parseInt(home.score?.value || 0);
+                                        const awayScore = parseInt(away.score?.value || 0);
+                                        
+                                        let prediction, confidence;
+                                        if (homeScore > awayScore) {
+                                            prediction = home.team?.displayName || 'Home Team';
+                                            confidence = 0.7 + Math.min(0.2, (homeScore - awayScore) * 0.05);
+                                        } else if (awayScore > homeScore) {
+                                            prediction = away.team?.displayName || 'Away Team';
+                                            confidence = 0.7 + Math.min(0.2, (awayScore - homeScore) * 0.05);
+                                        } else {
+                                            prediction = 'Draw/No Clear Favorite';
+                                            confidence = 0.5;
+                                        }
+                                        
+                                        livePredictions.push({
+                                            id: event.id,
+                                            name: event.name,
+                                            league: league,
+                                            sport: sport,
+                                            time: clock,
+                                            period: period,
+                                            homeTeam: {
+                                                name: home.team?.displayName,
+                                                score: homeScore,
+                                                logo: home.team?.logo
+                                            },
+                                            awayTeam: {
+                                                name: away.team?.displayName,
+                                                score: awayScore,
+                                                logo: away.team?.logo
+                                            },
+                                            prediction: prediction,
+                                            confidence: Math.round(confidence * 100) / 100
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                logger.error('Error fetching scoreboard for league', {
+                    traceId,
+                    sport,
+                    league,
+                    error: err.message
+                });
+            }
+        });
+        
+        await Promise.all(leaguePromises);
+        
+        res.json({ livePredictions, traceId, count: livePredictions.length });
+    } catch (error) {
+        logger.error('Error fetching live predictions', {
+            traceId,
+            error: error.message
+        });
+        res.status(500).json({ error: 'Failed to fetch live predictions', traceId });
+    }
 });
 
 // Nightly Retraining Cron

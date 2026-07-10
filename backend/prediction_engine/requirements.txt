@@ -1,4 +1,6 @@
 requests
+httpx
+cachetools
 numpy
 pandas
 statsmodels
