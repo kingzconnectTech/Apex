@@ -624,146 +624,75 @@ export const analyzeMatch = ({
         };
     }
 
-    // C. SECURE & VALUE RECOMMENDATIONS (Multi-Outcome)
-    const recommendations = [];
+    // C. SECURE & VALUE RECOMMENDATIONS (Only the 4 required)
+  const recommendations = [];
 
-    // 1. Double Chance (Soccer Only)
-    if (!isBasketball) {
-        if (Math.abs(diff) < 15) { // If it's fairly competitive
-            if (diff > 4) {
-                 recommendations.push({
-                    type: 'DC',
-                    label: 'Double Chance',
-                    value: `1X (${homeName} or Draw)`,
-                    confidence: 75,
-                    color: '#4dabf7'
-                });
-            } else if (diff < -4) {
-                 recommendations.push({
-                    type: 'DC',
-                    label: 'Double Chance',
-                    value: `X2 (${awayName} or Draw)`,
-                    confidence: 75,
-                    color: '#ff8787'
-                });
-            }
-        }
-    }
-
-    // 2. Win Prediction (Moneyline)
-    if (winPrediction) {
-        let winColor = COLORS.textSecondary;
-        if (winPrediction.includes(homeName)) winColor = COLORS.success;
-        else if (winPrediction.includes(awayName)) winColor = COLORS.error;
-        
+  // 1. Double Chance (Soccer Only)
+  if (!isBasketball) {
+    if (Math.abs(diff) < 15) { 
+      if (diff > 4) {
         recommendations.push({
-            type: 'WIN',
-            label: 'Moneyline',
-            value: winPrediction,
-            confidence: winConfidence,
-            color: winColor
+          type: 'DC',
+          label: 'Double Chance',
+          value: `1X (${homeName} or Draw)`,
+          confidence: 75,
+          color: '#4dabf7'
         });
-    }
-
-    // 3. Totals (Goals/Points)
-    if (goalsPrediction) {
+      } else if (diff < -4) {
         recommendations.push({
-            type: 'TOTAL',
-            label: 'Over/Under',
-            value: goalsPrediction,
-            confidence: goalsConfidence,
-            color: COLORS.accent
+          type: 'DC',
+          label: 'Double Chance',
+          value: `X2 (${awayName} or Draw)`,
+          confidence: 75,
+          color: '#ff8787'
         });
-    }
-
-    // 4. Both Teams to Score (Soccer Only)
-    if (!isBasketball && hAvgScored > 0 && aAvgScored > 0) {
-        const bttsProb = (hAvgScored > 0.8 && aAvgScored > 0.8) ? (hAvgScored + aAvgScored) / 4 : 0.5;
-        const result = bttsProb > 0.6 ? 'BTTS: Yes' : (bttsProb < 0.4 ? 'BTTS: No' : null);
-        if (result) {
-            recommendations.push({
-                type: 'BTTS',
-                label: 'Goals',
-                value: result,
-                confidence: Math.round(Math.min(60 + (Math.abs(bttsProb - 0.5) * 100), 88)),
-                color: '#ae3ec9'
-            });
-        }
-    }
-
-    // 5. Total Bookings (Soccer Only)
-    // Using H2H card data as a primary indicator
-    if (!isBasketball && h2h && h2h.deepStats && h2h.deepStats.length > 0) {
-        const cardTotals = h2h.deepStats.map(g => (g.homeStats?.yellowCards || 0) + (g.awayStats?.yellowCards || 0));
-        const avgCards = cardTotals.reduce((a, b) => a + b, 0) / cardTotals.length;
-        
-        if (avgCards > 0) {
-            const line = avgCards > 4.5 ? 4.5 : 3.5;
-            const direction = avgCards > line ? 'Over' : 'Under';
-            recommendations.push({
-                type: 'CARDS',
-                label: 'Bookings',
-                value: `${direction} ${line} Cards`,
-                confidence: Math.round(65 + (Math.abs(avgCards - line) * 10)),
-                color: '#fcc419'
-            });
-        }
-    }
-
-    // 6. Basketball Spreads
-    if (isBasketball && projectedMargin !== 0) {
-        const spreadBuffer = 3.5;
-        const line = Math.floor(Math.abs(projectedMargin) - spreadBuffer) + 0.5;
-        if (line > 2) {
-             const favorite = projectedMargin > 0 ? homeName : awayName;
-             recommendations.push({
-                type: 'SPREAD',
-                label: 'Handicap',
-                value: `${favorite} -${line}`,
-                confidence: 72,
-                color: projectedMargin > 0 ? COLORS.success : COLORS.error
-            });
-        }
-    }
-
-    // 7. Team Totals (Basketball)
-    if (isBasketball) {
-        if (homeTeamTotalPrediction) {
-            recommendations.push({
-                type: 'TEAM_TOTAL',
-                label: 'Home Total',
-                value: homeTeamTotalPrediction.replace(homeName, '').trim(),
-                confidence: homeTeamTotalConfidence,
-                color: COLORS.success
-            });
-        }
-        if (awayTeamTotalPrediction) {
-            recommendations.push({
-                type: 'TEAM_TOTAL',
-                label: 'Away Total',
-                value: awayTeamTotalPrediction.replace(awayName, '').trim(),
-                confidence: awayTeamTotalConfidence,
-                color: COLORS.error
-            });
-        }
-        // New Basketball-specific nodes
-        if (typeof winningMarginNode !== 'undefined' && winningMarginNode) recommendations.push(winningMarginNode);
-        if (typeof firstHalfNode !== 'undefined' && firstHalfNode) recommendations.push(firstHalfNode);
-    }
-
-    // 8. Corners Candidate
-    if (cornersPrediction) {
+      } else {
+        // Close match, recommend Draw as Double Chance
         recommendations.push({
-            type: 'CORNERS',
-            label: 'Corners',
-            value: cornersPrediction,
-            confidence: cornersConfidence,
-            color: COLORS.info
+          type: 'DC',
+          label: 'Double Chance',
+          value: `X (Draw)`,
+          confidence: 68,
+          color: '#9775fa'
         });
+      }
     }
+  }
 
-    // Sort by confidence so the "Best" is first but all are available
-    recommendations.sort((a, b) => b.confidence - a.confidence);
+  // 2. 10min 1X2 (Draw)
+  recommendations.push({
+    type: '10MIN',
+    label: '10min 1X2',
+    value: `Draw in first 10 mins`,
+    confidence: 62,
+    color: '#40c057'
+  });
+
+  // 3. Total Goal Kicks
+  const avgGoalKicks = isBasketball ? 0 : 12.5; // Default soccer average
+  if (!isBasketball) {
+    const goalKicksLine = Math.round(avgGoalKicks) + 0.5;
+    recommendations.push({
+      type: 'GK',
+      label: 'Total Goal Kicks',
+      value: `Over ${goalKicksLine} Goal Kicks`,
+      confidence: 60,
+      color: '#ffa94d'
+    });
+  }
+
+  // 4. Total Thrown-Ins
+  const avgThrowIns = isBasketball ? 0 : 24.5; // Default soccer average
+  if (!isBasketball) {
+    const throwInsLine = Math.round(avgThrowIns) + 0.5;
+    recommendations.push({
+      type: 'TI',
+      label: 'Total Thrown-Ins',
+      value: `Over ${throwInsLine} Thrown-Ins`,
+      confidence: 58,
+      color: '#3bc9db'
+    });
+  }
 
     return {
         prediction: recommendations.length > 0 ? recommendations[0].value : "Too Close to Call",

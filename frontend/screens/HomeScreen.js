@@ -62,7 +62,7 @@ export default function HomeScreen({ navigation }) {
   const loadMatches = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const { live, upcoming } = await fetchMatches();
+      const { live, upcoming } = await fetchMatches(true); // Only top leagues for speed
       setLiveMatches(live);
       setAllUpcomingMatches(upcoming);
     } catch (error) {

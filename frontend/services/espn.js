@@ -3,27 +3,30 @@ import { API_URL } from '../constants/config';
 const BASE_URL = 'https://site.api.espn.com/apis/site/v2/sports';
 const PROXY_BASE = `${API_URL}/api/proxy?target=`;
 
-const withCacheBuster = (url) => {
-  const ts = Date.now();
-  return url + (url.includes('?') ? `&_=${ts}` : `?_=${ts}`);
-};
+// Simple client-side cache with TTL
+const clientCache = new Map();
+const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
-const fetchFromBackendOrESPN = async (relativePath) => {
-  // Try backend proxy first (uses server-side cache)
-  try {
-    const proxyResp = await fetch(`${PROXY_BASE}${encodeURIComponent(relativePath)}`);
-    if (proxyResp.ok) {
-      return await proxyResp.json();
-    }
-  } catch (e) {
-    // Fall through to ESPN
-  }
-  // Fallback to ESPN directly with cache-buster to avoid CDN staleness
-  const espnResp = await fetch(withCacheBuster(`${BASE_URL}/${relativePath}`));
-  return await espnResp.json();
-};
+// Only top leagues to fetch initially for speed
+const TOP_LEAGUES = [
+  // Soccer - Top 5 Leagues + Champions League
+  { sport: 'soccer', league: 'eng.1', name: 'Premier League' },
+  { sport: 'soccer', league: 'esp.1', name: 'La Liga' },
+  { sport: 'soccer', league: 'ita.1', name: 'Serie A' },
+  { sport: 'soccer', league: 'ger.1', name: 'Bundesliga' },
+  { sport: 'soccer', league: 'fra.1', name: 'Ligue 1' },
+  { sport: 'soccer', league: 'uefa.champions', name: 'Champions League' },
+  // Basketball - NBA/WNBA
+  { sport: 'basketball', league: 'nba', name: 'NBA' },
+  { sport: 'basketball', league: 'wnba', name: 'WNBA' },
+  // Tennis - Top Tours
+  { sport: 'tennis', league: 'atp', name: 'ATP Tour' },
+  { sport: 'tennis', league: 'wta', name: 'WTA Tour' },
+  { sport: 'tennis', league: 'grand-slam', name: 'Grand Slams' },
+];
 
-const LEAGUES = [
+// All leagues for later use
+const ALL_LEAGUES = [
   // Soccer
   { sport: 'soccer', league: 'eng.1', name: 'Premier League' },
   { sport: 'soccer', league: 'eng.2', name: 'Championship' },
@@ -134,11 +137,60 @@ const LEAGUES = [
   { sport: 'tennis', league: 'next-gen-atp-finals', name: 'Next Gen ATP Finals' },
 ];
 
-export const fetchMatches = async (days = 3, startDate = new Date()) => {
+const getFromClientCache = (key) => {
+  const cached = clientCache.get(key);
+  if (!cached) return null;
+  if (Date.now() > cached.expiresAt) {
+    clientCache.delete(key);
+    return null;
+  }
+  return cached.data;
+};
+
+const setToClientCache = (key, data) => {
+  clientCache.set(key, {
+    data,
+    expiresAt: Date.now() + CACHE_TTL_MS
+  });
+};
+
+const fetchFromBackendOrESPN = async (relativePath) => {
+  const cacheKey = relativePath;
+  const cached = getFromClientCache(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  // Try backend proxy first (uses server-side cache)
   try {
-    // 1. Fetch Default Endpoint (Live + Top/Today)
-    // This ensures we get the most accurate "Live" status
-    const defaultPromises = LEAGUES.map(async ({ sport, league, name }) => {
+    const proxyResp = await fetch(`${PROXY_BASE}${encodeURIComponent(relativePath)}`);
+    if (proxyResp.ok) {
+      const data = await proxyResp.json();
+      setToClientCache(cacheKey, data);
+      return data;
+    }
+  } catch (e) {
+    // Fall through to ESPN
+  }
+
+  // Fallback to ESPN directly
+  try {
+    const espnResp = await fetch(`${BASE_URL}/${relativePath}`);
+    const data = await espnResp.json();
+    setToClientCache(cacheKey, data);
+    return data;
+  } catch (e) {
+    console.error('Failed to fetch from both backend and ESPN:', e);
+    throw e;
+  }
+};
+
+export const fetchMatches = async (useTopLeaguesOnly = true, days = 1) => {
+  try {
+    const leagues = useTopLeaguesOnly ? TOP_LEAGUES : ALL_LEAGUES;
+    
+    // 1. Fetch only current scoreboard (no extra days for speed)
+    const promises = leagues.map(async ({ sport, league, name }) => {
       try {
         const data = await fetchFromBackendOrESPN(`${sport}/${league}/scoreboard`);
         return processEvents(data.events || [], sport, league, name);
@@ -148,39 +200,11 @@ export const fetchMatches = async (days = 3, startDate = new Date()) => {
       }
     });
 
-    // 2. Fetch Dates (Today + Future)
-    const futureDates = [];
-    for (let i = 0; i < days; i++) { // Start from today (i=0)
-      const d = new Date(startDate);
-      d.setDate(d.getDate() + i);
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      futureDates.push(`${year}${month}${day}`);
-    }
-
-    const futurePromises = LEAGUES.map(async ({ sport, league, name }) => {
-      const leaguePromises = futureDates.map(async (date) => {
-        try {
-          const data = await fetchFromBackendOrESPN(`${sport}/${league}/scoreboard?dates=${date}`);
-          return processEvents(data.events || [], sport, league, name);
-        } catch (error) {
-          console.warn(`Failed to fetch ${name} for ${date}:`, error);
-          return [];
-        }
-      });
-      const leagueResults = await Promise.all(leaguePromises);
-      return leagueResults.flat();
-    });
-
     // Execute all fetches
-    const [defaultResults, futureResults] = await Promise.all([
-      Promise.all(defaultPromises),
-      Promise.all(futurePromises)
-    ]);
-
+    const results = await Promise.all(promises);
+    
     // Flatten and Dedupe
-    const allMatchesRaw = [...defaultResults.flat(), ...futureResults.flat()];
+    const allMatchesRaw = results.flat();
     const seenIds = new Set();
     const allMatches = allMatchesRaw.filter(match => {
       if (seenIds.has(match.id)) return false;
@@ -204,9 +228,20 @@ export const fetchMatches = async (days = 3, startDate = new Date()) => {
 // Helper to process events (DRY)
 const processEvents = (events, sport, league, name) => {
   return events.map(event => {
-    const competition = event.competitions[0];
-    const homeCompetitor = competition.competitors.find(c => c.homeAway === 'home');
-    const awayCompetitor = competition.competitors.find(c => c.homeAway === 'away');
+    const competition = event.competitions?.[0];
+    if (!competition) return null;
+    
+    const competitors = competition.competitors || [];
+    let homeCompetitor, awayCompetitor;
+    
+    if (sport === 'tennis') {
+      // For tennis, just take first two competitors (order may vary)
+      homeCompetitor = competitors[0];
+      awayCompetitor = competitors[1];
+    } else {
+      homeCompetitor = competitors.find(c => c.homeAway === 'home');
+      awayCompetitor = competitors.find(c => c.homeAway === 'away');
+    }
     
     return {
       id: event.id,
@@ -214,16 +249,16 @@ const processEvents = (events, sport, league, name) => {
       sport: sport,
       leagueSlug: league,
       date: new Date(event.date),
-      status: event.status.type.state, // pre, in, post
-      clock: event.status.displayClock,
-      period: event.status.period,
+      status: event.status?.type?.state || 'pre', // pre, in, post
+      clock: event.status?.displayClock,
+      period: event.status?.period,
       homeTeam: {
         id: homeCompetitor?.team?.id,
         name: homeCompetitor?.team?.displayName,
         logo: homeCompetitor?.team?.logo,
         score: homeCompetitor?.score,
         record: homeCompetitor?.records?.[0]?.summary,
-        form: homeCompetitor?.form, // Add form if available
+        form: homeCompetitor?.form,
       },
       awayTeam: {
         id: awayCompetitor?.team?.id,
@@ -231,22 +266,21 @@ const processEvents = (events, sport, league, name) => {
         logo: awayCompetitor?.team?.logo,
         score: awayCompetitor?.score,
         record: awayCompetitor?.records?.[0]?.summary,
-        form: awayCompetitor?.form, // Add form if available
+        form: awayCompetitor?.form,
       },
-      time: event.status.type.shortDetail,
+      time: event.status?.type?.shortDetail || '',
     };
-  });
+  }).filter(Boolean);
 };
 
 // Fetch comprehensive team details
 export const fetchTeamDetails = async (sport, league, teamId) => {
   try {
-    // Parallel fetch for efficiency (via backend proxy with fallback)
-    // We use directly ESPN endpoints with cache-buster for schedule to ensure we get the latest results
+    // Parallel fetch for efficiency
     const [teamData, newsData, scheduleData] = await Promise.all([
       fetchFromBackendOrESPN(`${sport}/${league}/teams/${teamId}`),
       fetchFromBackendOrESPN(`${sport}/${league}/news?team=${teamId}&limit=5`),
-      fetch(`${BASE_URL}/${sport}/${league}/teams/${teamId}/schedule?_=${Date.now()}`).then(res => res.json())
+      fetchFromBackendOrESPN(`${sport}/${league}/teams/${teamId}/schedule`),
     ]);
 
     const team = teamData.team;
@@ -271,7 +305,7 @@ export const fetchTeamDetails = async (sport, league, teamId) => {
       const oppScore = parseInt(oppComp.score?.value || 0);
       const state = competition.status?.type?.state;
       
-      if (state === 'in') return 'LIVE'; // Or just exclude it if desired
+      if (state === 'in') return 'LIVE';
       
       if (teamScore > oppScore) return 'W';
       if (teamScore < oppScore) return 'L';
@@ -285,7 +319,7 @@ export const fetchTeamDetails = async (sport, league, teamId) => {
         abbreviation: team?.abbreviation,
         color: team?.color,
         logo: team?.logos?.[0]?.href,
-        standingSummary: team?.standingSummary, // "3rd in Premier League"
+        standingSummary: team?.standingSummary,
       },
       nextMatch: (team?.nextEvent && team.nextEvent.length > 0) ? {
         name: team.nextEvent[0].name,
@@ -314,7 +348,7 @@ export const fetchTeamDetails = async (sport, league, teamId) => {
         description: article.description,
         link: article.links?.web?.href,
         published: article.published,
-      })), // Note: This might be league-wide news if team filtering isn't perfect on public API
+      })),
       stats: {
         rank: team?.rank,
         record: team?.record?.items?.[0]?.summary,
@@ -374,11 +408,10 @@ export const fetchMatchAnalysis = async (sport, league, matchId) => {
     const homeAdvanced = getStats(0);
     const awayAdvanced = getStats(1);
 
-    // Normalize H2H Games (handle nested events structure)
+    // Normalize H2H Games
     let h2hGames = data.headToHeadGames || [];
     if (h2hGames.length > 0 && h2hGames[0].events) {
         h2hGames = h2hGames.flatMap(item => item.events || []);
-        // Deduplicate by ID just in case
         h2hGames = [...new Map(h2hGames.map(item => [item.id, item])).values()];
     }
 
@@ -389,13 +422,12 @@ export const fetchMatchAnalysis = async (sport, league, matchId) => {
       },
       headToHeadGames: h2hGames,
       homeStats: {
-        possession: findStat(0, 'possessionPct'), // Soccer
-        shots: findStat(0, 'shots'), // Soccer
+        possession: findStat(0, 'possessionPct'),
+        shots: findStat(0, 'shots'),
         fouls: findStat(0, 'foulsCommitted'),
-        corners: findStat(0, 'wonCorners'), // Soccer
-        fgPct: findStat(0, 'fieldGoalPct'), // Basketball
-        rebounds: findStat(0, 'totalRebounds'), // Basketball
-        // Advanced Raw Data
+        corners: findStat(0, 'wonCorners'),
+        fgPct: findStat(0, 'fieldGoalPct'),
+        rebounds: findStat(0, 'totalRebounds'),
         ...homeAdvanced
       },
       awayStats: {
@@ -405,11 +437,10 @@ export const fetchMatchAnalysis = async (sport, league, matchId) => {
         corners: findStat(1, 'wonCorners'),
         fgPct: findStat(1, 'fieldGoalPct'),
         rebounds: findStat(1, 'totalRebounds'),
-        // Advanced Raw Data
         ...awayAdvanced
       },
-      standings: data.standings, // Sometimes included in summary
-      rosters: data.rosters || [], // Lineups if available
+      standings: data.standings,
+      rosters: data.rosters || [],
     };
   } catch (error) {
     console.error('Error fetching match analysis:', error);
@@ -417,7 +448,7 @@ export const fetchMatchAnalysis = async (sport, league, matchId) => {
   }
 };
 
-// Fetch simplified stats for a list of match IDs (for H2H analysis)
+// Fetch simplified stats for a list of match IDs
 export const fetchGamesStats = async (sport, league, gameIds) => {
   if (!gameIds || gameIds.length === 0) return [];
   
@@ -431,8 +462,6 @@ export const fetchGamesStats = async (sport, league, gameIds) => {
         return s ? parseFloat(s.displayValue) : 0;
       };
 
-      // Summing up for the match (Total Cards/Corners) or just returning arrays
-      // Let's return raw stats for both teams to analyze
       return {
         id,
         homeId: data.header?.competitions?.[0]?.competitors?.find(c => c.homeAway === 'home')?.id,
