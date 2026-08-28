@@ -840,34 +840,126 @@ function analyzeMatchServer({
     }
   }
 
-  // --- C. Recommendations ---
-  const recommendations = [];
+  // --- C. Under 0.5 First Half Goals (Soccer only) ---
+  //
+  // This is an IN-PLAY market, placed during minutes 1–5 of the match.
+  // The bet covers the ENTIRE first half (45 mins): predict 0 goals will
+  // be scored before half-time.
+  //
+  // ESPN does not expose 1st-half splits, so we estimate them from full-match
+  // averages via a FIRST_HALF_GOAL_RATIO (empirically ~40% of goals in top EU leagues).
+  //
+  // Algorithm:
+  //   homeHalfLambda = ((homeAvgScored + awayAvgConceded) / 2) * RATIO
+  //   awayHalfLambda = ((awayAvgScored + homeAvgConceded) / 2) * RATIO
+  //   totalLambda    = homeHalfLambda + awayHalfLambda
+  //   P(0 goals)     = e^(-totalLambda)   [Poisson zero-goal probability]
+  //   confidence     = clamp(P * 100, 30, 95)
+  //
+  // Adjustments applied on top of the base Poisson confidence:
+  //   +5%  both teams have ≥ 2 clean sheets in last 5
+  //   +5%  H2H average goals < 1.5
+  //   -8%  either team averages > 2.0 full-match goals scored
+  //
+  // Recommendation is only emitted when confidence ≥ 52% (edge threshold).
 
-  if (!isBasketball) {
-    if (Math.abs(diff) < 15) {
-      if (diff > 4) {
-        recommendations.push({ type: 'DC', label: 'Double Chance', value: `1X (${homeName} or Draw)`, confidence: 75, color: '#4dabf7' });
-      } else if (diff < -4) {
-        recommendations.push({ type: 'DC', label: 'Double Chance', value: `X2 (${awayName} or Draw)`, confidence: 75, color: '#ff8787' });
-      } else {
-        recommendations.push({ type: 'DC', label: 'Double Chance', value: 'X (Draw)', confidence: 68, color: '#9775fa' });
-      }
+  let underHalfGoalsPrediction = null;
+
+  if (!isBasketball && hAvgScored > 0 && aAvgScored > 0) {
+    const FIRST_HALF_GOAL_RATIO = 0.40; // ~40 % of goals occur in the first half
+
+    // Expected 1st-half goals for each side (Dixon-Coles style blended estimate)
+    const homeHalfLambda =
+      ((hAvgScored * FIRST_HALF_GOAL_RATIO) + (aAvgConceded * FIRST_HALF_GOAL_RATIO)) / 2;
+    const awayHalfLambda =
+      ((aAvgScored * FIRST_HALF_GOAL_RATIO) + (hAvgConceded * FIRST_HALF_GOAL_RATIO)) / 2;
+    const totalLambda = homeHalfLambda + awayHalfLambda;
+
+    // Poisson P(X = 0) = e^(-λ)
+    const pZeroGoals = Math.exp(-totalLambda);
+    let uhConfidence = Math.round(pZeroGoals * 100);
+
+    // --- Adjustments ---
+
+    // Defensive bonus: count clean sheets (pa === 0) in last 5 for each team
+    const homeCleanSheets = homeStats.lastMatches
+      ? homeStats.lastMatches.filter(m => m.pa === 0).length
+      : 0;
+    const awayCleanSheets = awayStats.lastMatches
+      ? awayStats.lastMatches.filter(m => m.pa === 0).length
+      : 0;
+    if (homeCleanSheets >= 2 && awayCleanSheets >= 2) {
+      uhConfidence += 5;
+      factors.push({ label: 'Both Teams Defensively Solid (HT 0-0 indicator)', side: 'neutral', type: 'info' });
+    } else if (homeCleanSheets >= 2 || awayCleanSheets >= 2) {
+      uhConfidence += 3;
+      factors.push({ label: 'One Team Defensively Solid (HT 0-0 indicator)', side: 'neutral', type: 'info' });
+    }
+
+    // H2H low-scoring bonus
+    if (h2hAvgGoals > 0 && h2hAvgGoals < 1.5) {
+      uhConfidence += 5;
+      factors.push({ label: `H2H Low Scoring (${h2hAvgGoals.toFixed(1)} avg — Under 0.5 HT boost)`, side: 'neutral', type: 'info' });
+    }
+
+    // High-scoring teams penalty
+    if (hAvgScored > 2.0 || aAvgScored > 2.0) {
+      uhConfidence -= 8;
+      factors.push({ label: 'High-Scoring Team Involved (Under 0.5 HT risk)', side: 'neutral', type: 'warning' });
+    }
+
+    // Clamp to a realistic range
+    uhConfidence = Math.min(Math.max(uhConfidence, 30), 95);
+
+    // Only recommend when there's genuine edge (>= 52% probability)
+    if (uhConfidence >= 52) {
+      underHalfGoalsPrediction = {
+        type: 'UH05',
+        label: '1st Half Under 0.5',
+        // Bet is placed in the 1–5 min live window; covers the full 45-min half
+        value: 'Under 0.5 Goals (1-5min)',
+        confidence: uhConfidence,
+        // Colour coding: green for high confidence, amber for mid-range
+        color: uhConfidence >= 70 ? '#40c057' : uhConfidence >= 60 ? '#ffa94d' : '#4dabf7',
+        // When to place: minutes 1–5 of the match
+        window: 'Place: 1–5 min',
+        lambda: parseFloat(totalLambda.toFixed(3)),
+        pZero: parseFloat(pZeroGoals.toFixed(4)),
+      };
     }
   }
 
-  recommendations.push({ type: '10MIN', label: '10min 1X2', value: 'Draw in first 10 mins', confidence: 62, color: '#40c057' });
+  // --- Recommendations ---
+  // Soccer: ONLY the Under 0.5 First Half Goals (1–5 min in-play window).
+  //         All other soccer tips (WIN, GOALS, DC, 10MIN, GK, TI) are removed.
+  // Basketball: WIN + GOALS/Totals retained as before.
+  const recommendations = [];
 
-  if (!isBasketball) {
-    recommendations.push({ type: 'GK', label: 'Total Goal Kicks', value: 'Over 12.5 Goal Kicks', confidence: 60, color: '#ffa94d' });
-    recommendations.push({ type: 'TI', label: 'Total Thrown-Ins', value: 'Over 24.5 Thrown-Ins', confidence: 58, color: '#3bc9db' });
-  }
-
-  if (goalsPrediction) {
-    recommendations.unshift({ type: 'GOALS', label: sport === 'basketball' ? 'Total Points' : 'Total Goals', value: goalsPrediction, confidence: Math.round(goalsConfidence), color: '#ffd43b' });
-  }
-
-  if (winPrediction) {
-    recommendations.unshift({ type: 'WIN', label: 'Match Winner', value: winPrediction, confidence: Math.round(winConfidence), color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96') });
+  if (isBasketball) {
+    // Basketball — keep Match Winner and Total Points
+    if (winPrediction) {
+      recommendations.push({
+        type: 'WIN',
+        label: 'Match Winner',
+        value: winPrediction,
+        confidence: Math.round(winConfidence),
+        color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96'),
+      });
+    }
+    if (goalsPrediction) {
+      recommendations.push({
+        type: 'GOALS',
+        label: 'Total Points',
+        value: goalsPrediction,
+        confidence: Math.round(goalsConfidence),
+        color: '#ffd43b',
+      });
+    }
+  } else {
+    // Soccer — ONLY Under 0.5 1st Half Goals (place in minutes 1–5)
+    if (underHalfGoalsPrediction) {
+      recommendations.push(underHalfGoalsPrediction);
+    }
   }
 
   return {
