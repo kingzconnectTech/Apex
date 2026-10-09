@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const admin = require('firebase-admin');
 const path = require('path');
@@ -9,6 +10,10 @@ const http = require('http');
 const { Server } = require('socket.io');
 const crypto = require('crypto');
 const fs = require('fs');
+const { SportsDataService } = require('./services/SportsDataService');
+const { rankFootballPredictions, FOOTBALL_MARKET_PRIORITY: _FOOTBALL_MARKET_PRIORITY } = require('./services/footballRanking');
+
+const IS_ENTRY_POINT = require.main === module;
 
 // Logger Configuration
 const logger = winston.createLogger({
@@ -30,6 +35,10 @@ const logger = winston.createLogger({
 });
 
 const compression = require('compression');
+
+// Initialize Sports Data Service (ESPN primary + PitchAPI fallback)
+const sportsData = new SportsDataService({ logger });
+logger.info('SportsDataService initialized', { providers: sportsData.getProvidersStatus() });
 
 // Initialize Express app
 const app = express();
@@ -77,6 +86,13 @@ try {
 // ESPN Proxy with Event-Driven Real-Time Refresh
 // ----------------------------------------------------------
 const ESPN_BASE = 'http://site.api.espn.com/apis/site/v2/sports';
+
+// Football markets configuration
+// Default corners threshold used when H2H data is unavailable.
+const FOOTBALL_UNDER_CORNERS_LINE = parseFloat(process.env.FOOTBALL_UNDER_CORNERS_LINE) || 10.5;
+
+// Approved football markets (in tie-break priority order)
+const FOOTBALL_MARKET_PRIORITY = ['under_4_5_goals', 'under_2_5_ht', 'under_corners', 'under_1_5_ht'];
 
 // Enhanced Cache
 // key: full ESPN URL
@@ -229,17 +245,27 @@ app.get('/api/proxy', async (req, res) => {
 });
 
 // Periodic cache cleanup
-cron.schedule('*/5 * * * *', () => {
+if (IS_ENTRY_POINT) cron.schedule('*/5 * * * *', () => {
   const nowTs = Date.now();
-  let removed = 0;
+  let removedProxy = 0;
   for (const [key, entry] of cache.entries()) {
     if (entry.expiresAt < nowTs) {
       cache.delete(key);
-      removed++;
+      removedProxy++;
     }
   }
-  if (removed > 0) {
-    logger.info(`Cache cleanup: removed ${removed} expired entries`);
+  let removedPred = 0;
+  for (const [k, v] of predictionCache.entries()) {
+    if (v.expiresAt < nowTs) { predictionCache.delete(k); removedPred++; }
+  }
+  const removedShared = sportsData.purgeExpired();
+  const total = removedProxy + removedPred + removedShared;
+  if (total > 0) {
+    logger.info(`Cache cleanup: removed ${total} expired entries`, {
+      espnProxy: removedProxy,
+      predictions: removedPred,
+      sportsDataShared: removedShared,
+    });
   }
 });
 
@@ -270,15 +296,20 @@ const leaguesToRefresh = [
   { sport: 'tennis', league: 'wta' }
 ];
 
-cron.schedule('*/15 * * * *', async () => {
+if (IS_ENTRY_POINT) cron.schedule('*/15 * * * *', async () => {
   const traceId = uuidv4();
   logger.info('Starting automated stats refresh for all leagues...', { traceId });
   
   let successCount = 0;
   let errorCount = 0;
+  let afSuccess = 0;
+  let afError = 0;
+  let afFixturesWarmed = 0;
+  const sportSet = new Set();
   
   const refreshPromises = leaguesToRefresh.map(async (leagueConfig) => {
     const { sport, league } = leagueConfig;
+    sportSet.add(sport);
     try {
       const target = `${sport}/${league}/scoreboard`;
       const upstreamUrl = `${ESPN_BASE}/${target}`;
@@ -294,14 +325,34 @@ cron.schedule('*/15 * * * *', async () => {
         error: err.message
       });
     }
+
+    if ((sport === 'soccer' || sport === 'football') && sportsData && typeof sportsData.getFixtures === 'function') {
+      try {
+        const name = `${sport}/${league}`;
+        const fx = await sportsData.getFixtures(sport, league, { traceId, leagueDisplayName: name });
+        const count = Array.isArray(fx) ? fx.length : 0;
+        afSuccess++;
+        afFixturesWarmed += count;
+        logger.debug('Warmed API-Football shared cache for league', { traceId, sport, league, count });
+      } catch (err2) {
+        afError++;
+        logger.error('Failed to warm API-Football shared cache for league', {
+          traceId,
+          sport,
+          league,
+          error: err2.message
+        });
+      }
+    }
   });
   
   await Promise.all(refreshPromises);
   
   logger.info('Automated stats refresh complete', {
     traceId,
-    successCount,
-    errorCount
+    espn: { successCount, errorCount },
+    apiFootball: { afSuccess, afError, afFixturesWarmed },
+    sportsCovered: Array.from(sportSet)
   });
 });
 
@@ -309,9 +360,12 @@ cron.schedule('*/15 * * * *', async () => {
 app.get('/api/monitoring/performance', (req, res) => {
   const stats = {
     cacheSize: cache.size,
+    predictionCacheSize: predictionCache.size,
+    sportsDataCacheSize: sportsData.cacheSize(),
+    providers: sportsData.getProvidersStatus(),
     uptime: process.uptime(),
     memoryUsage: process.memoryUsage(),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
   res.json(stats);
 });
@@ -463,6 +517,9 @@ function analyzeMatchServer({
   let awayTeamTotalConfidence = 0;
   let cornersPrediction = null;
   let cornersConfidence = 0;
+
+  // Football predictions array for the 4 approved markets
+  const footballPredictions = [];
 
   const homeRecord = parseRecord(homeStats.record, sport);
   const awayRecord = parseRecord(awayStats.record, sport);
@@ -624,16 +681,26 @@ function analyzeMatchServer({
       if (totals.length > 0) {
         const sum = totals.reduce((a, b) => a + b, 0);
         const avgCorners = sum / totals.length;
-        const baseLine = Math.round(avgCorners);
-        const line = baseLine + 0.5;
+        const line = FOOTBALL_UNDER_CORNERS_LINE;
         const diffFromLine = avgCorners - line;
-        const direction = diffFromLine >= 0 ? 'Over' : 'Under';
-        const absDiff = Math.abs(diffFromLine);
-        const baseConfidence = 60;
-        const strengthBoost = Math.min(absDiff * 15, 25);
-        cornersPrediction = `${direction} ${line} Corners`;
-        cornersConfidence = baseConfidence + strengthBoost;
+        const baseConfidence = 65;
+        const strengthBoost = Math.min(Math.abs(diffFromLine) * 10, 25);
+        cornersPrediction = `Under ${line} Corners`;
+        cornersConfidence = diffFromLine <= 0
+          ? Math.min(baseConfidence + strengthBoost, 95)
+          : Math.max(baseConfidence - strengthBoost, 30);
         factors.push({ label: `H2H Avg Corners ${avgCorners.toFixed(1)}`, side: 'neutral', type: 'info' });
+
+        // Add Under Corners prediction to footballPredictions array
+        if (cornersConfidence >= 50) {
+          footballPredictions.push({
+            market: 'under_corners',
+            label: `Under ${line} Corners`,
+            value: `Under ${line} Total Corners`,
+            confidence: Math.round(cornersConfidence),
+            color: cornersConfidence >= 70 ? '#40c057' : cornersConfidence >= 60 ? '#ffa94d' : '#4dabf7',
+          });
+        }
       }
     }
   }
@@ -734,29 +801,25 @@ function analyzeMatchServer({
         totalExpGoals = totalExpGoals * 0.7 + h2hAvgGoals * 0.3;
       }
 
-      const thresholds = [1.5, 2.5, 3.5, 4.5, 5.5];
-      let bestGoalPred = null;
-      let bestGoalConf = 0;
-
-      thresholds.forEach(t => {
-        if (totalExpGoals > t + 0.35) {
-          const conf = Math.min(60 + (totalExpGoals - t) * 30, 95);
-          if (conf > bestGoalConf) { bestGoalConf = conf; bestGoalPred = `Over ${t} Goals`; }
+      // Generate Under 4.5 Goals prediction for football
+      const uf45Threshold = 4.5;
+      if (totalExpGoals < uf45Threshold - 0.35) {
+        const uf45Confidence = Math.min(60 + (uf45Threshold - totalExpGoals) * 30, 95);
+        if (uf45Confidence >= 50) {
+          footballPredictions.push({
+            market: 'under_4_5_goals',
+            label: 'Under 4.5 Goals',
+            value: 'Under 4.5 Full-Time Goals',
+            confidence: uf45Confidence,
+            color: uf45Confidence >= 70 ? '#40c057' : uf45Confidence >= 60 ? '#ffa94d' : '#4dabf7',
+          });
         }
-        if (totalExpGoals < t - 0.35) {
-          const conf = Math.min(60 + (t - totalExpGoals) * 30, 95);
-          if (conf > bestGoalConf) { bestGoalConf = conf; bestGoalPred = `Under ${t} Goals`; }
-        }
-      });
-
-      if (bestGoalPred) {
-        goalsPrediction = bestGoalPred;
-        goalsConfidence = bestGoalConf;
-        if (totalExpGoals > 2.8)
-          factors.push({ label: `High Goal Expectancy (${totalExpGoals.toFixed(1)})`, side: 'neutral', type: 'success' });
-        else if (totalExpGoals < 2.2)
-          factors.push({ label: `Low Goal Expectancy (${totalExpGoals.toFixed(1)})`, side: 'neutral', type: 'warning' });
       }
+
+      if (totalExpGoals > 2.8)
+        factors.push({ label: `High Goal Expectancy (${totalExpGoals.toFixed(1)})`, side: 'neutral', type: 'success' });
+      else if (totalExpGoals < 2.2)
+        factors.push({ label: `Low Goal Expectancy (${totalExpGoals.toFixed(1)})`, side: 'neutral', type: 'warning' });
     } else {
       // Basketball totals
       let homeExp = (hAvgScored + aAvgConceded) / 2;
@@ -840,30 +903,25 @@ function analyzeMatchServer({
     }
   }
 
-  // --- C. Under 0.5 First Half Goals (Soccer only) ---
-  //
-  // This is an IN-PLAY market, placed during minutes 1–5 of the match.
-  // The bet covers the ENTIRE first half (45 mins): predict 0 goals will
-  // be scored before half-time.
+  // --- C. Football Half-Time Goals Predictions (Soccer only) ---
   //
   // ESPN does not expose 1st-half splits, so we estimate them from full-match
   // averages via a FIRST_HALF_GOAL_RATIO (empirically ~40% of goals in top EU leagues).
   //
-  // Algorithm:
+  // Algorithm for Under X goals:
   //   homeHalfLambda = ((homeAvgScored + awayAvgConceded) / 2) * RATIO
   //   awayHalfLambda = ((awayAvgScored + homeAvgConceded) / 2) * RATIO
   //   totalLambda    = homeHalfLambda + awayHalfLambda
-  //   P(0 goals)     = e^(-totalLambda)   [Poisson zero-goal probability]
+  //   P(under X)     = sum(Poisson(k, totalLambda) for k in 0..X-1)
   //   confidence     = clamp(P * 100, 30, 95)
   //
   // Adjustments applied on top of the base Poisson confidence:
   //   +5%  both teams have ≥ 2 clean sheets in last 5
   //   +5%  H2H average goals < 1.5
   //   -8%  either team averages > 2.0 full-match goals scored
-  //
-  // Recommendation is only emitted when confidence ≥ 52% (edge threshold).
 
-  let underHalfGoalsPrediction = null;
+  // NOTE: footballPredictions is declared earlier (line ~514) and is the single
+  // authoritative array for all four approved markets. Do not re-declare here.
 
   if (!isBasketball && hAvgScored > 0 && aAvgScored > 0) {
     const FIRST_HALF_GOAL_RATIO = 0.40; // ~40 % of goals occur in the first half
@@ -875,63 +933,95 @@ function analyzeMatchServer({
       ((aAvgScored * FIRST_HALF_GOAL_RATIO) + (hAvgConceded * FIRST_HALF_GOAL_RATIO)) / 2;
     const totalLambda = homeHalfLambda + awayHalfLambda;
 
-    // Poisson P(X = 0) = e^(-λ)
-    const pZeroGoals = Math.exp(-totalLambda);
-    let uhConfidence = Math.round(pZeroGoals * 100);
+    // Poisson probability function
+    const poissonPmf = (k, lambda) => {
+      return (Math.pow(lambda, k) * Math.exp(-lambda)) / factorial(k);
+    };
 
-    // --- Adjustments ---
+    const factorial = (n) => {
+      if (n <= 1) return 1;
+      let result = 1;
+      for (let i = 2; i <= n; i++) result *= i;
+      return result;
+    };
 
-    // Defensive bonus: count clean sheets (pa === 0) in last 5 for each team
-    const homeCleanSheets = homeStats.lastMatches
-      ? homeStats.lastMatches.filter(m => m.pa === 0).length
-      : 0;
-    const awayCleanSheets = awayStats.lastMatches
-      ? awayStats.lastMatches.filter(m => m.pa === 0).length
-      : 0;
-    if (homeCleanSheets >= 2 && awayCleanSheets >= 2) {
-      uhConfidence += 5;
-      factors.push({ label: 'Both Teams Defensively Solid (HT 0-0 indicator)', side: 'neutral', type: 'info' });
-    } else if (homeCleanSheets >= 2 || awayCleanSheets >= 2) {
-      uhConfidence += 3;
-      factors.push({ label: 'One Team Defensively Solid (HT 0-0 indicator)', side: 'neutral', type: 'info' });
+    // Calculate P(under X) = sum of P(0) to P(X-1)
+    const calculateUnderProbability = (threshold, lambda) => {
+      let prob = 0;
+      for (let k = 0; k < threshold; k++) {
+        prob += poissonPmf(k, lambda);
+      }
+      return prob;
+    };
+
+    // Base confidence calculation
+    const calculateBaseConfidence = (threshold) => {
+      const prob = calculateUnderProbability(threshold, totalLambda);
+      let confidence = Math.round(prob * 100);
+
+      // --- Adjustments ---
+
+      // Defensive bonus: count clean sheets (pa === 0) in last 5 for each team
+      const homeCleanSheets = homeStats.lastMatches
+        ? homeStats.lastMatches.filter(m => m.pa === 0).length
+        : 0;
+      const awayCleanSheets = awayStats.lastMatches
+        ? awayStats.lastMatches.filter(m => m.pa === 0).length
+        : 0;
+      if (homeCleanSheets >= 2 && awayCleanSheets >= 2) {
+        confidence += 5;
+        if (threshold === 1.5) {
+          factors.push({ label: 'Both Teams Defensively Solid (HT indicator)', side: 'neutral', type: 'info' });
+        }
+      } else if (homeCleanSheets >= 2 || awayCleanSheets >= 2) {
+        confidence += 3;
+      }
+
+      // H2H low-scoring bonus
+      if (h2hAvgGoals > 0 && h2hAvgGoals < 1.5) {
+        confidence += 5;
+      }
+
+      // High-scoring teams penalty
+      if (hAvgScored > 2.0 || aAvgScored > 2.0) {
+        confidence -= 8;
+        if (threshold === 1.5) {
+          factors.push({ label: 'High-Scoring Team Involved (HT risk)', side: 'neutral', type: 'warning' });
+        }
+      }
+
+      // Clamp to a realistic range
+      return Math.min(Math.max(confidence, 30), 95);
+    };
+
+    // Generate Under 1.5 HT prediction
+    const uh15Confidence = calculateBaseConfidence(1.5);
+    if (uh15Confidence >= 50) {
+      footballPredictions.push({
+        market: 'under_1_5_ht',
+        label: 'Under 1.5 HT',
+        value: 'Under 1.5 First-Half Goals',
+        confidence: uh15Confidence,
+        color: uh15Confidence >= 70 ? '#40c057' : uh15Confidence >= 60 ? '#ffa94d' : '#4dabf7',
+      });
     }
 
-    // H2H low-scoring bonus
-    if (h2hAvgGoals > 0 && h2hAvgGoals < 1.5) {
-      uhConfidence += 5;
-      factors.push({ label: `H2H Low Scoring (${h2hAvgGoals.toFixed(1)} avg — Under 0.5 HT boost)`, side: 'neutral', type: 'info' });
-    }
-
-    // High-scoring teams penalty
-    if (hAvgScored > 2.0 || aAvgScored > 2.0) {
-      uhConfidence -= 8;
-      factors.push({ label: 'High-Scoring Team Involved (Under 0.5 HT risk)', side: 'neutral', type: 'warning' });
-    }
-
-    // Clamp to a realistic range
-    uhConfidence = Math.min(Math.max(uhConfidence, 30), 95);
-
-    // Only recommend when there's genuine edge (>= 52% probability)
-    if (uhConfidence >= 52) {
-      underHalfGoalsPrediction = {
-        type: 'UH05',
-        label: '1st Half Under 0.5',
-        // Bet is placed in the 1–5 min live window; covers the full 45-min half
-        value: 'Under 0.5 Goals (1-5min)',
-        confidence: uhConfidence,
-        // Colour coding: green for high confidence, amber for mid-range
-        color: uhConfidence >= 70 ? '#40c057' : uhConfidence >= 60 ? '#ffa94d' : '#4dabf7',
-        // When to place: minutes 1–5 of the match
-        window: 'Place: 1–5 min',
-        lambda: parseFloat(totalLambda.toFixed(3)),
-        pZero: parseFloat(pZeroGoals.toFixed(4)),
-      };
+    // Generate Under 2.5 HT prediction
+    const uh25Confidence = calculateBaseConfidence(2.5);
+    if (uh25Confidence >= 50) {
+      footballPredictions.push({
+        market: 'under_2_5_ht',
+        label: 'Under 2.5 HT',
+        value: 'Under 2.5 First-Half Goals',
+        confidence: uh25Confidence,
+        color: uh25Confidence >= 70 ? '#40c057' : uh25Confidence >= 60 ? '#ffa94d' : '#4dabf7',
+      });
     }
   }
 
   // --- Recommendations ---
-  // Soccer: ONLY the Under 0.5 First Half Goals (1–5 min in-play window).
-  //         All other soccer tips (WIN, GOALS, DC, 10MIN, GK, TI) are removed.
+  // Soccer: Top 2 highest-confidence predictions from the 4 approved markets
+  //         (under_corners, under_4_5_goals, under_1_5_ht, under_2_5_ht)
   // Basketball: WIN + GOALS/Totals retained as before.
   const recommendations = [];
 
@@ -955,11 +1045,33 @@ function analyzeMatchServer({
         color: '#ffd43b',
       });
     }
-  } else {
-    // Soccer — ONLY Under 0.5 1st Half Goals (place in minutes 1–5)
-    if (underHalfGoalsPrediction) {
-      recommendations.push(underHalfGoalsPrediction);
+  } else if (sport === 'tennis') {
+    // Tennis — keep Match Winner
+    if (winPrediction) {
+      recommendations.push({
+        type: 'WIN',
+        label: 'Match Winner',
+        value: winPrediction,
+        confidence: Math.round(winConfidence),
+        color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96'),
+      });
     }
+  } else {
+    // Soccer — delegate top-2 selection to the shared ranking utility.
+    // rankFootballPredictions validates, deduplicates, sorts by confidence
+    // (descending), and applies deterministic tie-breaking. Returns at most 2.
+    const topPredictions = rankFootballPredictions(footballPredictions);
+
+    // Add to recommendations with proper type
+    topPredictions.forEach(pred => {
+      recommendations.push({
+        type: pred.market.toUpperCase(),
+        label: pred.label,
+        value: pred.value,
+        confidence: Math.round(pred.confidence),
+        color: pred.color,
+      });
+    });
   }
 
   return {
@@ -999,10 +1111,13 @@ function isValidLeagueSlug(slug) {
 }
 
 /**
- * Validate a team/match ID — digits only, 1–15 chars.
+ * Validate a team/match ID — ESPN/AF digits or PitchAPI tokens (e.g. pa-m_B8x2K9, pa-t_9aB2xQ).
  */
 function isValidId(id) {
-  return typeof id === 'string' && /^\d{1,15}$/.test(id);
+  return typeof id === 'string' && (
+    /^(af-)?\d{1,15}$/.test(id) ||
+    /^(pa-)?[a-z]_[a-zA-Z0-9]{4,12}$/.test(id)
+  );
 }
 
 /**
@@ -1141,13 +1256,21 @@ app.post('/api/match-prediction', async (req, res) => {
 
   logger.info('Match prediction requested', { traceId, matchId, sport, leagueSlug, homeTeamId, awayTeamId });
 
-  // --- Fetch ESPN Data (server-side) ---
-  let homeTeamData, awayTeamData, matchAnalysisData;
-  let homeScheduleData, awayScheduleData;
-  let homeNewsData, awayNewsData;
+  // --- Unified prediction data ---
+  // Primary: Direct ESPN fetch (preserves 100% existing behavior)
+  // Fallback: SportsDataService (ESPN → API-Football chain, normalized)
+  let homeName, awayName, homeRecord, awayRecord;
+  let homeLastMatches = [];
+  let awayLastMatches = [];
+  let homeNews = [];
+  let awayNews = [];
+  let h2h = null;
+  let dataSource = 'espn-direct';
+  let dataTried = ['espn-direct'];
 
+  let espnSufficient = false;
   try {
-    [homeTeamData, awayTeamData, matchAnalysisData, homeScheduleData, awayScheduleData, homeNewsData, awayNewsData] =
+    const [homeTeamData, awayTeamData, matchAnalysisData, homeScheduleData, awayScheduleData, homeNewsData, awayNewsData] =
       await Promise.all([
         fetchFromBackendOrESPN(`${sport}/${leagueSlug}/teams/${homeTeamId}`),
         fetchFromBackendOrESPN(`${sport}/${leagueSlug}/teams/${awayTeamId}`),
@@ -1157,30 +1280,7 @@ app.post('/api/match-prediction', async (req, res) => {
         fetchFromBackendOrESPN(`${sport}/${leagueSlug}/news?team=${homeTeamId}&limit=5`),
         fetchFromBackendOrESPN(`${sport}/${leagueSlug}/news?team=${awayTeamId}&limit=5`),
       ]);
-  } catch (espnError) {
-    logger.error('ESPN API fetch failed for match prediction', {
-      traceId,
-      matchId,
-      sport,
-      leagueSlug,
-      error: espnError.message,
-    });
-    return res.status(502).json({
-      error: 'Failed to fetch match data from ESPN API. Please try again later.',
-      traceId,
-    });
-  }
 
-  // --- Parse ESPN Data ---
-  let homeName, awayName, homeRecord, awayRecord;
-  let homeLastMatches = [];
-  let awayLastMatches = [];
-  let homeNews = [];
-  let awayNews = [];
-  let h2h = null;
-  let headToHeadGames = [];
-
-  try {
     const homeTeam = homeTeamData?.team;
     const awayTeam = awayTeamData?.team;
 
@@ -1189,11 +1289,9 @@ app.post('/api/match-prediction', async (req, res) => {
     homeRecord = homeTeam?.record?.items?.[0]?.summary;
     awayRecord = awayTeam?.record?.items?.[0]?.summary;
 
-    // Process last 5 matches from schedule
     homeLastMatches = processScheduleForTeam(homeScheduleData?.events || [], homeTeamId);
     awayLastMatches = processScheduleForTeam(awayScheduleData?.events || [], awayTeamId);
 
-    // Process news
     homeNews = (homeNewsData?.articles || []).map(a => ({
       headline: a.headline || '',
       description: a.description || '',
@@ -1203,26 +1301,57 @@ app.post('/api/match-prediction', async (req, res) => {
       description: a.description || '',
     }));
 
-    // Process H2H from match summary
     let rawH2H = matchAnalysisData?.headToHeadGames || [];
     if (rawH2H.length > 0 && rawH2H[0]?.events) {
       rawH2H = rawH2H.flatMap(item => item.events || []);
       rawH2H = [...new Map(rawH2H.map(item => [item.id, item])).values()];
     }
-    headToHeadGames = rawH2H;
-    h2h = buildH2H(headToHeadGames, matchId, homeTeamId, awayTeamId);
+    h2h = buildH2H(rawH2H, matchId, homeTeamId, awayTeamId);
 
-  } catch (parseError) {
-    logger.error('ESPN data parsing error', {
-      traceId,
-      matchId,
-      error: parseError.message,
-      stack: parseError.stack,
+    espnSufficient = Boolean(
+      (homeTeam?.displayName || awayTeam?.displayName) &&
+      (homeLastMatches.length > 0 || awayLastMatches.length > 0 || h2h)
+    );
+  } catch (espnError) {
+    logger.warn('ESPN direct fetch/parse failed, attempting SportsDataService fallback', {
+      traceId, matchId, sport, leagueSlug, error: espnError.message,
     });
-    return res.status(500).json({
-      error: 'Failed to parse ESPN API response data.',
-      traceId,
+    espnSufficient = false;
+  }
+
+  if (!espnSufficient) {
+    logger.info('[SPORTS DATA] ESPN → data insufficient, attempting fallback', { traceId, matchId });
+    const sds = await sportsData.getMatchDataForPrediction({
+      matchId, sport, leagueSlug, homeTeamId, awayTeamId, traceId,
     });
+    dataTried = sds.tried || [];
+    if (sds.source) {
+      dataSource = sds.source;
+      homeName = sds.homeName || homeName;
+      awayName = sds.awayName || awayName;
+      homeRecord = sds.homeRecord || homeRecord;
+      awayRecord = sds.awayRecord || awayRecord;
+      homeLastMatches = sds.homeLastMatches && sds.homeLastMatches.length ? sds.homeLastMatches : homeLastMatches;
+      awayLastMatches = sds.awayLastMatches && sds.awayLastMatches.length ? sds.awayLastMatches : awayLastMatches;
+      homeNews = sds.homeNewsParsed && sds.homeNewsParsed.length ? sds.homeNewsParsed : homeNews;
+      awayNews = sds.awayNewsParsed && sds.awayNewsParsed.length ? sds.awayNewsParsed : awayNews;
+      h2h = sds.h2h || h2h;
+      logger.info(`[SPORTS DATA] ${sds.source.toUpperCase()} → fallback data used for prediction`, {
+        traceId, matchId, source: sds.source,
+        homeForm: homeLastMatches.length, awayForm: awayLastMatches.length,
+      });
+    } else {
+      logger.warn('[SPORTS DATA] All providers returned insufficient data', {
+        traceId, matchId, tried: dataTried,
+      });
+      if (!homeName && !awayName) {
+        return res.status(502).json({
+          error: 'Failed to fetch match data from all available providers. Please try again later.',
+          traceId,
+          providersTried: dataTried,
+        });
+      }
+    }
   }
 
   // --- Run Prediction Algorithm ---
@@ -1265,6 +1394,7 @@ app.post('/api/match-prediction', async (req, res) => {
     leagueSlug,
     homeName,
     awayName,
+    fromCache: false,
     ...prediction,
     meta: {
       homeRecord: homeRecord || 'N/A',
@@ -1273,6 +1403,8 @@ app.post('/api/match-prediction', async (req, res) => {
       awayFormMatches: awayLastMatches.length,
       h2hGamesAnalyzed: h2h ? (h2h.recent?.length || 0) : 0,
       generatedAt: new Date().toISOString(),
+      dataSource,
+      providersTried: dataTried,
     },
   };
 
@@ -1287,6 +1419,7 @@ app.post('/api/match-prediction', async (req, res) => {
     awayName,
     topPrediction: result.prediction,
     confidence: result.confidence,
+    dataSource,
   });
 
   return res.json({ ...result, traceId });
@@ -1352,156 +1485,256 @@ app.get('/api/match-predictions', async (req, res) => {
     }
 });
 
-// Live games only endpoint
+// Live games only endpoint — ESPN primary, API-Football fallback (deduplicated)
 app.get('/api/live-games', async (req, res) => {
     const { traceId } = req;
     const { sport, league } = req.query;
     logger.info('Live games request received', { traceId, sport, league });
-    
+
     try {
-        if (!isValidRelativeTarget(`${sport}/${league}`)) {
-            return res.status(400).json({ error: 'Invalid sport/league', traceId });
-        }
-        
-        const target = `${sport}/${league}/scoreboard`;
-        const scoreboardData = await fetchFromBackendOrESPN(target);
-        
-        if (!scoreboardData || !scoreboardData.events) {
+        if (sport && league) {
+            if (!isValidRelativeTarget(`${sport}/${league}`)) {
+                return res.status(400).json({ error: 'Invalid sport/league', traceId });
+            }
+
+            let espnLive = [];
+            try {
+                const target = `${sport}/${league}/scoreboard`;
+                const scoreboardData = await fetchFromBackendOrESPN(target);
+                if (scoreboardData?.events) {
+                    espnLive = scoreboardData.events.filter(
+                        e => e.competitions?.[0]?.status?.type?.state === 'in'
+                    );
+                }
+            } catch (_) { /* fall through */ }
+
+            if (espnLive.length > 0) {
+                return res.json({ liveGames: espnLive, traceId, count: espnLive.length, source: 'espn' });
+            }
+
+            if ((sport === 'soccer' || sport === 'football')) {
+                const all = await sportsData.getLiveFixtures({
+                    traceId,
+                    leagueConfigs: [{ sport, league }],
+                });
+                return res.json({ liveGames: all, traceId, count: all.length, source: 'merged' });
+            }
+
             return res.json({ liveGames: [], traceId });
         }
-        
-        const liveGames = scoreboardData.events.filter(event => 
-            event.competitions?.[0]?.status?.type?.state === 'in'
-        );
-        
-        res.json({ liveGames, traceId, count: liveGames.length });
+
+        const all = await sportsData.getLiveFixtures({ traceId });
+        res.json({ liveGames: all, traceId, count: all.length, source: 'merged' });
     } catch (error) {
-        logger.error('Error fetching live games', {
-            traceId,
-            error: error.message
-        });
+        logger.error('Error fetching live games', { traceId, error: error.message });
         res.status(500).json({ error: 'Failed to fetch live games', traceId });
     }
 });
 
-// Live game predictions endpoint for matches past halfway
+// Sports data provider status — debugging/monitoring
+app.get('/api/sports-data/status', (req, res) => {
+    const { traceId } = req;
+    res.json({
+        traceId,
+        providers: sportsData.getProvidersStatus(),
+        cache: {
+            espnProxySize: cache.size,
+            predictionCacheSize: predictionCache.size,
+            sharedCacheSize: sportsData.cacheSize(),
+        },
+    });
+});
+
+// Admin /discover endpoint: list football leagues (for soccer/football)
+app.get('/api/sports-data/leagues', async (req, res) => {
+    const { traceId } = req;
+    const { sport = 'soccer', country, season } = req.query;
+    const effectiveSeason = (season ? String(season).slice(0, 10) : String(new Date().getFullYear()));
+    const effectiveCountry = country ? String(country).slice(0, 60) : null;
+    const paAvailable = sportsData.pitchApi && sportsData.pitchApi.isAvailable
+        ? sportsData.pitchApi.isAvailable()
+        : false;
+
+    if (sport && sport !== 'soccer' && sport !== 'football') {
+        const diagnostics = {
+            reason: 'sport_not_supported',
+            season: effectiveSeason,
+            country: effectiveCountry,
+            provider: 'pitchapi',
+        };
+        logger.info('[SPORTS DATA] leagues zero-result', {
+            traceId,
+            effectiveSeason,
+            effectiveCountry,
+            reason: diagnostics.reason,
+            providerAvailable: paAvailable,
+        });
+        return res.json({ leagues: [], traceId, count: 0, diagnostics });
+    }
+    try {
+        const opts = { traceId };
+        if (effectiveCountry) opts.country = effectiveCountry;
+        opts.season = effectiveSeason;
+        const leagues = await sportsData.listFootballLeagues(opts);
+        const count = Array.isArray(leagues) ? leagues.length : 0;
+
+        if (count === 0) {
+            let reason = 'no_data_for_season';
+            if (!paAvailable) reason = 'provider_unavailable';
+            const diagnostics = {
+                reason,
+                season: effectiveSeason,
+                country: effectiveCountry,
+                provider: 'pitchapi',
+            };
+            logger.info('[SPORTS DATA] leagues zero-result', {
+                traceId,
+                effectiveSeason,
+                effectiveCountry,
+                reason,
+                providerAvailable: paAvailable,
+            });
+            res.json({ leagues: [], traceId, count: 0, diagnostics });
+        } else {
+            res.json({ leagues, traceId, count });
+        }
+    } catch (error) {
+        logger.error('Error listing football leagues', { traceId, error: error.message });
+        res.status(500).json({ error: 'Failed to list leagues', traceId });
+    }
+});
+
+// Live game predictions endpoint for matches past halfway — ESPN first, API-Football merged fallback
 app.get('/api/live-predictions', async (req, res) => {
     const { traceId } = req;
     logger.info('Live predictions request received', { traceId });
-    
+
     try {
         const leaguesToCheck = [
             { sport: 'soccer', league: 'eng.1' },
             { sport: 'soccer', league: 'esp.1' },
             { sport: 'soccer', league: 'ita.1' },
+            { sport: 'soccer', league: 'ger.1' },
+            { sport: 'soccer', league: 'fra.1' },
+            { sport: 'soccer', league: 'uefa.champions' },
             { sport: 'basketball', league: 'nba' },
             { sport: 'basketball', league: 'wnba' },
             { sport: 'tennis', league: 'atp' },
             { sport: 'tennis', league: 'wta' }
         ];
-        
+
         const livePredictions = [];
-        
+        const seenIds = new Set();
+
+        const processFixture = (fx, sport, leagueName) => {
+            const id = String(fx.fixture?.id || fx.id || `${fx.homeTeam?.name}-${fx.awayTeam?.name}-${fx.fixture?.date}`);
+            if (seenIds.has(id)) return;
+            seenIds.add(id);
+
+            const isNormalized = Boolean(fx.fixture && fx.homeTeam && fx.awayTeam);
+            let status, clock, period, homeComp, awayComp;
+            if (isNormalized) {
+                status = fx.fixture.status;
+                clock = fx.fixture.clock;
+                period = fx.fixture.period || 0;
+                homeComp = { team: fx.homeTeam, score: { value: fx.homeTeam.score }, homeAway: 'home' };
+                awayComp = { team: fx.awayTeam, score: { value: fx.awayTeam.score }, homeAway: 'away' };
+            } else {
+                const comp = fx.competitions?.[0];
+                status = comp?.status?.type?.state;
+                clock = comp?.status?.displayClock;
+                period = comp?.status?.period;
+                const comps = comp?.competitors || [];
+                homeComp = comps.find(c => c.homeAway === 'home') || comps[0];
+                awayComp = comps.find(c => c.homeAway === 'away') || comps[1];
+            }
+
+            if (status !== 'in' && status !== 'live') return;
+
+            let isPastHalfway = false;
+            if (sport === 'soccer') {
+                isPastHalfway = period >= 2 || (period === 1 && String(clock || '').includes('45'))
+                    || (typeof clock === 'string' && /^([5-8]\d|90)/.test(clock));
+            } else if (sport === 'basketball') {
+                isPastHalfway = period >= 3 || (period === 2 && String(clock || '').includes('6'));
+            } else {
+                isPastHalfway = true;
+            }
+
+            if (!isPastHalfway || !homeComp || !awayComp) return;
+
+            const homeTeamObj = homeComp.team || {};
+            const awayTeamObj = awayComp.team || {};
+            const homeScore = parseInt(homeComp.score?.value ?? (homeTeamObj.score ?? 0), 10);
+            const awayScore = parseInt(awayComp.score?.value ?? (awayTeamObj.score ?? 0), 10);
+
+            let prediction, confidence;
+            if (homeScore > awayScore) {
+                prediction = homeTeamObj.displayName || homeTeamObj.name || 'Home Team';
+                confidence = 0.7 + Math.min(0.2, (homeScore - awayScore) * 0.05);
+            } else if (awayScore > homeScore) {
+                prediction = awayTeamObj.displayName || awayTeamObj.name || 'Away Team';
+                confidence = 0.7 + Math.min(0.2, (awayScore - homeScore) * 0.05);
+            } else {
+                prediction = 'Draw/No Clear Favorite';
+                confidence = 0.5;
+            }
+
+            livePredictions.push({
+                id,
+                name: fx.name || `${homeTeamObj.displayName || homeTeamObj.name || 'Home'} vs ${awayTeamObj.displayName || awayTeamObj.name || 'Away'}`,
+                league: leagueName || fx.league?.name || leagueName,
+                sport,
+                time: clock || '',
+                period: period || 0,
+                homeTeam: {
+                    name: homeTeamObj.displayName || homeTeamObj.name,
+                    score: homeScore,
+                    logo: homeTeamObj.logo || homeTeamObj.logos?.[0]?.href,
+                },
+                awayTeam: {
+                    name: awayTeamObj.displayName || awayTeamObj.name,
+                    score: awayScore,
+                    logo: awayTeamObj.logo || awayTeamObj.logos?.[0]?.href,
+                },
+                prediction,
+                source: isNormalized ? fx.source || 'merged' : 'espn',
+                confidence: Math.round(confidence * 100) / 100,
+            });
+        };
+
         const leaguePromises = leaguesToCheck.map(async ({ sport, league }) => {
             try {
                 const target = `${sport}/${league}/scoreboard`;
                 const scoreboardData = await fetchFromBackendOrESPN(target);
-                
-                if (scoreboardData && scoreboardData.events) {
-                    for (const event of scoreboardData.events) {
-                        const competition = event.competitions?.[0];
-                        const status = competition?.status?.type?.state;
-                        
-                        if (status === 'in') {
-                            const clock = competition?.status?.displayClock;
-                            const period = competition?.status?.period;
-                            
-                            // Check if match is past halfway
-                            let isPastHalfway = false;
-                            if (sport === 'soccer') {
-                                // Soccer: 2nd half (period 2) or more
-                                isPastHalfway = period >= 2 || (period === 1 && clock?.includes('45'));
-                            } else if (sport === 'basketball') {
-                                // Basketball: 3rd quarter or later (NBA has 4 quarters)
-                                isPastHalfway = period >= 3 || (period === 2 && clock?.includes('6'));
-                            } else if (sport === 'tennis') {
-                                // Tennis: 2nd set or later, or 1st set past 3 games
-                                isPastHalfway = period >= 2 || true; // For tennis, include all live
-                            }
-                            
-                            if (isPastHalfway) {
-                                // Generate live prediction based on current score
-                                const competitors = competition?.competitors || [];
-                                if (competitors.length === 2) {
-                                    const home = competitors.find(c => c.homeAway === 'home');
-                                    const away = competitors.find(c => c.homeAway === 'away');
-                                    
-                                    if (home && away) {
-                                        const homeScore = parseInt(home.score?.value || 0);
-                                        const awayScore = parseInt(away.score?.value || 0);
-                                        
-                                        let prediction, confidence;
-                                        if (homeScore > awayScore) {
-                                            prediction = home.team?.displayName || 'Home Team';
-                                            confidence = 0.7 + Math.min(0.2, (homeScore - awayScore) * 0.05);
-                                        } else if (awayScore > homeScore) {
-                                            prediction = away.team?.displayName || 'Away Team';
-                                            confidence = 0.7 + Math.min(0.2, (awayScore - homeScore) * 0.05);
-                                        } else {
-                                            prediction = 'Draw/No Clear Favorite';
-                                            confidence = 0.5;
-                                        }
-                                        
-                                        livePredictions.push({
-                                            id: event.id,
-                                            name: event.name,
-                                            league: league,
-                                            sport: sport,
-                                            time: clock,
-                                            period: period,
-                                            homeTeam: {
-                                                name: home.team?.displayName,
-                                                score: homeScore,
-                                                logo: home.team?.logo
-                                            },
-                                            awayTeam: {
-                                                name: away.team?.displayName,
-                                                score: awayScore,
-                                                logo: away.team?.logo
-                                            },
-                                            prediction: prediction,
-                                            confidence: Math.round(confidence * 100) / 100
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
+                if (scoreboardData?.events) {
+                    scoreboardData.events.forEach(e => processFixture(e, sport, league));
                 }
             } catch (err) {
-                logger.error('Error fetching scoreboard for league', {
-                    traceId,
-                    sport,
-                    league,
-                    error: err.message
+                logger.debug('ESPN live league fetch failed (may fall back via API-Football)', {
+                    traceId, sport, league, error: err.message,
                 });
             }
         });
-        
+
         await Promise.all(leaguePromises);
-        
+
+        try {
+            const mergedLive = await sportsData.getLiveFixtures({ traceId, leagueConfigs: leaguesToCheck });
+            mergedLive.forEach(fx => processFixture(fx, fx.sport || 'soccer', fx.league?.name || fx.league?.id || ''));
+        } catch (err) {
+            logger.warn('SportsDataService live fixtures merge failed', { traceId, error: err.message });
+        }
+
         res.json({ livePredictions, traceId, count: livePredictions.length });
     } catch (error) {
-        logger.error('Error fetching live predictions', {
-            traceId,
-            error: error.message
-        });
+        logger.error('Error fetching live predictions', { traceId, error: error.message });
         res.status(500).json({ error: 'Failed to fetch live predictions', traceId });
     }
 });
 
 // Nightly Retraining Cron
-cron.schedule('0 2 * * *', () => {
+if (IS_ENTRY_POINT) cron.schedule('0 2 * * *', () => {
   const traceId = uuidv4();
   logger.info('Starting nightly prediction retraining...', { traceId });
   
@@ -1527,12 +1760,12 @@ io.on('connection', (socket) => {
 });
 
 // Start server
-server.listen(PORT, () => {
+if (IS_ENTRY_POINT) server.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
 });
 
 // Scheduled Job: Monthly token distribution
-cron.schedule('0 0 1 * *', async () => {
+if (IS_ENTRY_POINT) cron.schedule('0 0 1 * *', async () => {
   const traceId = uuidv4();
   logger.info('Running monthly token distribution job...', { traceId });
   try {
@@ -1574,3 +1807,15 @@ cron.schedule('0 0 1 * *', async () => {
     logger.error('Error in monthly token distribution job', { traceId, error: error.message });
   }
 });
+
+module.exports = {
+  app,
+  server,
+  io,
+  sportsData,
+  logger,
+  analyzeMatchServer,
+  rankFootballPredictions,
+  FOOTBALL_UNDER_CORNERS_LINE,
+  FOOTBALL_MARKET_PRIORITY,
+};

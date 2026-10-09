@@ -507,7 +507,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 <View style={styles.lockedContainer}>
                   <Ionicons name="lock-closed" size={40} color={theme.textSecondary} />
                   <Text style={styles.lockedText}>AI Tips Locked</Text>
-                  <Text style={styles.lockedSubText}>Unlock to reveal Win, Goals, and Special props.</Text>
+                  <Text style={styles.lockedSubText}>Unlock to see the top 2 highest-confidence predictions for this match.</Text>
                   <TouchableOpacity style={styles.unlockButton} onPress={handleUnlockPrediction}>
                     <LinearGradient
                       colors={[theme.primary, theme.warning]}
@@ -529,7 +529,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
                           <View style={[styles.tipTypeBadge, { backgroundColor: rec.color + '20' }]}>
                             <Text style={[styles.tipTypeText, { color: rec.color }]}>{rec.label}</Text>
                           </View>
-                          <Text style={styles.tipConfidence}>{rec.confidence}% Conf.</Text>
+                          <Text style={styles.tipConfidence}>{typeof rec.confidence === 'number' ? rec.confidence.toFixed(1) : rec.confidence}% Conf.</Text>
                         </View>
                         <Text style={styles.tipValue}>{rec.value}</Text>
                       </View>
