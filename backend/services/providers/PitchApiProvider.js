@@ -249,6 +249,13 @@ class PitchApiProvider {
     return normalizeH2HPitchAPI(raw, homeTeamId, awayTeamId);
   }
 
+  async getMatchEvents(id, { traceId = null } = {}) {
+    const cleanId = String(id).replace(/^pa-/, '');
+    const raw = await this._request(`/v1/matches/${cleanId}/events`, {}, { ttl: TTL.TEAM_STATS, traceId });
+    if (!raw) return [];
+    return Array.isArray(raw?.events) ? raw.events : [];
+  }
+
   /**
    * PitchAPI does not provide a standings table endpoint in its published catalogue.
    * We gracefully return null without fabricating data.
