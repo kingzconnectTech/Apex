@@ -51,3 +51,19 @@ export const checkBackendHealth = async () => {
     }
 };
 
+/**
+ * Fetch all 77 football leagues available from PitchAPI / backend.
+ * @returns {Promise<Array>} array of normalized league objects
+ */
+export const fetchSportsDataLeagues = async () => {
+  try {
+    const response = await fetch(`${API_URL}/api/sports-data/leagues`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.leagues || [];
+  } catch (error) {
+    console.warn('[fetchSportsDataLeagues] Network error:', error.message);
+    return [];
+  }
+};
+

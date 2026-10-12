@@ -1,18 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Image, ActivityIndicator, Animated, Platform, StatusBar, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Image, ActivityIndicator, Animated, Platform, StatusBar, RefreshControl, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { fetchMatches } from '../services/espn';
+import { fetchMatches, fetchLeagueMatches } from '../services/espn';
+import { fetchSportsDataLeagues } from '../services/api';
+import { PITCHAPI_77_LEAGUES, PITCHAPI_LEAGUE_NAMES } from '../constants/pitchapiLeagues';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
 import { useTheme } from '../context/ThemeContext';
 
 const CATEGORIES = ['Football', 'Basketball', 'Tennis'];
 
+const REGIONS = ['All (77)', 'Europe', 'Americas', 'Asia', 'Middle East & Africa'];
+
 const LEAGUES_FILTER = {
-  Football: ['Live', 'All', 'Premier League', 'Championship', 'League One', 'La Liga', 'La Liga 2', 'Serie A', 'Serie B', 'Bundesliga', '2. Bundesliga', 'Ligue 1', 'Ligue 2', 'Eredivisie', 'Liga Portugal', 'Liga Portugal 2', 'Super Lig', 'Liga MX', 'Liga de Expansión MX', 'Brasileirão Série A', 'Brasileirão Série B', 'Libertadores', 'Copa Sudamericana', 'Champions League', 'Europa League', 'Europa Conference League', 'MLS', 'NWSL', 'USL Championship', 'International'],
+  Football: ['Live', 'All', ...PITCHAPI_LEAGUE_NAMES],
   Basketball: ['Live', 'All', 'NBA', 'WNBA', 'NCAA Men', 'NCAA Women', 'NBA G League', 'EuroLeague', 'EuroCup', 'FIBA EuroBasket', 'FIBA Basketball World Cup', 'NBL Australia', 'NBA Summer League'],
   Tennis: ['Live', 'All', 'Grand Slams', 'ATP Tour', 'ATP Masters 1000', 'ATP 500', 'ATP 250', 'ATP Challenger Tour', 'ATP Finals', 'WTA Tour', 'WTA Premier', 'WTA 1000', 'WTA 500', 'WTA 250', 'WTA Finals']
 };
@@ -28,9 +32,45 @@ export default function TipsScreen({ navigation }) {
   const [allMatches, setAllMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // 77 Leagues Directory State
+  const [leaguesCatalog, setLeaguesCatalog] = useState(PITCHAPI_77_LEAGUES);
+  const [leagueModalVisible, setLeagueModalVisible] = useState(false);
+  const [leagueSearchQuery, setLeagueSearchQuery] = useState('');
+  const [selectedRegionTab, setSelectedRegionTab] = useState('All (77)');
+  const [fetchingLeagueOnDemand, setFetchingLeagueOnDemand] = useState(false);
   
   // Animation for loading
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Sync latest leagues dynamically from backend if available
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const remote = await fetchSportsDataLeagues();
+        if (isMounted && Array.isArray(remote) && remote.length > 0) {
+          // Merge with local catalog for logos & regions
+          const remoteList = remote.map(r => {
+            const local = PITCHAPI_77_LEAGUES.find(l => l.sourceId === r.league?.sourceId || l.name === r.league?.name);
+            return {
+              id: r.league?.id || local?.id,
+              sourceId: r.league?.sourceId || local?.sourceId,
+              name: r.league?.name || local?.name,
+              country: r.league?.country || local?.country || 'INT',
+              displayName: local?.displayName || r.league?.name,
+              logo: r.league?.logo || local?.logo,
+              season: r.league?.season || local?.season,
+              region: local?.region || 'Europe',
+              isFree: r.isFree !== false,
+            };
+          });
+          setLeaguesCatalog(remoteList);
+        }
+      } catch (_) {}
+    })();
+    return () => { isMounted = false; };
+  }, []);
 
   useEffect(() => {
     loadMatches(dateFilter);
@@ -115,6 +155,52 @@ export default function TipsScreen({ navigation }) {
     setShowDatePicker(false);
     if (selectedDate) setDateFilter(selectedDate);
   };
+
+  const handleSelectLeague = async (leagueItemOrName) => {
+    const leagueName = typeof leagueItemOrName === 'string' ? leagueItemOrName : leagueItemOrName.name;
+    const leagueObj = typeof leagueItemOrName === 'object' ? leagueItemOrName : leaguesCatalog.find(l => l.name === leagueName);
+    
+    setSelectedLeague(leagueName);
+    setLeagueModalVisible(false);
+
+    // If matches for this league aren't in allMatches yet, fetch on-demand!
+    if (leagueName !== 'All' && leagueName !== 'Live') {
+      const alreadyHas = allMatches.some(m => m.league === leagueName);
+      if (!alreadyHas && leagueObj) {
+        setFetchingLeagueOnDemand(true);
+        try {
+          const slug = leagueObj.sourceId || leagueObj.id;
+          const newMatches = await fetchLeagueMatches(slug, 'soccer', leagueName);
+          if (newMatches && newMatches.length > 0) {
+            setAllMatches(prev => {
+              const existingIds = new Set(prev.map(m => m.id));
+              const fresh = newMatches.filter(m => !existingIds.has(m.id));
+              return [...prev, ...fresh];
+            });
+          }
+        } catch (e) {
+          console.warn('Failed on-demand league fetch:', e);
+        } finally {
+          setFetchingLeagueOnDemand(false);
+        }
+      }
+    }
+  };
+
+  const filtered77Leagues = useMemo(() => {
+    return leaguesCatalog.filter(l => {
+      if (selectedRegionTab !== 'All (77)' && l.region !== selectedRegionTab) {
+        return false;
+      }
+      if (!leagueSearchQuery.trim()) return true;
+      const q = leagueSearchQuery.trim().toLowerCase();
+      return (
+        (l.name && l.name.toLowerCase().includes(q)) ||
+        (l.country && l.country.toLowerCase().includes(q)) ||
+        (l.displayName && l.displayName.toLowerCase().includes(q))
+      );
+    });
+  }, [leaguesCatalog, selectedRegionTab, leagueSearchQuery]);
 
   const renderTipCard = ({ item, index }) => {
     return (
@@ -231,11 +317,20 @@ export default function TipsScreen({ navigation }) {
                     </TouchableOpacity>
                 ))}
                 <View style={styles.verticalDivider} />
+                {selectedCategory === 'Football' && (
+                  <TouchableOpacity 
+                      style={[styles.allLeaguesBtn, leagueModalVisible && styles.allLeaguesBtnActive]}
+                      onPress={() => setLeagueModalVisible(true)}
+                  >
+                      <Ionicons name="globe-outline" size={14} color="#00F2FE" style={{ marginRight: 5 }} />
+                      <Text style={styles.allLeaguesBtnText}>🌐 77 Leagues</Text>
+                  </TouchableOpacity>
+                )}
                 {LEAGUES_FILTER[selectedCategory].map(league => (
                     <TouchableOpacity 
                         key={league} 
                         style={[styles.leaguePill, selectedLeague === league && styles.leaguePillActive]}
-                        onPress={() => setSelectedLeague(league)}
+                        onPress={() => handleSelectLeague(league)}
                     >
                         <Text style={[styles.leagueTextFilter, selectedLeague === league && styles.leagueTextActive]}>{league}</Text>
                     </TouchableOpacity>
@@ -289,6 +384,132 @@ export default function TipsScreen({ navigation }) {
           onChange={onDateChange}
         />
       )}
+
+      {/* 77 Leagues Directory Modal */}
+      <Modal
+        visible={leagueModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setLeagueModalVisible(false)}
+      >
+        <SafeAreaView style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={styles.modalTitle}>All 77 Leagues</Text>
+                  <View style={styles.verifiedBadge}>
+                    <Text style={styles.verifiedBadgeText}>PitchAPI + ESPN</Text>
+                  </View>
+                </View>
+                <Text style={styles.modalSubtitle}>Comprehensive multi-tier football coverage</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setLeagueModalVisible(false)}
+              >
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Input */}
+            <View style={styles.searchBarContainer}>
+              <Ionicons name="search" size={18} color={theme.textSecondary} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search league, country (e.g. Germany, Saudi, MLS)..."
+                placeholderTextColor={theme.textSecondary}
+                value={leagueSearchQuery}
+                onChangeText={setLeagueSearchQuery}
+                clearButtonMode="while-editing"
+              />
+              {leagueSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setLeagueSearchQuery('')}>
+                  <Ionicons name="close-circle" size={18} color={theme.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Region Tabs */}
+            <View style={styles.regionTabsContainer}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.regionTabsContent}>
+                {REGIONS.map(reg => (
+                  <TouchableOpacity
+                    key={reg}
+                    style={[styles.regionChip, selectedRegionTab === reg && styles.regionChipActive]}
+                    onPress={() => setSelectedRegionTab(reg)}
+                  >
+                    <Text style={[styles.regionChipText, selectedRegionTab === reg && styles.regionChipTextActive]}>
+                      {reg}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Leagues Count / Selection Summary */}
+            <View style={styles.resultSummaryRow}>
+              <Text style={styles.resultSummaryText}>
+                Showing {filtered77Leagues.length} of {leaguesCatalog.length} competitions
+              </Text>
+              {selectedLeague !== 'All' && (
+                <TouchableOpacity onPress={() => handleSelectLeague('All')}>
+                  <Text style={styles.resetFilterText}>Reset filter to All</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Leagues List */}
+            <FlatList
+              data={filtered77Leagues}
+              keyExtractor={item => item.id || item.sourceId || item.name}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.leaguesListContainer}
+              renderItem={({ item }) => {
+                const isSelected = selectedLeague === item.name;
+                return (
+                  <TouchableOpacity
+                    style={[styles.leagueDirectoryItem, isSelected && styles.leagueDirectoryItemActive]}
+                    onPress={() => handleSelectLeague(item)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.leagueLogoWrapper}>
+                      {item.logo ? (
+                        <Image source={{ uri: item.logo }} style={styles.leagueItemLogo} />
+                      ) : (
+                        <Ionicons name="football-outline" size={24} color={theme.primary} />
+                      )}
+                    </View>
+                    <View style={styles.leagueItemInfo}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Text style={[styles.leagueItemName, isSelected && styles.leagueItemNameActive]}>
+                          {item.name}
+                        </Text>
+                        <View style={styles.countryPill}>
+                          <Text style={styles.countryPillText}>{item.country}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.leagueItemRegion}>
+                        {item.region} • Season {item.season || '2024/2025'}
+                      </Text>
+                    </View>
+                    <View style={styles.leagueItemRight}>
+                      {isSelected ? (
+                        <View style={styles.selectedCheckBadge}>
+                          <Ionicons name="checkmark" size={16} color="#FFF" />
+                        </View>
+                      ) : (
+                        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
       <GlobalBannerAd />
     </View>
   );
@@ -547,5 +768,205 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     fontSize: getResponsiveFontSize(16),
     marginTop: verticalScale(10),
     fontWeight: '500',
+  },
+  allLeaguesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: horizontalScale(14),
+    paddingVertical: verticalScale(6),
+    borderRadius: moderateScale(14),
+    marginRight: horizontalScale(8),
+    borderWidth: 1,
+    borderColor: '#00F2FE',
+    backgroundColor: isDarkMode ? 'rgba(0, 242, 254, 0.12)' : 'rgba(0, 242, 254, 0.08)',
+  },
+  allLeaguesBtnActive: {
+    backgroundColor: '#00F2FE',
+  },
+  allLeaguesBtnText: {
+    color: '#00F2FE',
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    flex: 1,
+    marginTop: verticalScale(50),
+    backgroundColor: theme.bg,
+    borderTopLeftRadius: moderateScale(28),
+    borderTopRightRadius: moderateScale(28),
+    paddingTop: verticalScale(20),
+    paddingHorizontal: moderateScale(20),
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: verticalScale(16),
+  },
+  modalTitle: {
+    fontSize: getResponsiveFontSize(22),
+    fontWeight: '800',
+    color: theme.text,
+  },
+  verifiedBadge: {
+    marginLeft: horizontalScale(8),
+    backgroundColor: 'rgba(0, 242, 254, 0.15)',
+    paddingHorizontal: horizontalScale(8),
+    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(6),
+    borderWidth: 0.5,
+    borderColor: '#00F2FE',
+  },
+  verifiedBadgeText: {
+    color: '#00F2FE',
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    fontSize: getResponsiveFontSize(13),
+    color: theme.textSecondary,
+    marginTop: verticalScale(2),
+  },
+  modalCloseBtn: {
+    padding: moderateScale(6),
+    borderRadius: moderateScale(20),
+    backgroundColor: theme.cardBg,
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.cardBg,
+    borderRadius: moderateScale(14),
+    paddingHorizontal: horizontalScale(14),
+    paddingVertical: verticalScale(10),
+    borderWidth: 1,
+    borderColor: theme.border,
+    marginBottom: verticalScale(14),
+  },
+  searchInput: {
+    flex: 1,
+    color: theme.text,
+    fontSize: getResponsiveFontSize(14),
+    padding: 0,
+  },
+  regionTabsContainer: {
+    marginBottom: verticalScale(12),
+  },
+  regionTabsContent: {
+    alignItems: 'center',
+  },
+  regionChip: {
+    paddingHorizontal: horizontalScale(14),
+    paddingVertical: verticalScale(6),
+    borderRadius: moderateScale(12),
+    backgroundColor: theme.cardBg,
+    marginRight: horizontalScale(8),
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  regionChipActive: {
+    borderColor: theme.primary,
+    backgroundColor: isDarkMode ? 'rgba(52, 152, 219, 0.2)' : 'rgba(52, 152, 219, 0.1)',
+  },
+  regionChipText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '600',
+  },
+  regionChipTextActive: {
+    color: theme.primary,
+    fontWeight: '700',
+  },
+  resultSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: verticalScale(10),
+    paddingHorizontal: horizontalScale(4),
+  },
+  resultSummaryText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+  },
+  resetFilterText: {
+    color: theme.primary,
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '600',
+  },
+  leaguesListContainer: {
+    paddingBottom: verticalScale(40),
+  },
+  leagueDirectoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.cardBg,
+    borderRadius: moderateScale(16),
+    padding: moderateScale(14),
+    marginBottom: verticalScale(10),
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  leagueDirectoryItemActive: {
+    borderColor: theme.primary,
+    backgroundColor: isDarkMode ? 'rgba(52, 152, 219, 0.12)' : 'rgba(52, 152, 219, 0.05)',
+  },
+  leagueLogoWrapper: {
+    width: moderateScale(40),
+    height: moderateScale(40),
+    borderRadius: moderateScale(10),
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: horizontalScale(12),
+    overflow: 'hidden',
+  },
+  leagueItemLogo: {
+    width: moderateScale(32),
+    height: moderateScale(32),
+    resizeMode: 'contain',
+  },
+  leagueItemInfo: {
+    flex: 1,
+  },
+  leagueItemName: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(15),
+    fontWeight: '700',
+    marginRight: horizontalScale(6),
+  },
+  leagueItemNameActive: {
+    color: theme.primary,
+  },
+  countryPill: {
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+    paddingHorizontal: horizontalScale(6),
+    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(6),
+  },
+  countryPillText: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: '700',
+  },
+  leagueItemRegion: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    marginTop: verticalScale(3),
+  },
+  leagueItemRight: {
+    marginLeft: horizontalScale(8),
+  },
+  selectedCheckBadge: {
+    width: moderateScale(24),
+    height: moderateScale(24),
+    borderRadius: moderateScale(12),
+    backgroundColor: theme.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

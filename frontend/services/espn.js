@@ -7,15 +7,31 @@ const PROXY_BASE = `${API_URL}/api/proxy?target=`;
 const clientCache = new Map();
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
-// Only top leagues to fetch initially for speed
+// Top leagues & lower divisions to fetch for fast multi-division coverage
 const TOP_LEAGUES = [
-  // Soccer - Top 5 Leagues + Champions League
+  // Soccer - Top Tier Leagues
   { sport: 'soccer', league: 'eng.1', name: 'Premier League' },
   { sport: 'soccer', league: 'esp.1', name: 'La Liga' },
   { sport: 'soccer', league: 'ita.1', name: 'Serie A' },
   { sport: 'soccer', league: 'ger.1', name: 'Bundesliga' },
   { sport: 'soccer', league: 'fra.1', name: 'Ligue 1' },
   { sport: 'soccer', league: 'uefa.champions', name: 'Champions League' },
+  { sport: 'soccer', league: 'uefa.europa', name: 'Europa League' },
+  // Soccer - Lower Division Leagues
+  { sport: 'soccer', league: 'eng.2', name: 'Championship' },
+  { sport: 'soccer', league: 'eng.3', name: 'League One' },
+  { sport: 'soccer', league: 'eng.4', name: 'League Two' },
+  { sport: 'soccer', league: 'esp.2', name: 'La Liga 2' },
+  { sport: 'soccer', league: 'ita.2', name: 'Serie B' },
+  { sport: 'soccer', league: 'ger.2', name: '2. Bundesliga' },
+  { sport: 'soccer', league: 'fra.2', name: 'Ligue 2' },
+  { sport: 'soccer', league: 'ned.2', name: 'Eerste Divisie' },
+  { sport: 'soccer', league: 'por.2', name: 'Liga Portugal 2' },
+  { sport: 'soccer', league: 'sct.2', name: 'Scottish Championship' },
+  { sport: 'soccer', league: 'bra.2', name: 'Brasileirão Série B' },
+  { sport: 'soccer', league: 'mex.2', name: 'Liga de Expansión MX' },
+  { sport: 'soccer', league: 'usa.2', name: 'USL Championship' },
+  { sport: 'soccer', league: 'jpn.2', name: 'J2 League' },
   // Basketball - NBA/WNBA
   { sport: 'basketball', league: 'nba', name: 'NBA' },
   { sport: 'basketball', league: 'wnba', name: 'WNBA' },
@@ -31,6 +47,7 @@ const ALL_LEAGUES = [
   { sport: 'soccer', league: 'eng.1', name: 'Premier League' },
   { sport: 'soccer', league: 'eng.2', name: 'Championship' },
   { sport: 'soccer', league: 'eng.3', name: 'League One' },
+  { sport: 'soccer', league: 'eng.4', name: 'League Two' },
   { sport: 'soccer', league: 'esp.1', name: 'La Liga' },
   { sport: 'soccer', league: 'esp.2', name: 'La Liga 2' },
   { sport: 'soccer', league: 'ita.1', name: 'Serie A' },
@@ -40,6 +57,7 @@ const ALL_LEAGUES = [
   { sport: 'soccer', league: 'fra.1', name: 'Ligue 1' },
   { sport: 'soccer', league: 'fra.2', name: 'Ligue 2' },
   { sport: 'soccer', league: 'ned.1', name: 'Eredivisie' },
+  { sport: 'soccer', league: 'ned.2', name: 'Eerste Divisie' },
   { sport: 'soccer', league: 'por.1', name: 'Liga Portugal' },
   { sport: 'soccer', league: 'por.2', name: 'Liga Portugal 2' },
   { sport: 'soccer', league: 'tur.1', name: 'Super Lig' },
@@ -47,6 +65,7 @@ const ALL_LEAGUES = [
   { sport: 'soccer', league: 'ukr.1', name: 'Ukrainian Premier League' },
   { sport: 'soccer', league: 'bel.1', name: 'Belgian Pro League' },
   { sport: 'soccer', league: 'sct.1', name: 'Scottish Premiership' },
+  { sport: 'soccer', league: 'sct.2', name: 'Scottish Championship' },
   { sport: 'soccer', league: 'aut.1', name: 'Austrian Bundesliga' },
   { sport: 'soccer', league: 'grc.1', name: 'Super League Greece' },
   { sport: 'soccer', league: 'dnk.1', name: 'Danish Superliga' },
@@ -225,6 +244,19 @@ export const fetchMatches = async (useTopLeaguesOnly = true, days = 1) => {
   }
 };
 
+/**
+ * Fetch matches for a specific league on-demand (works for ESPN and PitchAPI).
+ */
+export const fetchLeagueMatches = async (leagueSlug, sport = 'soccer', name = '') => {
+  try {
+    const data = await fetchFromBackendOrESPN(`${sport}/${leagueSlug}/scoreboard`);
+    return processEvents(data.events || [], sport, leagueSlug, name || leagueSlug);
+  } catch (error) {
+    console.warn(`Failed to fetch matches for ${name || leagueSlug}:`, error);
+    return [];
+  }
+};
+
 // Helper to process events (DRY)
 const processEvents = (events, sport, league, name) => {
   return events.map(event => {
@@ -301,8 +333,9 @@ export const fetchTeamDetails = async (sport, league, teamId) => {
       
       if (!teamComp || !oppComp) return '-';
       
-      const teamScore = parseInt(teamComp.score?.value || 0);
-      const oppScore = parseInt(oppComp.score?.value || 0);
+      // Parse scores — score may be a string or object with .value
+      const teamScore = parseInt(teamComp.score?.value ?? teamComp.score ?? 0);
+      const oppScore = parseInt(oppComp.score?.value ?? oppComp.score ?? 0);
       const state = competition.status?.type?.state;
       
       if (state === 'in') return 'LIVE';
@@ -331,15 +364,25 @@ export const fetchTeamDetails = async (sport, league, teamId) => {
         if (!competition) return null;
         const teamComp = competition.competitors?.find(c => String(c?.team?.id) === String(teamId));
         const oppComp = competition.competitors?.find(c => String(c?.team?.id) !== String(teamId));
+        if (!teamComp || !oppComp) return null;
+
+        const pf = parseInt(teamComp?.score?.value ?? teamComp?.score ?? 0);
+        const pa = parseInt(oppComp?.score?.value ?? oppComp?.score ?? 0);
+        const state = competition.status?.type?.state;
+        let result;
+        if (state === 'in') result = 'D';
+        else if (pf > pa) result = 'W';
+        else if (pf < pa) result = 'L';
+        else result = 'D';
         
         return {
           date: e.date,
           name: e.name,
-          score: `${teamComp?.score?.value || 0}-${oppComp?.score?.value || 0}`,
-          pf: parseInt(teamComp?.score?.value || 0),
-          pa: parseInt(oppComp?.score?.value || 0),
+          score: `${pf}-${pa}`,
+          pf,
+          pa,
           isHome: teamComp?.homeAway === 'home',
-          result: teamComp?.winner ? 'W' : 'L/D',
+          result,
           opponentId: oppComp?.team?.id
         };
       }).filter(Boolean),
@@ -408,11 +451,31 @@ export const fetchMatchAnalysis = async (sport, league, matchId) => {
     const homeAdvanced = getStats(0);
     const awayAdvanced = getStats(1);
 
-    // Normalize H2H Games
-    let h2hGames = data.headToHeadGames || [];
-    if (h2hGames.length > 0 && h2hGames[0].events) {
-        h2hGames = h2hGames.flatMap(item => item.events || []);
-        h2hGames = [...new Map(h2hGames.map(item => [item.id, item])).values()];
+    // Normalize H2H Games from ESPN's actual 'seasonseries' field.
+    // 'headToHeadGames' does not exist in the ESPN summary API.
+    // 'seasonseries' is an array of past meetings between the two teams.
+    // Each entry has: id, date, competitors[{homeAway, team{id}, score, winner}]
+    let h2hGames = [];
+    const rawSeries = data.seasonseries || [];
+    if (rawSeries.length > 0) {
+      h2hGames = rawSeries.map(event => {
+        const homeComp = event.competitors?.find(c => c.homeAway === 'home');
+        const awayComp = event.competitors?.find(c => c.homeAway === 'away');
+        if (!homeComp || !awayComp) return null;
+        const homeScore = parseInt(homeComp.score ?? 0);
+        const awayScore = parseInt(awayComp.score ?? 0);
+        return {
+          id: event.id,
+          gameDate: event.date,
+          homeTeamId: homeComp.team?.id,
+          awayTeamId: awayComp.team?.id,
+          homeTeamScore: String(homeScore),
+          awayTeamScore: String(awayScore),
+          score: `${homeScore}-${awayScore}`,
+        };
+      }).filter(Boolean);
+      // Deduplicate by id
+      h2hGames = [...new Map(h2hGames.map(item => [item.id, item])).values()];
     }
 
     return {

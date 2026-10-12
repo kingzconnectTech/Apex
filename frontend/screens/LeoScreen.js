@@ -8,8 +8,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
-import { fetchMatches, fetchTeamDetails, fetchMatchAnalysis, fetchGamesStats } from '../services/espn';
-import { analyzeMatch } from '../utils/predictionLogic';
+import { fetchMatches } from '../services/espn';
+import { fetchMatchPrediction } from '../services/api';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -123,107 +123,62 @@ export default function LeoScreen({ navigation }) {
     setLoading(true);
     setResults(null);
     try {
-      // Calculate days difference
-      const diffTime = Math.abs(toDate - fromDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include start date
+      // Fetch today's matches (top leagues only for speed)
+      const { all } = await fetchMatches(true);
 
-      // Fetch matches
-      // Note: fetchMatches takes (days, startDate)
-      const { all } = await fetchMatches(diffDays, fromDate);
-
-      // Filter by Sport and Status (exclude finished and live games)
-      // We only want 'pre' (Upcoming) matches for predictions
-      let filteredMatches = all.filter(m => 
-        selectedSports.includes(m.sport) && 
-        m.status === 'pre'
+      // Filter by selected sport(s) and only upcoming matches
+      let filteredMatches = all.filter(m =>
+        selectedSports.includes(m.sport) &&
+        m.status === 'pre' &&
+        m.homeTeam?.id &&
+        m.awayTeam?.id
       );
 
-      // 1. Initial Quick Analysis (Filtering)
-      const preliminaryMatches = filteredMatches.map(match => {
-        const analysis = analyzeMatch({
-          homeName: match.homeTeam.name,
-          awayName: match.awayTeam.name,
-          homeStats: match.homeTeam,
-          awayStats: match.awayTeam,
-          sport: match.sport,
-          isDetailed: false
-        });
-        return { ...match, analysis };
-      });
+      if (filteredMatches.length === 0) {
+        setResults([]);
+        Alert.alert(
+          "Leo Says",
+          "No upcoming matches found for your selected sport(s). Try again later or select a different sport."
+        );
+        return;
+      }
 
-      // 2. Select Top Candidates (Limit + Buffer)
-      const topCandidates = preliminaryMatches
-        .sort((a, b) => b.analysis.confidence - a.analysis.confidence)
-        .slice(0, matchLimit + 3);
+      // Cap candidate pool to avoid too many backend calls
+      const candidates = filteredMatches.slice(0, matchLimit + 5);
 
-      // 3. Deep Analysis
-      const deepAnalyzedMatches = await Promise.all(topCandidates.map(async (match) => {
-        try {
-          const [homeDetails, awayDetails, matchAnalysis] = await Promise.all([
-             fetchTeamDetails(match.sport, match.leagueSlug, match.homeTeam.id),
-             fetchTeamDetails(match.sport, match.leagueSlug, match.awayTeam.id),
-             fetchMatchAnalysis(match.sport, match.leagueSlug, match.id)
-          ]);
+      // Fetch backend predictions in parallel (with concurrency limit)
+      const BATCH = 5; // max concurrent requests
+      const withPredictions = [];
+      for (let i = 0; i < candidates.length; i += BATCH) {
+        const batch = candidates.slice(i, i + BATCH);
+        const batchResults = await Promise.all(
+          batch.map(async (match) => {
+            try {
+              const prediction = await fetchMatchPrediction(
+                match.id,
+                match.sport,
+                match.leagueSlug,
+                match.homeTeam.id,
+                match.awayTeam.id
+              );
+              if (prediction && prediction.recommendations) {
+                return { ...match, analysis: prediction };
+              }
+              return null;
+            } catch (e) {
+              console.warn(`Leo: prediction failed for match ${match.id}`, e);
+              return null;
+            }
+          })
+        );
+        withPredictions.push(...batchResults.filter(Boolean));
+        // Stop early once we have enough
+        if (withPredictions.length >= matchLimit) break;
+      }
 
-          let h2h = null;
-          if (matchAnalysis?.headToHeadGames) {
-             const validH2H = matchAnalysis.headToHeadGames.filter(g => 
-                String(g.id) !== String(match.id) && g.homeTeamScore !== undefined && g.awayTeamScore !== undefined
-             );
-             
-             let homeWins = 0, awayWins = 0, draws = 0;
-             const currentHomeId = match.homeTeam.id;
-             
-             const recent = validH2H.slice(0, 5).map(g => {
-                const hScore = parseInt(g.homeTeamScore || 0);
-                const aScore = parseInt(g.awayTeamScore || 0);
-                const isHomeHosting = String(g.homeTeamId) === String(currentHomeId);
-                
-                if (hScore === aScore) draws++;
-                else if (isHomeHosting) { if (hScore > aScore) homeWins++; else awayWins++; }
-                else { if (aScore > hScore) homeWins++; else awayWins++; }
-                
-                return { score: g.score, date: g.gameDate, id: g.id };
-             });
-
-             let deepStats = [];
-             if (validH2H.length > 0 && match.sport === 'soccer') {
-                const gameIds = validH2H.slice(0, 5).map(g => g.id);
-                deepStats = await fetchGamesStats(match.sport, match.leagueSlug, gameIds);
-             }
-
-             h2h = { homeWins, awayWins, draws, recent, deepStats };
-          }
-
-          // Re-Analyze with Details
-          const detailedAnalysis = analyzeMatch({
-             homeName: match.homeTeam.name,
-             awayName: match.awayTeam.name,
-             homeStats: { 
-                 record: homeDetails?.stats?.record || match.homeTeam.record,
-                 lastMatches: homeDetails?.lastMatches,
-                 news: homeDetails?.news
-             },
-             awayStats: { 
-                 record: awayDetails?.stats?.record || match.awayTeam.record,
-                 lastMatches: awayDetails?.lastMatches,
-                 news: awayDetails?.news
-             },
-             h2h: h2h,
-             sport: match.sport,
-             isDetailed: true
-          });
-
-          return { ...match, analysis: detailedAnalysis };
-        } catch (e) {
-          console.warn("Deep analysis fallback for " + match.id, e);
-          return match; // Return preliminary result on failure
-        }
-      }));
-
-      // 4. Final Sort & Limit
-      const bestPredictions = deepAnalyzedMatches
-        .sort((a, b) => b.analysis.confidence - a.analysis.confidence)
+      // Sort by confidence descending and take the requested count
+      const bestPredictions = withPredictions
+        .sort((a, b) => (b.analysis?.confidence ?? 0) - (a.analysis?.confidence ?? 0))
         .slice(0, matchLimit);
 
       if (bestPredictions.length > 0) {
@@ -232,8 +187,8 @@ export default function LeoScreen({ navigation }) {
       } else {
           setResults([]);
           Alert.alert(
-              "Leo Says", 
-              "No matches found for your criteria. Try widening the date range or selecting more sports."
+              "Leo Says",
+              "No prediction data available for current matches. Try widening the date range or selecting more sports."
           );
       }
 

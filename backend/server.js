@@ -239,6 +239,73 @@ app.get('/api/proxy', async (req, res) => {
         return res.json(cached.data);
       }
     }
+
+    // Secondary Fallback: PitchAPI for football league scoreboards
+    if (typeof target === 'string' && (target.startsWith('soccer/') || target.startsWith('football/')) && target.includes('/scoreboard')) {
+      const parts = target.split('/');
+      const leagueSlug = parts[1];
+      if (leagueSlug && sportsData?.pitchApi?.isAvailable()) {
+        try {
+          logger.info('[SPORTS DATA] Attempting PitchAPI fallback for proxy scoreboard', { traceId, leagueSlug });
+          const paRes = await sportsData.getFixtures('soccer', leagueSlug, { traceId });
+          if (paRes.fixtures && paRes.fixtures.length > 0) {
+            const events = paRes.fixtures.map(fx => ({
+              id: fx.fixture?.id || fx.id,
+              date: fx.fixture?.date,
+              name: `${fx.homeTeam?.name} vs ${fx.awayTeam?.name}`,
+              shortName: `${fx.homeTeam?.name} vs ${fx.awayTeam?.name}`,
+              status: {
+                type: {
+                  state: fx.fixture?.status === 'live' ? 'in' : (fx.fixture?.status === 'finished' ? 'post' : 'pre'),
+                  shortDetail: fx.fixture?.status === 'live' ? (fx.fixture?.clock || 'LIVE') : (fx.fixture?.status === 'finished' ? 'FT' : ''),
+                },
+                displayClock: fx.fixture?.clock,
+                period: fx.fixture?.period || 0,
+              },
+              competitions: [{
+                id: fx.fixture?.id || fx.id,
+                date: fx.fixture?.date,
+                status: {
+                  type: {
+                    state: fx.fixture?.status === 'live' ? 'in' : (fx.fixture?.status === 'finished' ? 'post' : 'pre'),
+                    shortDetail: fx.fixture?.status === 'live' ? (fx.fixture?.clock || 'LIVE') : (fx.fixture?.status === 'finished' ? 'FT' : ''),
+                  }
+                },
+                competitors: [
+                  {
+                    id: fx.homeTeam?.id,
+                    homeAway: 'home',
+                    score: String(fx.homeTeam?.score ?? 0),
+                    team: {
+                      id: fx.homeTeam?.id,
+                      name: fx.homeTeam?.name,
+                      displayName: fx.homeTeam?.name,
+                      logo: fx.homeTeam?.logo,
+                    }
+                  },
+                  {
+                    id: fx.awayTeam?.id,
+                    homeAway: 'away',
+                    score: String(fx.awayTeam?.score ?? 0),
+                    team: {
+                      id: fx.awayTeam?.id,
+                      name: fx.awayTeam?.name,
+                      displayName: fx.awayTeam?.name,
+                      logo: fx.awayTeam?.logo,
+                    }
+                  }
+                ]
+              }]
+            }));
+            const payload = { events, source: paRes.source };
+            if (upstreamUrl) setCache(upstreamUrl, payload);
+            return res.json(payload);
+          }
+        } catch (paErr) {
+          logger.warn('PitchAPI scoreboard fallback error', { traceId, error: paErr.message });
+        }
+      }
+    }
     
     return res.status(502).json({ error: 'Upstream fetch failed', traceId });
   }
@@ -286,6 +353,22 @@ const leaguesToRefresh = [
   { sport: 'soccer', league: 'bra.1' },
   { sport: 'soccer', league: 'arg.1' },
   { sport: 'soccer', league: 'usa.1' },
+
+  // Lower Division Soccer Leagues
+  { sport: 'soccer', league: 'eng.2' },
+  { sport: 'soccer', league: 'eng.3' },
+  { sport: 'soccer', league: 'eng.4' },
+  { sport: 'soccer', league: 'esp.2' },
+  { sport: 'soccer', league: 'ita.2' },
+  { sport: 'soccer', league: 'ger.2' },
+  { sport: 'soccer', league: 'fra.2' },
+  { sport: 'soccer', league: 'ned.2' },
+  { sport: 'soccer', league: 'por.2' },
+  { sport: 'soccer', league: 'sct.2' },
+  { sport: 'soccer', league: 'bra.2' },
+  { sport: 'soccer', league: 'mex.2' },
+  { sport: 'soccer', league: 'usa.2' },
+  { sport: 'soccer', league: 'jpn.2' },
   
   // Top Basketball Leagues
   { sport: 'basketball', league: 'nba' },
@@ -1107,7 +1190,7 @@ const VALID_SPORTS = new Set(['soccer', 'basketball', 'tennis']);
  * Validate league slug — alphanumeric, dots, hyphens only, max 40 chars.
  */
 function isValidLeagueSlug(slug) {
-  return typeof slug === 'string' && /^[a-zA-Z0-9.\-]{1,40}$/.test(slug);
+  return typeof slug === 'string' && /^[a-zA-Z0-9.\-_]{1,40}$/.test(slug);
 }
 
 /**
@@ -1138,8 +1221,8 @@ function processScheduleForTeam(events, teamId) {
     const oppComp = competition.competitors?.find(c => String(c?.team?.id) !== String(teamId));
     if (!teamComp || !oppComp) return null;
 
-    const teamScore = parseInt(teamComp.score?.value || 0);
-    const oppScore = parseInt(oppComp.score?.value || 0);
+    const teamScore = parseInt(teamComp.score?.value ?? teamComp.score ?? 0);
+    const oppScore = parseInt(oppComp.score?.value ?? oppComp.score ?? 0);
     const state = competition.status?.type?.state;
 
     let result;
@@ -1301,9 +1384,27 @@ app.post('/api/match-prediction', async (req, res) => {
       description: a.description || '',
     }));
 
-    let rawH2H = matchAnalysisData?.headToHeadGames || [];
-    if (rawH2H.length > 0 && rawH2H[0]?.events) {
-      rawH2H = rawH2H.flatMap(item => item.events || []);
+    // ESPN summary uses 'seasonseries' for H2H history, not 'headToHeadGames'
+    // Each seasonseries entry has: id, date, competitors[{homeAway, team{id}, score, winner}]
+    let rawH2H = [];
+    const rawSeries = matchAnalysisData?.seasonseries || [];
+    if (rawSeries.length > 0) {
+      rawH2H = rawSeries.map(event => {
+        const homeComp = event.competitors?.find(c => c.homeAway === 'home');
+        const awayComp = event.competitors?.find(c => c.homeAway === 'away');
+        if (!homeComp || !awayComp) return null;
+        const homeScore = parseInt(homeComp.score ?? 0);
+        const awayScore = parseInt(awayComp.score ?? 0);
+        return {
+          id: event.id,
+          gameDate: event.date,
+          homeTeamId: homeComp.team?.id,
+          awayTeamId: awayComp.team?.id,
+          homeTeamScore: String(homeScore),
+          awayTeamScore: String(awayScore),
+          score: `${homeScore}-${awayScore}`,
+        };
+      }).filter(Boolean);
       rawH2H = [...new Map(rawH2H.map(item => [item.id, item])).values()];
     }
     h2h = buildH2H(rawH2H, matchId, homeTeamId, awayTeamId);
@@ -1617,6 +1718,20 @@ app.get('/api/live-predictions', async (req, res) => {
             { sport: 'soccer', league: 'ger.1' },
             { sport: 'soccer', league: 'fra.1' },
             { sport: 'soccer', league: 'uefa.champions' },
+            { sport: 'soccer', league: 'eng.2' },
+            { sport: 'soccer', league: 'eng.3' },
+            { sport: 'soccer', league: 'eng.4' },
+            { sport: 'soccer', league: 'esp.2' },
+            { sport: 'soccer', league: 'ita.2' },
+            { sport: 'soccer', league: 'ger.2' },
+            { sport: 'soccer', league: 'fra.2' },
+            { sport: 'soccer', league: 'ned.2' },
+            { sport: 'soccer', league: 'por.2' },
+            { sport: 'soccer', league: 'sct.2' },
+            { sport: 'soccer', league: 'bra.2' },
+            { sport: 'soccer', league: 'mex.2' },
+            { sport: 'soccer', league: 'usa.2' },
+            { sport: 'soccer', league: 'jpn.2' },
             { sport: 'basketball', league: 'nba' },
             { sport: 'basketball', league: 'wnba' },
             { sport: 'tennis', league: 'atp' },

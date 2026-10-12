@@ -216,6 +216,13 @@ class SportsDataService {
       { sport: 'soccer', league: 'eng.1' }, { sport: 'soccer', league: 'esp.1' },
       { sport: 'soccer', league: 'ita.1' }, { sport: 'soccer', league: 'ger.1' },
       { sport: 'soccer', league: 'fra.1' }, { sport: 'soccer', league: 'uefa.champions' },
+      { sport: 'soccer', league: 'eng.2' }, { sport: 'soccer', league: 'eng.3' },
+      { sport: 'soccer', league: 'eng.4' }, { sport: 'soccer', league: 'esp.2' },
+      { sport: 'soccer', league: 'ita.2' }, { sport: 'soccer', league: 'ger.2' },
+      { sport: 'soccer', league: 'fra.2' }, { sport: 'soccer', league: 'ned.2' },
+      { sport: 'soccer', league: 'por.2' }, { sport: 'soccer', league: 'sct.2' },
+      { sport: 'soccer', league: 'bra.2' }, { sport: 'soccer', league: 'mex.2' },
+      { sport: 'soccer', league: 'usa.2' }, { sport: 'soccer', league: 'jpn.2' },
       { sport: 'basketball', league: 'nba' }, { sport: 'basketball', league: 'wnba' },
       { sport: 'tennis', league: 'atp' }, { sport: 'tennis', league: 'wta' },
     ];
