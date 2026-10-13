@@ -67,11 +67,14 @@ function leagueSupportsSeason(league, requestedSeason) {
   if (!requestedSeason) return true;
   const seasons = Array.isArray(league?.seasons) ? league.seasons : [];
   if (seasons.length === 0) return true; // can't filter, allow through
-  const normRequested = normalizeSeason(requestedSeason);
-  const bare = /^\d{4}$/.test(String(requestedSeason).trim()) ? String(requestedSeason).trim() : null;
+  const req = String(requestedSeason).trim();
+  const normRequested = normalizeSeason(req);
+  const bare = /^\d{4}$/.test(req) ? req : null;
   return seasons.some(s => {
-    if (s === normRequested) return true;
-    if (bare && String(s).startsWith(`${bare}/`)) return true;
+    const str = String(s);
+    if (str === req) return true;           // exact match (bare or slashed)
+    if (normRequested && str === normRequested) return true;
+    if (bare && str.startsWith(`${bare}/`)) return true; // bare year matches slashed season
     return false;
   });
 }

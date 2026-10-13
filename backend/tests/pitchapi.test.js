@@ -1,6 +1,6 @@
 const { SportsDataService } = require('../services/SportsDataService');
 const { PitchApiProvider } = require('../services/providers/PitchApiProvider');
-const { PROVIDERS } = require('../services/providers/config');
+const { PROVIDERS, normalizeSeason, leagueSupportsSeason } = require('../services/providers/config');
 const {
   normalizeLeaguePitchAPI,
   normalizeTeamPitchAPI,
@@ -155,6 +155,123 @@ describe('PitchAPI — Provider and Normalization Unit Tests', () => {
     expect(norm.stats.awayXG).toBe(1.10);
     expect(norm.stats.homeShots).toBe(15);
     expect(norm.stats.awayShots).toBe(7);
+  });
+
+  test('normalizeH2HPitchAPI parses PitchAPI recent_matches format with top-level counts', () => {
+    // Actual PitchAPI /v1/matches/{id}/h2h response shape:
+    // data.recent_matches (not data.h2h) + top-level home_wins/draws/away_wins
+    const rawH2H = {
+      data: {
+        match_id: 'm_1t3Zja',
+        home_team: { id: 't_0BrMnM', name: 'Liverpool' },
+        away_team: { id: 't_1iaglr', name: 'AFC Bournemouth' },
+        home_wins: 17,
+        draws: 1,
+        away_wins: 3,
+        total_matches: 21,
+        recent_matches: [
+          {
+            id: 'm_prev_1',
+            time_utc: '2025-01-15T19:30:00Z',
+            home: { id: 't_0BrMnM', name: 'Liverpool' },
+            away: { id: 't_1iaglr', name: 'AFC Bournemouth' },
+            score_home: 3,
+            score_away: 1,
+            finished: true,
+          },
+          {
+            id: 'm_prev_2',
+            time_utc: '2024-08-19T13:00:00Z',
+            home: { id: 't_1iaglr', name: 'AFC Bournemouth' },
+            away: { id: 't_0BrMnM', name: 'Liverpool' },
+            score_home: 1,
+            score_away: 2,
+            finished: true,
+          },
+        ],
+      },
+    };
+    const h2h = normalizeH2HPitchAPI(rawH2H, 'pa-t_0BrMnM', 'pa-t_1iaglr');
+    // Authoritative top-level counts must be used as-is (not derived from list)
+    expect(h2h.homeWins).toBe(17);
+    expect(h2h.draws).toBe(1);
+    expect(h2h.awayWins).toBe(3);
+    expect(h2h.matches.length).toBe(2);
+    expect(h2h.recent.length).toBe(2);
+    expect(h2h.matches[0].homeName).toBe('Liverpool');
+    expect(h2h.matches[0].awayName).toBe('AFC Bournemouth');
+    expect(h2h.matches[0].score).toBe('3-1');
+    expect(h2h.matches[1].score).toBe('1-2');
+  });
+
+  test('normalizeTeamStatsPitchAPI preserves null for empty-string stat values (no fabrication)', () => {
+    // PitchAPI sometimes returns empty string "" for stats like yellow_cards
+    // when a team received no bookings. Must become null, NOT 0.
+    const rawStats = {
+      data: {
+        periods: [
+          {
+            period: 'All',
+            groups: [
+              {
+                group_name: 'Cards',
+                items: [
+                  { key: 'yellow_cards', home: '', away: '1' },
+                  { key: 'red_cards', home: '0', away: '' },
+                ],
+              },
+              {
+                group_name: 'Corners',
+                items: [
+                  { key: 'corners', home: '3', away: '5' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const norm = normalizeTeamStatsPitchAPI(rawStats);
+    // Empty string home yellow cards → null (not 0)
+    expect(norm.stats.homeYellowCards).toBeNull();
+    expect(norm.stats.awayYellowCards).toBe(1);
+    // Empty string away red cards → null
+    expect(norm.stats.awayRedCards).toBeNull();
+    expect(norm.stats.homeRedCards).toBe(0);
+    // Totals should be null when either side is null
+    expect(norm.stats.totalYellowCards).toBeNull();
+    expect(norm.stats.totalRedCards).toBeNull();
+    // Corners still parse correctly
+    expect(norm.stats.homeCorners).toBe(3);
+    expect(norm.stats.awayCorners).toBe(5);
+    expect(norm.stats.totalCorners).toBe(8);
+  });
+
+  test('normalizeSeason converts bare year to slashed PitchAPI format', () => {
+    expect(normalizeSeason('2026')).toBe('2026/2027');
+    expect(normalizeSeason('2025')).toBe('2025/2026');
+    expect(normalizeSeason('2026/2027')).toBe('2026/2027');
+    expect(normalizeSeason('')).toBeNull();
+    expect(normalizeSeason(null)).toBeNull();
+  });
+
+  test('leagueSupportsSeason filters leagues by bare-year or slashed season', () => {
+    const leagueSlash = { seasons: ['2024/2025', '2025/2026', '2026/2027'] };
+    const leagueBare = { seasons: ['2024', '2025', '2026'] };
+    const leagueOld = { seasons: ['2020/2021', '2021/2022'] };
+
+    // Bare year matches slashed season starting with that year
+    expect(leagueSupportsSeason(leagueSlash, '2026')).toBe(true);
+    expect(leagueSupportsSeason(leagueSlash, '2026/2027')).toBe(true);
+    expect(leagueSupportsSeason(leagueSlash, '2020')).toBe(false);
+
+    // Bare-year seasons array
+    expect(leagueSupportsSeason(leagueBare, '2026')).toBe(true);
+    expect(leagueSupportsSeason(leagueBare, '2026/2027')).toBe(false); // slashed doesn't match bare array
+
+    // Old league doesn't support 2026
+    expect(leagueSupportsSeason(leagueOld, '2026')).toBe(false);
+    expect(leagueSupportsSeason(leagueOld, '2021/2022')).toBe(true);
   });
 });
 
@@ -503,5 +620,73 @@ describe('PitchAPI — Provider Priority and Fallback Scenarios (Items 13 TEST A
     expect(fakeEspn.getFixtures).toHaveBeenCalledTimes(2);
     expect(fakePitchApi.getLeagueMatches).toHaveBeenCalledTimes(0);
     expect(tennisRes.tried).toEqual([PROVIDERS.ESPN]);
+  });
+
+  // TEST J: listFootballLeagues filters returned leagues by requested season
+  test('TEST J: listFootballLeagues filters leagues by season using seasons array', async () => {
+    const logger = makeLoggerMock();
+    const leagues = [
+      { league: { name: 'Premier League', country: 'ENG' }, seasons: ['2024/2025', '2025/2026', '2026/2027'] },
+      { league: { name: 'Old League', country: 'ENG' }, seasons: ['2020/2021', '2021/2022'] },
+      { league: { name: 'League 2026', country: 'FRA' }, seasons: ['2026'] },
+    ];
+    const fakePitchApi = {
+      isAvailable: jest.fn(() => true),
+      getLeagues: jest.fn(async () => leagues),
+    };
+    const svc = new SportsDataService({
+      logger,
+      espnProvider: {},
+      pitchApiProvider: fakePitchApi,
+    });
+
+    // Season 2026 → only leagues supporting 2026/2027 or "2026"
+    const filtered = await svc.listFootballLeagues({ season: '2026', traceId: 't-test-j' });
+    expect(filtered.length).toBe(2);
+    expect(filtered.map(l => l.league.name)).toEqual(['Premier League', 'League 2026']);
+
+    // Season 2021 → only Old League
+    const old = await svc.listFootballLeagues({ season: '2021', traceId: 't-test-j2' });
+    expect(old.length).toBe(1);
+    expect(old[0].league.name).toBe('Old League');
+
+    // No season → all leagues returned
+    const all = await svc.listFootballLeagues({ traceId: 't-test-j3' });
+    expect(all.length).toBe(3);
+  });
+
+  // TEST K: getLeagueMatches normalizes bare-year season to slashed format (avoids 400)
+  test('TEST K: getLeagueMatches sends slashed season to PitchAPI to avoid 400', async () => {
+    const logger = makeLoggerMock();
+    let capturedParams = null;
+    const fakeFetch = jest.fn(async (url) => {
+      const u = new URL(url);
+      capturedParams = { season: u.searchParams.get('season'), status: u.searchParams.get('status') };
+      return {
+        status: 200,
+        ok: true,
+        json: async () => ({ data: { matches: [] } }),
+      };
+    });
+
+    const provider = new PitchApiProvider({
+      logger,
+      fetchFn: fakeFetch,
+      apiKey: 'pk_test_key',
+      enabled: true,
+      season: '2026/2027',
+    });
+
+    // Bare year "2026" must be normalized to "2026/2027"
+    await provider.getLeagueMatches('l_4WFCIZ', { season: '2026', traceId: 't-test-k' });
+    expect(capturedParams.season).toBe('2026/2027');
+
+    // Already-slashed season passes through unchanged (different league id to avoid cache)
+    await provider.getLeagueMatches('l_OTHER1', { season: '2025/2026', traceId: 't-test-k2' });
+    expect(capturedParams.season).toBe('2025/2026');
+
+    // No season provided → falls back to provider's configured season (different league id)
+    await provider.getLeagueMatches('l_OTHER2', { traceId: 't-test-k3' });
+    expect(capturedParams.season).toBe('2026/2027');
   });
 });
