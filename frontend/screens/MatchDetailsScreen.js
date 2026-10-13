@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
 import { fetchTeamDetails, fetchMatchAnalysis, fetchGamesStats } from '../services/espn';
-import { checkBackendHealth, fetchMatchPrediction } from '../services/api';
+import { checkBackendHealth, fetchMatchPrediction, savePredictionToBackend, fetchPredictionSettlement } from '../services/api';
 import { useUser } from '../context/UserContext';
 import { Alert } from 'react-native';
 import { InterstitialAd, AdEventType } from 'react-native-google-mobile-ads';
@@ -18,7 +18,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
   const styles = createStyles(theme, isDarkMode);
   
   const { match } = route.params || {};
-  const { balance, subtractBalance } = useUser();
+  const { balance, subtractBalance, user } = useUser();
   const [loading, setLoading] = useState(true);
   const [homeDetails, setHomeDetails] = useState(null);
   const [awayDetails, setAwayDetails] = useState(null);
@@ -27,6 +27,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
   const [showPrediction, setShowPrediction] = useState(false);
   // Backend prediction state
   const [botAnalysis, setBotAnalysis] = useState(null);
+  const [settlementData, setSettlementData] = useState(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
   const [predictionError, setPredictionError] = useState(null);
   const [adLoaded, setAdLoaded] = useState(false);
@@ -143,6 +144,20 @@ export default function MatchDetailsScreen({ route, navigation }) {
               setPredictionError('Could not generate prediction. Check your connection.');
             } finally {
               setPredictionLoading(false);
+            }
+
+            // --- Check settlement status for this match ---
+            try {
+              const settleRes = await fetchPredictionSettlement(match.id, user?.uid);
+              if (settleRes) {
+                setSettlementData(settleRes);
+                // Reveal predictions automatically if match has already been settled
+                if (settleRes.settlementStatus === 'settled') {
+                  setShowPrediction(true);
+                }
+              }
+            } catch (settleErr) {
+              console.warn('Settlement fetch failed:', settleErr);
             }
           }
         } catch (error) {
@@ -425,6 +440,29 @@ export default function MatchDetailsScreen({ route, navigation }) {
     const success = await subtractBalance(1);
     if (success) {
         setShowPrediction(true);
+
+        // Persist original prediction to Firestore for automatic tick/cross settlement
+        if (botAnalysis && botAnalysis.recommendations && match) {
+          savePredictionToBackend({
+            userId: user?.uid || 'anonymous',
+            matchId: String(match.id),
+            sport: match.sport || 'soccer',
+            leagueSlug: match.leagueSlug || '',
+            league: match.league || '',
+            homeName,
+            awayName,
+            homeTeamId: getTeamId(match.homeTeam),
+            awayTeamId: getTeamId(match.awayTeam),
+            matchDate: match.date || null,
+            predictions: botAnalysis.recommendations.map(r => ({
+              market: r.type ? r.type.toLowerCase() : '',
+              label: r.label,
+              value: r.value,
+              confidence: r.confidence,
+              selection: r.value,
+            })),
+          });
+        }
     } else {
         Alert.alert(
             "Insufficient Balance", 
@@ -522,18 +560,77 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 </View>
               ) : (
                 <>
-                  <View style={styles.tipsList}>
-                    {botAnalysis.recommendations.map((rec, i) => (
-                      <View key={i} style={[styles.tipCard, { borderLeftColor: rec.color }]}>
-                        <View style={styles.tipHeader}>
-                          <View style={[styles.tipTypeBadge, { backgroundColor: rec.color + '20' }]}>
-                            <Text style={[styles.tipTypeText, { color: rec.color }]}>{rec.label}</Text>
-                          </View>
-                          <Text style={styles.tipConfidence}>{typeof rec.confidence === 'number' ? rec.confidence.toFixed(1) : rec.confidence}% Conf.</Text>
-                        </View>
-                        <Text style={styles.tipValue}>{rec.value}</Text>
+                  {/* Verified Settlement Banner */}
+                  {settlementData?.settlementStatus === 'settled' && (
+                    <View style={styles.settlementBanner}>
+                      <View style={styles.settlementBannerHeader}>
+                        <Ionicons name="checkmark-done-circle" size={20} color="#10B981" />
+                        <Text style={styles.settlementBannerTitle}>Match Completed & Settled</Text>
                       </View>
-                    ))}
+                      <Text style={styles.settlementScoreText}>
+                        Final Score: {homeName} {settlementData.actualHomeScore} - {settlementData.actualAwayScore} {awayName}
+                      </Text>
+                      {settlementData.actualHtHome !== null && settlementData.actualHtAway !== null && (
+                        <Text style={styles.settlementHtText}>
+                          (Half-Time: {settlementData.actualHtHome} - {settlementData.actualHtAway})
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
+                  <View style={styles.tipsList}>
+                    {botAnalysis.recommendations.map((rec, i) => {
+                      const recMarketKey = (rec.type || '').toLowerCase();
+                      const outcomeObj = settlementData?.results?.find(r =>
+                        r.market === recMarketKey ||
+                        r.label === rec.label ||
+                        (r.market && recMarketKey && (r.market.includes(recMarketKey) || recMarketKey.includes(r.market)))
+                      );
+                      const outcome = outcomeObj ? outcomeObj.outcome : null;
+                      const isFinished = match?.status === 'post' || settlementData?.settlementStatus === 'settled';
+
+                      return (
+                        <View key={i} style={[styles.tipCard, { borderLeftColor: rec.color }]}>
+                          <View style={styles.tipHeader}>
+                            <View style={[styles.tipTypeBadge, { backgroundColor: rec.color + '20' }]}>
+                              <Text style={[styles.tipTypeText, { color: rec.color }]}>{rec.label}</Text>
+                            </View>
+
+                            <View style={styles.settleBadgeRow}>
+                              {/* Automatic Tick / Cross / Pending Badge */}
+                              {isFinished ? (
+                                outcome === 'won' ? (
+                                  <View style={styles.settleWonBadge}>
+                                    <Ionicons name="checkmark-circle" size={13} color="#10B981" />
+                                    <Text style={styles.settleWonText}>WON</Text>
+                                  </View>
+                                ) : outcome === 'lost' ? (
+                                  <View style={styles.settleLostBadge}>
+                                    <Ionicons name="close-circle" size={13} color="#EF4444" />
+                                    <Text style={styles.settleLostText}>LOST</Text>
+                                  </View>
+                                ) : (
+                                  <View style={styles.settlePendingBadge}>
+                                    <Ionicons name="time-outline" size={13} color="#F59E0B" />
+                                    <Text style={styles.settlePendingText}>PENDING</Text>
+                                  </View>
+                                )
+                              ) : (
+                                <View style={styles.settleUpcomingBadge}>
+                                  <Ionicons name="hourglass-outline" size={12} color={theme.textSecondary} />
+                                  <Text style={styles.settleUpcomingText}>PENDING</Text>
+                                </View>
+                              )}
+
+                              <Text style={styles.tipConfidence}>
+                                {typeof rec.confidence === 'number' ? rec.confidence.toFixed(1) : rec.confidence}% Conf.
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={styles.tipValue}>{rec.value}</Text>
+                        </View>
+                      );
+                    })}
                   </View>
 
                   <View style={styles.divider} />
@@ -1016,6 +1113,112 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     textAlign: 'center',
     marginTop: verticalScale(8),
     paddingHorizontal: horizontalScale(10),
+  },
+  // --- Settlement UI styles ---
+  settleBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  settleWonBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: horizontalScale(8),
+    paddingVertical: verticalScale(3),
+    borderRadius: moderateScale(6),
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    gap: 4,
+  },
+  settleWonText: {
+    color: '#10B981',
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  settleLostBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: horizontalScale(8),
+    paddingVertical: verticalScale(3),
+    borderRadius: moderateScale(6),
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    gap: 4,
+  },
+  settleLostText: {
+    color: '#EF4444',
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  settlePendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    paddingHorizontal: horizontalScale(8),
+    paddingVertical: verticalScale(3),
+    borderRadius: moderateScale(6),
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    gap: 4,
+  },
+  settlePendingText: {
+    color: '#F59E0B',
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  settleUpcomingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
+    paddingHorizontal: horizontalScale(8),
+    paddingVertical: verticalScale(3),
+    borderRadius: moderateScale(6),
+    borderWidth: 1,
+    borderColor: theme.border,
+    gap: 4,
+  },
+  settleUpcomingText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  settlementBanner: {
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    borderRadius: moderateScale(12),
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+    padding: moderateScale(12),
+    marginBottom: verticalScale(14),
+    alignItems: 'center',
+  },
+  settlementBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: verticalScale(4),
+  },
+  settlementBannerTitle: {
+    color: '#10B981',
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: 'bold',
+    letterSpacing: 0.3,
+  },
+  settlementScoreText: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(15),
+    fontWeight: 'bold',
+    marginTop: verticalScale(2),
+  },
+  settlementHtText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(11),
+    marginTop: verticalScale(2),
   },
 });
 

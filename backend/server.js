@@ -22,6 +22,30 @@ const {
   calculateUnder25HtPrediction,
   calculateTeamUnder25Prediction,
 } = require('./services/footballHistoricalAnalysis');
+const {
+  settleMarket,
+  classifyMatchStatus,
+  normaliseMarketKey,
+  normaliseSelection,
+  isValidScore,
+  savePrediction,
+  settlePrediction,
+  getUnsettledPredictions,
+  getUserPredictionHistory,
+  getUserPredictionStats,
+  getMatchSettlement,
+  autoSettleFinishedMatches,
+} = require('./services/settlementService');
+const {
+  DEFAULT_FILTER_CONFIG,
+  calculateDataQualityScore,
+  calculateFormConsistency,
+  calculateModelAgreement,
+  calculatePredictabilityScore,
+  evaluateMarketCandidate,
+  evaluateFixture,
+  filterAndRankFixtures,
+} = require('./services/predictabilityEngine');
 
 const IS_ENTRY_POINT = require.main === module;
 
@@ -353,6 +377,26 @@ if (IS_ENTRY_POINT) cron.schedule('*/5 * * * *', () => {
   }
 });
 
+// Automatic Prediction Settlement Worker (every 5 minutes)
+if (IS_ENTRY_POINT) cron.schedule('*/5 * * * *', async () => {
+  const traceId = uuidv4();
+  try {
+    const summaryFetcher = async (sport, leagueSlug, matchId) => {
+      try {
+        return await fetchFromBackendOrESPN(`${sport}/${leagueSlug}/summary?event=${matchId}`);
+      } catch (e) {
+        return null;
+      }
+    };
+    const report = await autoSettleFinishedMatches(admin, summaryFetcher, logger);
+    if (report && report.settled > 0) {
+      logger.info('Auto-settlement completed', { traceId, ...report });
+    }
+  } catch (err) {
+    logger.error('Error in auto-settlement cron', { traceId, error: err.message });
+  }
+});
+
 // Automated stats update for all leagues (every 15 minutes)
 const leaguesToRefresh = [
   // Top Soccer Leagues
@@ -507,6 +551,353 @@ app.post('/api/feedback/correction', async (req, res) => {
   fs.appendFileSync(feedbackPath, entry);
   
   res.json({ success: true, message: 'Feedback recorded for model improvement' });
+});
+
+// ──────────────────────────────────────────────────────────
+// PREDICTION PERSISTENCE & SETTLEMENT ENDPOINTS
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Save user prediction for tracking and automatic settlement.
+ */
+app.post('/api/predictions/save', async (req, res) => {
+  const { traceId } = req;
+  try {
+    const {
+      userId,
+      matchId,
+      sport,
+      leagueSlug,
+      league,
+      homeName,
+      awayName,
+      homeTeamId,
+      awayTeamId,
+      matchDate,
+      predictions,
+    } = req.body || {};
+
+    if (!userId || !matchId) {
+      return res.status(400).json({ error: 'Missing userId or matchId', traceId });
+    }
+
+    const docId = await savePrediction(admin, {
+      userId,
+      matchId,
+      sport,
+      leagueSlug,
+      league,
+      homeName,
+      awayName,
+      homeTeamId,
+      awayTeamId,
+      matchDate,
+      predictions,
+    }, logger);
+
+    return res.json({ success: true, docId, traceId });
+  } catch (error) {
+    logger.error('Error saving prediction', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
+});
+
+/**
+ * Get prediction history with tick/cross settlement outcomes for a user.
+ */
+app.get('/api/predictions/history', async (req, res) => {
+  const { traceId } = req;
+  try {
+    const { userId, status, limit } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'Missing userId parameter', traceId });
+    }
+
+    const history = await getUserPredictionHistory(admin, userId, {
+      status,
+      limit: limit ? parseInt(limit, 10) : 50,
+    });
+
+    return res.json({ history, traceId });
+  } catch (error) {
+    logger.error('Error fetching prediction history', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
+});
+
+/**
+ * Get prediction settlement statistics for a user.
+ */
+app.get('/api/predictions/stats', async (req, res) => {
+  const { traceId } = req;
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'Missing userId parameter', traceId });
+    }
+
+    const stats = await getUserPredictionStats(admin, userId);
+    return res.json({ stats, traceId });
+  } catch (error) {
+    logger.error('Error fetching prediction stats', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
+});
+
+/**
+ * Get settlement status for a specific match.
+ */
+app.get('/api/predictions/settlement/:matchId', async (req, res) => {
+  const { traceId } = req;
+  const { matchId } = req.params;
+  const { userId } = req.query;
+
+  try {
+    const settlement = await getMatchSettlement(admin, matchId, userId);
+    return res.json({ settlement, traceId });
+  } catch (error) {
+    logger.error('Error fetching match settlement', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
+});
+
+/**
+ * Trigger manual or scheduled settlement run.
+ */
+app.post('/api/predictions/settle', async (req, res) => {
+  const { traceId } = req;
+  try {
+    const summaryFetcher = async (sport, leagueSlug, matchId) => {
+      try {
+        return await fetchFromBackendOrESPN(`${sport}/${leagueSlug}/summary?event=${matchId}`);
+      } catch (e) {
+        return null;
+      }
+    };
+
+    const report = await autoSettleFinishedMatches(admin, summaryFetcher, logger);
+    return res.json({ success: true, ...report, traceId });
+  } catch (error) {
+    logger.error('Error in manual settlement trigger', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
+});
+
+// ──────────────────────────────────────────────────────────
+// PREDICTABILITY & SELECTIVE RECOMMENDATION ENDPOINTS
+// ──────────────────────────────────────────────────────────
+
+/**
+ * GET /api/predictions/recommended
+ *
+ * Core selective prediction feed:
+ * Fetches all available matches from ESPN & PitchAPI, evaluates candidates
+ * using predictability and empirical Bayesian/Poisson models, and returns
+ * ONLY matches and markets that meet strict quality criteria (>= 75% calibrated
+ * probability, sample size >= 5 per team, data quality >= 0.65).
+ */
+app.get('/api/predictions/recommended', async (req, res) => {
+  const { traceId } = req;
+  const { sport = 'soccer', league = null, date = null, minProb = null } = req.query;
+
+  try {
+    const config = {
+      ...DEFAULT_FILTER_CONFIG,
+      minCalibratedProbability: minProb ? parseFloat(minProb) : DEFAULT_FILTER_CONFIG.minCalibratedProbability,
+    };
+
+    let targetLeagues = leaguesToRefresh.filter(l => l.sport === sport || l.sport === 'football');
+    if (league) {
+      targetLeagues = targetLeagues.filter(l => l.league === league);
+      if (targetLeagues.length === 0) {
+        targetLeagues = [{ sport, league }];
+      }
+    }
+
+    const targetDateStr = date ? new Date(date).toDateString() : null;
+    const evaluatedFixtures = [];
+
+    for (const lConfig of targetLeagues.slice(0, 15)) {
+      try {
+        const scoreboardData = await fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/scoreboard`);
+        const events = scoreboardData?.events || [];
+
+        for (const ev of events) {
+          const competition = ev.competitions?.[0];
+          const state = competition?.status?.type?.state;
+          if (state !== 'pre' && state !== 'scheduled') continue;
+
+          if (targetDateStr) {
+            const evDate = new Date(ev.date).toDateString();
+            if (evDate !== targetDateStr) continue;
+          }
+
+          const homeComp = competition?.competitors?.find(c => c.homeAway === 'home');
+          const awayComp = competition?.competitors?.find(c => c.homeAway === 'away');
+          if (!homeComp?.id || !awayComp?.id) continue;
+
+          let homeSched = null;
+          let awaySched = null;
+          try {
+            [homeSched, awaySched] = await Promise.all([
+              fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/teams/${homeComp.id}/schedule`),
+              fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/teams/${awayComp.id}/schedule`),
+            ]);
+          } catch (_) {}
+
+          const homeMatches = processScheduleForTeam(homeSched?.events || [], homeComp.id);
+          const awayMatches = processScheduleForTeam(awaySched?.events || [], awayComp.id);
+
+          const evalResult = evaluateFixture({
+            fixture: {
+              id: ev.id,
+              date: ev.date,
+              league: { name: competition?.league?.name || lConfig.league },
+              status: state,
+            },
+            cleanHomeMatches: homeMatches,
+            cleanAwayMatches: awayMatches,
+            homeName: homeComp.team?.displayName || homeComp.team?.name || 'Home Team',
+            awayName: awayComp.team?.displayName || awayComp.team?.name || 'Away Team',
+            config,
+          });
+
+          evaluatedFixtures.push(evalResult);
+        }
+      } catch (lErr) {
+        logger.debug('League scoreboard fetch failed in recommended feed', { league: lConfig.league, error: lErr.message });
+      }
+    }
+
+    const { recommended, allFixtures, stats } = filterAndRankFixtures(evaluatedFixtures);
+
+    logger.info('Recommended predictions generated', {
+      traceId,
+      totalAnalyzed: stats.totalAnalyzed,
+      totalRecommended: stats.totalRecommended,
+    });
+
+    return res.json({
+      success: true,
+      recommended,
+      allFixtures,
+      stats,
+      traceId,
+    });
+  } catch (error) {
+    logger.error('Error generating recommended predictions', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
+});
+
+/**
+ * GET /api/fixtures/all
+ *
+ * Full browsable fixture catalog:
+ * Returns all available fixtures from ESPN and PitchAPI across all 77 competitions.
+ */
+app.get('/api/fixtures/all', async (req, res) => {
+  const { traceId } = req;
+  const { sport = 'soccer', league = null, date = null, status = 'all', page = 1, limit = 50 } = req.query;
+
+  try {
+    let targetLeagues = leaguesToRefresh.filter(l => l.sport === sport || l.sport === 'football');
+    if (league) {
+      targetLeagues = targetLeagues.filter(l => l.league === league);
+      if (targetLeagues.length === 0) targetLeagues = [{ sport, league }];
+    }
+
+    const allEvents = [];
+    const targetDateStr = date ? new Date(date).toDateString() : null;
+
+    for (const lConfig of targetLeagues.slice(0, 20)) {
+      try {
+        const scoreboardData = await fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/scoreboard`);
+        const events = scoreboardData?.events || [];
+        for (const ev of events) {
+          const comp = ev.competitions?.[0];
+          const st = comp?.status?.type?.state;
+          if (status !== 'all') {
+            if (status === 'pre' && st !== 'pre' && st !== 'scheduled') continue;
+            if (status === 'in' && st !== 'in') continue;
+            if (status === 'post' && st !== 'post') continue;
+          }
+          if (targetDateStr) {
+            const evDate = new Date(ev.date).toDateString();
+            if (evDate !== targetDateStr) continue;
+          }
+
+          const homeComp = comp?.competitors?.find(c => c.homeAway === 'home');
+          const awayComp = comp?.competitors?.find(c => c.homeAway === 'away');
+
+          allEvents.push({
+            id: ev.id,
+            sport: lConfig.sport,
+            league: comp?.league?.name || lConfig.league,
+            leagueSlug: lConfig.league,
+            date: ev.date,
+            status: st || 'scheduled',
+            homeTeam: {
+              id: homeComp?.id,
+              name: homeComp?.team?.displayName || homeComp?.team?.name || 'Home',
+              logo: homeComp?.team?.logo || null,
+              score: homeComp?.score?.value ?? homeComp?.score ?? null,
+            },
+            awayTeam: {
+              id: awayComp?.id,
+              name: awayComp?.team?.displayName || awayComp?.team?.name || 'Away',
+              logo: awayComp?.team?.logo || null,
+              score: awayComp?.score?.value ?? awayComp?.score ?? null,
+            },
+          });
+        }
+      } catch (_) {}
+    }
+
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 50;
+    const startIdx = (pageNum - 1) * limitNum;
+    const paginated = allEvents.slice(startIdx, startIdx + limitNum);
+
+    return res.json({
+      success: true,
+      fixtures: paginated,
+      totalCount: allEvents.length,
+      page: pageNum,
+      totalPages: Math.ceil(allEvents.length / limitNum),
+      traceId,
+    });
+  } catch (error) {
+    logger.error('Error fetching all fixtures', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
+});
+
+/**
+ * POST /api/fixtures/evaluate
+ *
+ * Detailed predictability evaluation for a single fixture.
+ */
+app.post('/api/fixtures/evaluate', async (req, res) => {
+  const { traceId } = req;
+  try {
+    const { fixture, cleanHomeMatches, cleanAwayMatches, h2h, homeName, awayName, config } = req.body || {};
+
+    const evaluation = evaluateFixture({
+      fixture,
+      cleanHomeMatches: cleanHomeMatches || [],
+      cleanAwayMatches: cleanAwayMatches || [],
+      h2h: h2h || null,
+      homeName: homeName || 'Home Team',
+      awayName: awayName || 'Away Team',
+      config: config || DEFAULT_FILTER_CONFIG,
+    });
+
+    return res.json({ success: true, evaluation, traceId });
+  } catch (error) {
+    logger.error('Error in /api/fixtures/evaluate', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
 });
 
 const { spawn } = require('child_process');
@@ -1317,11 +1708,66 @@ function analyzeMatchServer({
     });
   }
 
+  // Calculate predictability metadata for soccer
+  let predictabilityMeta = null;
+  if (!isBasketball && sport !== 'tennis') {
+    try {
+      const cleanHomeMatches = validateAndFilterHistoricalMatches(homeStats?.lastMatches || []);
+      const cleanAwayMatches = validateAndFilterHistoricalMatches(awayStats?.lastMatches || []);
+      const dataQualityScore = calculateDataQualityScore(cleanHomeMatches, cleanAwayMatches);
+      const totalSample = cleanHomeMatches.length + cleanAwayMatches.length;
+
+      const evaluatedMarkets = footballPredictions.map(pred =>
+        evaluateMarketCandidate({
+          market: pred.market,
+          predictionResult: pred,
+          cleanHomeMatches,
+          cleanAwayMatches,
+        })
+      );
+
+      const eligibleMarkets = evaluatedMarkets.filter(c => c.is_eligible);
+      const isRecommended = eligibleMarkets.length > 0;
+      const topEligible = isRecommended
+        ? [...eligibleMarkets].sort((a, b) => b.calibrated_probability - a.calibrated_probability)[0]
+        : null;
+
+      let confidenceLabel = 'Evidence Insufficient for High Confidence';
+      if (topEligible) {
+        if (topEligible.calibrated_probability >= 0.85) confidenceLabel = 'Very High Confidence (Validated)';
+        else if (topEligible.calibrated_probability >= 0.80) confidenceLabel = 'High Confidence (Validated)';
+        else if (topEligible.calibrated_probability >= 0.75) confidenceLabel = 'Qualified High Confidence';
+      }
+
+      const rejectionReasons = [];
+      if (!isRecommended) {
+        const seen = new Set();
+        evaluatedMarkets.forEach(em => {
+          (em.rejection_reasons || []).forEach(r => {
+            if (!seen.has(r)) { seen.add(r); rejectionReasons.push(r); }
+          });
+        });
+      }
+
+      predictabilityMeta = {
+        dataQualityScore,
+        sampleSize: totalSample,
+        isRecommended,
+        confidenceLabel,
+        rejectionReasons,
+        topEligibleMarket: topEligible ? topEligible.market : null,
+        topCalibratedProbability: topEligible ? topEligible.calibrated_probability : null,
+        evaluatedMarkets,
+      };
+    } catch (_) {}
+  }
+
   return {
     prediction: recommendations.length > 0 ? recommendations[0].value : 'Too Close to Call',
     confidence: recommendations.length > 0 ? recommendations[0].confidence : 45,
     color: recommendations.length > 0 ? recommendations[0].color : '#868e96',
     recommendations,
+    predictabilityMeta,
     allMarkets: footballPredictions.map(p => ({
       market: p.market,
       type: p.market.toUpperCase(),
@@ -2132,4 +2578,20 @@ module.exports = {
   rankFootballPredictions,
   FOOTBALL_UNDER_CORNERS_LINE,
   FOOTBALL_MARKET_PRIORITY,
+  savePrediction,
+  settlePrediction,
+  settleMarket,
+  classifyMatchStatus,
+  autoSettleFinishedMatches,
+  getMatchSettlement,
+  getUserPredictionHistory,
+  getUserPredictionStats,
+  DEFAULT_FILTER_CONFIG,
+  calculateDataQualityScore,
+  calculateFormConsistency,
+  calculateModelAgreement,
+  calculatePredictabilityScore,
+  evaluateMarketCandidate,
+  evaluateFixture,
+  filterAndRankFixtures,
 };

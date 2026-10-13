@@ -67,3 +67,68 @@ export const fetchSportsDataLeagues = async () => {
   }
 };
 
+/**
+ * Save user's unlocked prediction to backend for persistence & automatic settlement.
+ */
+export const savePredictionToBackend = async (predictionData) => {
+  try {
+    const response = await fetch(`${API_URL}/api/predictions/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(predictionData),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.warn('[savePredictionToBackend] Network error:', error.message);
+    return null;
+  }
+};
+
+/**
+ * Fetch verified settlement result for a specific match.
+ */
+export const fetchPredictionSettlement = async (matchId, userId = null) => {
+  try {
+    const url = `${API_URL}/api/predictions/settlement/${matchId}${userId ? `?userId=${userId}` : ''}`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.settlement || null;
+  } catch (error) {
+    console.warn('[fetchPredictionSettlement] Network error:', error.message);
+    return null;
+  }
+};
+
+/**
+ * Fetch prediction history with won/lost tick/cross status.
+ */
+export const fetchPredictionHistory = async (userId, status = 'all', limit = 50) => {
+  try {
+    const response = await fetch(`${API_URL}/api/predictions/history?userId=${userId}&status=${status}&limit=${limit}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.history || [];
+  } catch (error) {
+    console.warn('[fetchPredictionHistory] Network error:', error.message);
+    return [];
+  }
+};
+
+/**
+ * Fetch user prediction statistics (win rate, won, lost, pending).
+ */
+export const fetchPredictionStats = async (userId) => {
+  try {
+    const response = await fetch(`${API_URL}/api/predictions/stats?userId=${userId}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.stats || null;
+  } catch (error) {
+    console.warn('[fetchPredictionStats] Network error:', error.message);
+    return null;
+  }
+};
+
+

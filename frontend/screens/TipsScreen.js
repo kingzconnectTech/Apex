@@ -222,9 +222,9 @@ export default function TipsScreen({ navigation }) {
                   <View style={styles.leagueBadge}>
                     <Text style={styles.leagueName} numberOfLines={1}>{item.league}</Text>
                   </View>
-                  <View style={[styles.statusBadge, item.status === 'in' && styles.statusLive]}>
-                    <Text style={[styles.statusText, item.status === 'in' && styles.statusTextLive]}>
-                        {item.status === 'in' ? 'LIVE' : item.time}
+                  <View style={[styles.statusBadge, item.status === 'in' && styles.statusLive, item.status === 'post' && styles.statusFinished]}>
+                    <Text style={[styles.statusText, item.status === 'in' && styles.statusTextLive, item.status === 'post' && styles.statusTextFinished]}>
+                        {item.status === 'in' ? 'LIVE' : (item.status === 'post' ? 'FT' : item.time)}
                     </Text>
                   </View>
               </View>
@@ -237,9 +237,9 @@ export default function TipsScreen({ navigation }) {
                   </View>
                   
                   <View style={styles.vsWrapper}>
-                    {item.status === 'in' ? (
-                      <Text style={[styles.scoreText, {fontSize: getResponsiveFontSize(18)}]}>
-                        {item.homeTeam.score} - {item.awayTeam.score}
+                    {item.status === 'in' || item.status === 'post' ? (
+                      <Text style={[styles.scoreText, {fontSize: getResponsiveFontSize(18), fontWeight: 'bold'}]}>
+                        {item.homeTeam.score ?? 0} - {item.awayTeam.score ?? 0}
                       </Text>
                     ) : (
                       <Text style={styles.vsText}>VS</Text>
@@ -254,8 +254,14 @@ export default function TipsScreen({ navigation }) {
 
               {/* Footer: Action */}
               <View style={styles.cardFooter}>
-                  <Text style={styles.footerText}>AI Analysis Available</Text>
-                  <Ionicons name="chevron-forward-circle" size={20} color={theme.primary} />
+                  <Text style={[styles.footerText, item.status === 'post' && { color: '#10B981', fontWeight: 'bold' }]}>
+                    {item.status === 'post' ? 'Settled AI Prediction' : 'AI Analysis Available'}
+                  </Text>
+                  <Ionicons
+                    name={item.status === 'post' ? "checkmark-circle" : "chevron-forward-circle"}
+                    size={20}
+                    color={item.status === 'post' ? "#10B981" : theme.primary}
+                  />
               </View>
           </View>
         </TouchableOpacity>
@@ -692,6 +698,9 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
   statusLive: {
     backgroundColor: 'rgba(231, 76, 60, 0.2)',
   },
+  statusFinished: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+  },
   statusText: {
     color: theme.text,
     fontSize: getResponsiveFontSize(12),
@@ -699,6 +708,9 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
   },
   statusTextLive: {
     color: '#FF6B6B',
+  },
+  statusTextFinished: {
+    color: '#10B981',
   },
   teamsRow: {
     flexDirection: 'row',
