@@ -1,4 +1,4 @@
-const { PROVIDERS, TTL } = require('./providers/config');
+const { PROVIDERS, TTL, leagueSupportsSeason } = require('./providers/config');
 const { EspnProvider } = require('./providers/EspnProvider');
 const { PitchApiProvider } = require('./providers/PitchApiProvider');
 const { buildDedupKey, fixturesMatch, _normalizeTeamName } = require('./providers/normalizer');
@@ -107,21 +107,27 @@ class SportsDataService {
     if (this.pitchApi.isAvailable()) {
       const paLeagues = await this.pitchApi.getLeagues({ traceId }).catch(() => []);
       if (paLeagues.length > 0) {
+        let result = paLeagues;
+        // PitchAPI /v1/leagues ignores the season query param, so we filter
+        // client-side using each league's `seasons` array.
+        if (season) {
+          result = result.filter(lg => leagueSupportsSeason(lg, season));
+        }
         if (country) {
           const normCountry = _normalizeTeamName(country);
-          return paLeagues.filter(lg => {
+          result = result.filter(lg => {
             const c = _normalizeTeamName(lg.league?.country || '');
             return c === normCountry || c.includes(normCountry) || normCountry.includes(c);
           });
         }
-        return paLeagues;
+        return result;
       }
     }
 
     return [];
   }
 
-  async getFixtures(sport, leagueSlug, { traceId = null, leagueDisplayName = '' } = {}) {
+  async getFixtures(sport, leagueSlug, { traceId = null, leagueDisplayName = '', season = null } = {}) {
     const tried = [];
 
     // 1. Primary: ESPN
@@ -154,7 +160,7 @@ class SportsDataService {
 
       let paFixtures = [];
       if (paLeagueId) {
-        paFixtures = await this.pitchApi.getLeagueMatches(paLeagueId, { status: 'all', traceId });
+        paFixtures = await this.pitchApi.getLeagueMatches(paLeagueId, { status: 'all', season, traceId });
       }
 
       const paMs = Date.now() - paStart;
@@ -172,7 +178,7 @@ class SportsDataService {
     return { fixtures: [], source: null, tried };
   }
 
-  async getFixturesMerged(sport, leagueSlug, { traceId = null, leagueDisplayName = '' } = {}) {
+  async getFixturesMerged(sport, leagueSlug, { traceId = null, leagueDisplayName = '', season = null } = {}) {
     const all = [];
     const dedupKeys = new Set();
 
@@ -182,7 +188,7 @@ class SportsDataService {
         ? (async () => {
             const paId = await this._getPitchApiLeagueId(sport, leagueSlug, { traceId, leagueDisplayName });
             if (!paId) return [];
-            return this.pitchApi.getLeagueMatches(paId, { status: 'all', traceId }).catch(() => []);
+            return this.pitchApi.getLeagueMatches(paId, { status: 'all', season, traceId }).catch(() => []);
           })()
         : Promise.resolve([]),
     ]);
@@ -365,7 +371,7 @@ class SportsDataService {
             }).catch(() => null),
             this.pitchApi.getMatchStats(fixture.fixture.sourceId, { traceId }).catch(() => null),
             fixture.league.sourceId
-              ? this.pitchApi.getLeagueMatches(fixture.league.sourceId, { status: 'all', traceId }).catch(() => [])
+              ? this.pitchApi.getLeagueMatches(fixture.league.sourceId, { status: 'all', season: fixture.league.season, traceId }).catch(() => [])
               : Promise.resolve([]),
           ]);
 

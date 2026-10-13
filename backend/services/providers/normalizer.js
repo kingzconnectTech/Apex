@@ -303,8 +303,26 @@ function normalizeFixturePitchAPI(raw, leagueOverride = null) {
 function normalizeH2HPitchAPI(raw, homeTeamId = null, awayTeamId = null) {
   if (!raw) return { homeWins: 0, awayWins: 0, draws: 0, matches: [], recent: [] };
   const data = raw.data || raw;
-  const list = Array.isArray(data?.h2h) ? data.h2h : (Array.isArray(data) ? data : []);
-  const out = { homeWins: 0, awayWins: 0, draws: 0, matches: [], recent: [] };
+  // PitchAPI returns `recent_matches`; fall back to `h2h` for backward
+  // compatibility with older/mocked payloads.
+  const list = Array.isArray(data?.recent_matches)
+    ? data.recent_matches
+    : (Array.isArray(data?.h2h) ? data.h2h : (Array.isArray(data) ? data : []));
+
+  // PitchAPI provides authoritative head-to-head counts at the top level of the
+  // payload (home_wins / draws / away_wins). Use them when present; otherwise
+  // derive from the match list to avoid fabricating data.
+  const topLevelProvided = data && typeof data === 'object' && !Array.isArray(data) && (
+    data.home_wins !== undefined || data.away_wins !== undefined || data.draws !== undefined
+  );
+
+  const out = {
+    homeWins: topLevelProvided ? (Number(data.home_wins) || 0) : 0,
+    awayWins: topLevelProvided ? (Number(data.away_wins) || 0) : 0,
+    draws: topLevelProvided ? (Number(data.draws) || 0) : 0,
+    matches: [],
+    recent: [],
+  };
 
   const homeClean = homeTeamId ? String(homeTeamId).replace(/^pa-/, '') : null;
 
@@ -316,7 +334,8 @@ function normalizeH2HPitchAPI(raw, homeTeamId = null, awayTeamId = null) {
     const date = m.time_utc || m.date || null;
     const scoreStr = (hs != null && as != null) ? `${hs}-${as}` : '?-?';
 
-    if (hs != null && as != null && m.finished !== false) {
+    // Only derive counts when the provider did not supply authoritative totals.
+    if (!topLevelProvided && hs != null && as != null && m.finished !== false) {
       if (homeClean && hId && aId) {
         if (hId === homeClean) {
           if (hs > as) out.homeWins++;

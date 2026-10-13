@@ -2,6 +2,8 @@ const {
   PITCHAPI_BASE,
   PITCHAPI_KEY,
   PITCHAPI_ENABLED,
+  PITCHAPI_SEASON,
+  normalizeSeason,
   PROVIDERS,
   TTL,
 } = require('./config');
@@ -21,11 +23,13 @@ class PitchApiProvider {
     apiKey = null,
     enabled = null,
     baseUrl = null,
+    season = null,
   } = {}) {
     this.name = PROVIDERS.PITCHAPI;
     this.baseUrl = baseUrl || PITCHAPI_BASE;
     this.apiKey = apiKey !== null ? apiKey : PITCHAPI_KEY;
     this.enabled = enabled !== null ? enabled : PITCHAPI_ENABLED;
+    this.season = season !== null && season !== undefined ? String(season) : PITCHAPI_SEASON;
     this.logger = logger;
     this._fetch = fetchFn || global.fetch;
     this._inflight = new Map();
@@ -189,6 +193,9 @@ class PitchApiProvider {
   }
 
   async getLeagues({ traceId = null } = {}) {
+    // PitchAPI /v1/leagues ignores the season query param, so we do not send it.
+    // Season filtering is performed by the caller (SportsDataService.listFootballLeagues)
+    // using the `seasons` array on each returned league object.
     const raw = await this._request('/v1/leagues', {}, { ttl: TTL.LEAGUES, traceId });
     if (!raw) return [];
     const list = Array.isArray(raw?.leagues) ? raw.leagues : (Array.isArray(raw) ? raw : []);
@@ -205,7 +212,11 @@ class PitchApiProvider {
   async getLeagueMatches(id, { season = null, status = 'all', traceId = null } = {}) {
     const cleanId = String(id).replace(/^pa-/, '');
     const params = { status };
-    if (season) params.season = season;
+    // PitchAPI requires slashed season format (e.g. "2026/2027") for European
+    // competitions; a bare year ("2026") returns 400. Normalize and fall back
+    // to the configured default season when none is supplied.
+    const effectiveSeason = normalizeSeason(season) || normalizeSeason(this.season);
+    if (effectiveSeason) params.season = effectiveSeason;
     const ttl = status === 'finished' ? TTL.FIXTURES_FINISHED : TTL.FIXTURES_SCHEDULED;
     const raw = await this._request(`/v1/leagues/${cleanId}/matches`, params, { ttl, traceId });
     if (!raw) return [];
