@@ -321,17 +321,22 @@ export default function TipsScreen({ navigation }) {
   };
 
   const renderRecommendedCard = ({ item }) => {
-    const isUnder25Home = item.recommendedMarket === 'home_team_under_2_5';
-    const isUnder25Away = item.recommendedMarket === 'away_team_under_2_5';
-    const isUnder45 = item.recommendedMarket === 'under_4_5_goals';
-    const isUnder25Ht = item.recommendedMarket === 'under_2_5_ht';
+    const marketKey = item.recommendedMarket || item.market || '';
+    const isUnder25Home = marketKey === 'home_team_under_2_5';
+    const isUnder25Away = marketKey === 'away_team_under_2_5';
+    const isUnder45 = marketKey === 'under_4_5_goals';
+    const isUnder25Ht = marketKey === 'under_2_5_ht';
+    const isCorners = marketKey.includes('corners');
+    const isBookings = marketKey.includes('bookings');
 
     const marketDisplayTitle =
       isUnder25Home ? `${item.homeName} Under 2.5 Goals` :
       isUnder25Away ? `${item.awayName} Under 2.5 Goals` :
       isUnder45 ? 'Under 4.5 Match Goals' :
       isUnder25Ht ? 'Under 2.5 First Half Goals' :
-      item.marketLabel || 'High Confidence Under';
+      isCorners ? (item.label || item.value || item.marketLabel || 'Over/Under Corners') :
+      isBookings ? (item.label || item.value || item.marketLabel || 'Over/Under Bookings') :
+      item.marketLabel || item.label || 'High Confidence Prediction';
 
     const formattedKickoff = item.kickoff ? new Date(item.kickoff).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Upcoming';
     const calProb = Math.round((item.calibrated_probability || 0.75) * 100);
@@ -412,7 +417,7 @@ export default function TipsScreen({ navigation }) {
 
               <Text style={styles.recMarketTitle}>{marketDisplayTitle}</Text>
               <Text style={styles.recSelectionText}>
-                Recommended Selection: <Text style={{ color: '#10B981', fontWeight: 'bold' }}>{item.recommendedSelection || 'Under 2.5'}</Text>
+                Recommended Selection: <Text style={{ color: '#10B981', fontWeight: 'bold' }}>{item.recommendedSelection || item.selection || item.value || 'Under 2.5'}</Text>
               </Text>
 
               {/* Statistical Metrics Row */}

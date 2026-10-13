@@ -1,0 +1,430 @@
+<USER_REQUEST>
+# Apex Prediction Engine Upgrade — Goals, Corners and Bookings
+
+## OBJECTIVE
+
+Upgrade the existing Apex sports prediction application to calculate football match goals, corners, and total bookings using a statistically sound, data-driven prediction engine.
+
+Implement these markets:
+
+1. **Home Team Under 2.5 Goals**
+2. **Away Team Under 2.5 Goals**
+3. **Over/Under Total Match Corners**
+4. **Over/Under Total Match Bookings**
+
+The system must analyse each team's last 10 relevant matches, historical H2H results, home/away performance, competition statistics, and available match-specific data.
+
+Do not simply use averages or randomly generated probabilities. Build a reliable statistical pipeline that calculates expected values, estimates probability distributions, evaluates uncertainty, and validates its predictions against historical results.
+
+## PHASE 1 — AUDIT THE EXISTING CODEBASE
+
+Before modifying anything:
+
+- Inspect the complete existing Apex repository.
+- Identify the current prediction engine, `PredictionEngine`, `EnsembleManager`, data providers, database models, fixture services, prediction APIs, and frontend prediction components.
+- Identify how ESPN and the existing secondary football API are integrated.
+- Check whether the existing ARIMA, Prophet, LSTM, or other models are actually being used and evaluated correctly.
+- Identify which provider supplies goals, corners, yellow cards, red cards, and match statistics.
+- Check data freshness, missing statistics, duplicate fixtures, team-name matching, competition identifiers, and historical data coverage.
+- Preserve working functionality and existing integrations.
+- Reuse existing services and models where appropriate. Do not create a duplicate prediction engine or replace working infrastructure without a clear technical reason.
+- Produce a brief implementation plan, then implement the upgrade.
+
+## PHASE 2 — BUILD A RELIABLE HISTORICAL DATASET
+
+For every upcoming fixture, retrieve the most recent 10 completed matches for both teams, where available.
+
+For each historical match, collect:
+
+- Match date and competition.
+- Home team and away team.
+- Full-time home and away goals.
+- Half-time score, if available.
+- Home and away corners, if available.
+- Home and away yellow cards, if available.
+- Home and away red cards, if available.
+- Total corners.
+- Total yellow cards.
+- Total red cards.
+- Match venue and home/away designation.
+- Expected goals (xG), shots, shots on target, and possession, where available.
+- Match status and source identifiers.
+
+Use only completed, valid matches for historical calculations. Exclude abandoned matches and avoid treating missing statistics as zero.
+
+### Last-10 analysis
+
+For each team, calculate:
+
+- Average goals scored and conceded.
+- Median goals scored and conceded.
+- Percentage of matches scoring 0, 1, 2, 3 or more goals.
+- Percentage of matches conceding 0, 1, 2 or 3+ goals.
+- Average corners won and conceded.
+- Median corners won and conceded.
+- Average yellow cards and red cards.
+- Average total bookings per match.
+- Frequency of each proposed over/under threshold.
+- Home-only performance for the home team.
+- Away-only performance for the away team.
+- Recent form and changes in performance over the last 5 versus the last 10 matches.
+
+Use the full last-10 sample as the main window, while using the last 5 as a recency indicator. Do not allow a small recent sample to dominate the calculation.
+
+When fewer than 10 valid matches exist, use the available sample but lower the data-quality score. Do not invent missing matches or statistics.
+
+## PHASE 3 — H2H ANALYSIS
+
+Retrieve relevant historical head-to-head matches between the two teams.
+
+Calculate:
+
+- Average home and away goals in H2H.
+- Home-team and away-team goal distributions.
+- Average total corners.
+- Average corners for each team.
+- Average yellow cards, red cards, and total bookings.
+- Frequency of the proposed over/under outcomes.
+- Sample size, dates, and age of the H2H matches.
+
+Give more weight to recent, relevant H2H matches, but reduce their influence when the sample is small or the teams' circumstances have changed substantially.
+
+Use a configurable H2H lookback window and a sensible maximum sample size. Prefer matches from comparable competitions and account for home/away context.
+
+**Important:** H2H must not override stronger current team data. Old H2H results should receive less weight, and a small H2H sample must not create false confidence.
+
+## PHASE 4 — CALCULATE EXPECTED GOALS
+
+Implement a statistically appropriate goals model.
+
+### A. Estimate each team's expected goals
+
+Calculate:
+
+- `home_expected_goals`
+- `away_expected_goals`
+
+Combine relevant information from:
+
+- Home team's recent scoring record.
+- Home team's recent goals conceded.
+- Away team's recent scoring record.
+- Away team's recent goals conceded.
+- Home-only and away-only splits.
+- Relevant H2H data.
+- Competition-specific scoring averages.
+- xG data, when reliable and available.
+- Recency and sample-size adjustments.
+
+Use a documented weighted or hierarchical approach. Shrink noisy team estimates towards the relevant competition average instead of trusting unstable small samples.
+
+Avoid double-counting the same information when combining features.
+
+### B. Estimate probabilities for team goals
+
+Use a suitable probability distribution, such as Poisson, with an appropriate adjustment if validation shows that a basic Poisson model is insufficient.
+
+Calculate:
+
+- Probability the home team scores 0, 1, 2, 3+ goals.
+- Probability the away team scores 0, 1, 2, 3+ goals.
+- Probability of Home Team Under 2.5 Goals.
+- Probability of Away Team Under 2.5 Goals.
+
+For an initial Poisson model:
+
+`P(X = k) = exp(-λ) × λ^k / k!`
+
+Where `λ` is the team's expected goals.
+
+For either team:
+
+`P(Under 2.5) = P(0 goals) + P(1 goal) + P(2 goals)`
+
+Ensure the final probabilities are valid, properly normalized, and consistent with the model's assumptions.
+
+Do not calculate the home team's under probability from total match goals. Home Team Under 2.5 concerns home goals only; Away Team Under 2.5 concerns away goals only.
+
+## PHASE 5 — CALCULATE EXPECTED CORNERS
+
+Build a separate corners prediction model. Do not reuse the goals model for corners.
+
+Estimate:
+
+- Expected home-team corners.
+- Expected away-team corners.
+- Expected total match corners.
+
+Use:
+
+- Home team's last-10 corners won and conceded.
+- Away team's last-10 corners won and conceded.
+- Home/away splits.
+- H2H corner statistics.
+- Competition corner averages.
+- Shots, shots blocked, attacks, possession, and other relevant features where available.
+- Recency, data quality, and sample size.
+
+Combine the attacking corner rate of one team with the opponent's corner-concession rate. Adjust for competition context and shrink unreliable estimates towards the competition average.
+
+### Corner probability distribution
+
+Use a count-data model appropriate to the observed distribution, such as Poisson or negative binomial. Evaluate overdispersion and choose the model based on out-of-sample validation.
+
+Calculate the probability of total corners being above or below each configured market line.
+
+Support configurable lines such as:
+
+- Over/Under 7.5 corners.
+- Over/Under 8.5 corners.
+- Over/Under 9.5 corners.
+- Over/Under 10.5 corners.
+- Over/Under 11.5 corners.
+
+Do not hardcode the list in a way that prevents future configuration.
+
+For each line, calculate both probabilities from the same underlying distribution. Ensure they are complementary for a two-outcome, half-goal line.
+
+Use the total-corners distribution or a validated joint model for the sum of home and away corners. Do not simply add average corners and present that sum as a probability.
+
+If the model predicts 9.2 expected corners, that does not mean Over 8.5 has a 92% probability. Probability must come from the estimated distribution and its validation.
+
+## PHASE 6 — CALCULATE TOTAL BOOKINGS
+
+Treat bookings as a separate statistical target.
+
+First inspect the data provider's definition of cards and the existing database schema.
+
+Record separately:
+
+- Home yellow cards.
+- Away yellow cards.
+- Home red cards.
+- Away red cards.
+- Total yellow cards.
+- Total red cards.
+- Total bookings under the provider's documented convention.
+
+Do not silently mix yellow cards, red cards, and booking points. Some providers count a second yellow leading to a red differently, so use one documented convention consistently across historical data, predictions, settlement, and display.
+
+Estimate expected bookings using:
+
+- Both teams' last-10 card records.
+- Home/away splits.
+- H2H card history.
+- Competition-specific card averages.
+- Referee card averages, only if reliable referee data is available.
+- Team foul rates and relevant defensive statistics, if available.
+- Match importance or rivalry indicators only when grounded in reliable data.
+- Sample size and recency.
+
+Use a Poisson or negative-binomial count model based on empirical validation. If yellow cards and red cards have meaningfully different effects, model them separately and combine them according to the chosen market settlement convention.
+
+Support configurable half-goal lines, such as:
+
+- Over/Under 2.5 total bookings.
+- Over/Under 3.5 total bookings.
+- Over/Under 4.5 total bookings.
+- Over/Under 5.5 total bookings.
+- Over/Under 6.5 total bookings.
+
+Generate over/under probabilities from the estimated distribution, not from simple averages alone.
+
+If reliable card statistics are missing, mark the bookings market as unavailable. Never substitute zero cards for missing data.
+
+## PHASE 7 — MODEL ENSEMBLE AND PROBABILITY CALIBRATION
+
+Inspect the current `PredictionEngine` and `EnsembleManager` before deciding how to integrate the new models.
+
+Use separate target-specific models for:
+
+- Home-team goals.
+- Away-team goals.
+- Total corners.
+- Total bookings.
+
+An ensemble may combine suitable models, but it must not average model outputs blindly.
+
+Requirements:
+
+1. Compare candidate models using chronological train/validation/test splits.
+2. Train only on information available before the target match.
+3. Prevent data leakage from future results, current match statistics, or post-match information.
+4. Use rolling-origin backtesting where practical.
+5. Calibrate predicted probabilities using methods such as isotonic regression or Platt scaling when supported by sufficient validation data.
+6. Use Brier score, log loss, calibration curves, and appropriate count-prediction errors to evaluate the models.
+7. Compare against simple baselines, including competition averages and basic Poisson estimates.
+8. Prefer the simplest model that performs reliably out of sample.
+9. Do not claim an accuracy improvement unless backtesting supports it.
+10. Retrain and recalibrate using a controlled process, with model versions recorded.
+
+The model must be able to abstain when its data or validation is insufficient.
+
+## PHASE 8 — PREDICTABILITY AND RECOMMENDATION FILTER
+
+A high estimated probability does not automatically make a match safe.
+
+Create a separate predictability assessment using:
+
+- Historical data completeness.
+- Sample size.
+- Reliability of the competition and provider statistics.
+- Stability of recent performance.
+- Model agreement.
+- Probability calibration quality.
+- Backtested performance for the specific market.
+- Missing data and uncertainty.
+
+Keep these concepts separate:
+
+- **Estimated probability:** the model's estimated chance of the outcome.
+- **Data quality:** the completeness and reliability of the inputs.
+- **Model confidence:** how stable the estimate is under reasonable changes in inputs and assumptions.
+- **Historical performance:** how the market model performed on held-out historical matches.
+
+Only recommend a market when it passes configurable minimum data-quality and validation requirements.
+
+A provisional 75% probability threshold may be used for testing, but it must not be described as a verified 75% win rate. Validate and calibrate the threshold before presenting it as a reliable selection rule.
+
+Do not force a prediction for every fixture. Display a clear “Insufficient data” or “No recommended market” state when appropriate.
+
+Keep all fixtures available in the application, but separate:
+- All available matches.
+- Matches with sufficient statistical data.
+- Recommended predictions.
+- Rejected or unavailable markets, with reasons.
+
+## PHASE 9 — DATA PROVIDERS AND RESOURCE MANAGEMENT
+
+Inspect the current ESPN and secondary API integrations.
+
+- Determine which source reliably supplies fixtures, historical results, corners, cards, and other statistics.
+- Use the appropriate source for each data field rather than assuming every API provides everything.
+- Confirm provider capabilities from existing documentation and actual response schemas.
+- Handle pagination, rate limits, retries, timeouts, and API errors.
+- Cache historical match data to reduce repeated API calls.
+- Refresh completed match results and fixture statuses without unnecessarily refetching all historical data.
+- Use stable provider IDs and normalized team/competition identifiers.
+- Deduplicate matches that appear in both providers.
+- Store each statistic's source and retrieval/update timestamp.
+- Do not fabricate statistics when a provider lacks them.
+- Ensure a missing secondary API response does not silently erase valid data from another source.
+- Use environment variables for credentials. Never expose API keys in frontend code, logs, or committed files.
+
+Use database indexes and efficient queries for team history, H2H, fixtures, and prediction records. Avoid downloading the same last-10 history independently for every market when it can be safely reused.
+
+## PHASE 10 — FRONTEND INTEGRATION
+
+Integrate the predictions into the existing Apex interface without breaking existing features.
+
+For every recommended market, show:
+
+- Fixture and competition.
+- Kick-off time.
+- Market and selection.
+- Estimated expected value, where relevant.
+- Model-estimated probability.
+- Data-quality status.
+- A concise explanation of the main statistical factors.
+- Number of valid last-10 matches and H2H matches used.
+- Whether the recommendation is available, pending, or unavailable.
+
+Example:
+
+Fixture: Team A vs Team B
+
+Market: Home Team Under 2.5 Goals
+
+Expected home goals: 1.18
+
+Estimated probability: 78%
+
+Historical sample: 10 home-team matches, 10 away-team matches, 5 relevant H2H matches.
+
+Explanation: The home team's scoring distribution, the away team's goals-conceded record, and the competition baseline support a low home-team goal estimate.
+
+This is an illustrative UI example, not a real prediction. Never show placeholder figures as live model output.
+
+For corners and bookings, display the expected total and the chosen line, with the corresponding probability.
+
+Explain briefly why a market was excluded if data is inadequate. Do not expose internal debugging details to ordinary users.
+
+## PHASE 11 — SETTLEMENT AND PERFORMANCE TRACKING
+
+Integrate with Apex's existing prediction settlement system.
+
+- Automatically settle predictions only when a verified final result is available.
+- Use the correct provider convention for goals, corners, and bookings.
+- Ensure the statistics used for settlement match the definition used when generating the prediction.
+- Handle postponed, abandoned, suspended, and missing-statistics matches correctly.
+- Make settlement idempotent so a prediction cannot be settled twice.
+- Store the original predicted probability, selected line, model version, data timestamp, actual result, outcome, and settlement timestamp.
+- Do not alter a historical prediction using information that became available after kick-off.
+
+Track performance independently for each market and line, including:
+- Number of predictions.
+- Wins, losses, voids, and unsettled predictions.
+- Actual hit rate.
+- Brier score and log loss where applicable.
+- Calibration by probability range.
+- Performance by competition and sample size.
+
+Do not present a small sample's hit rate as proof of long-term reliability.
+
+## PHASE 12 — TESTS AND ACCEPTANCE CRITERIA
+
+Write unit tests, integration tests, and historical backtests.
+
+Test at minimum:
+
+1. Home Team Under 2.5 wins when the home team scores 0, 1, or 2 goals and loses at 3 or more.
+2. Away Team Under 2.5 uses away goals only.
+3. A 0–0 result wins both team-under markets.
+4. Total-corners probabilities use the documented full-time corner statistic and the correct market line.
+5. Total-bookings predictions and settlement use the same documented booking convention.
+6. Missing corners or cards remain missing rather than becoming zero.
+7. Missing H2H history does not crash prediction generation.
+8. Fewer than 10 valid matches reduces data quality appropriately.
+9. Historical features never include the target match's result or future matches.
+10. Over/under probabilities are valid and internally consistent.
+11. Duplicate fixtures do not produce duplicate predictions.
+12. Predictions are not settled before the fixture is officially final.
+13. API outages and rate limits are handled gracefully.
+14. Existing Apex markets, fixtures, and settlement functionality continue working.
+
+## FINAL DELIVERABLE
+
+Implement the upgrade in the existing repository.
+
+At completion, provide:
+- Files created and modified.
+- How the statistical models work.
+- Which API supplies each statistic.
+- How last-10 and H2H weighting work.
+- How missing data is handled.
+- How probabilities are calibrated.
+- Backtesting results by market and sample size.
+- Tests run and their results.
+- Any limitations in the APIs or historical dataset.
+- Any remaining tasks that require a new data source or API permission.
+
+Do not report a feature as complete unless it has actually been implemented and tested. Do not invent backtesting results or claim that the predictions guarantee wins.
+
+One important thing to check
+The biggest dependency is historical corners and card data. An API may provide fixtures and final scores without providing reliable historical corners or bookings for every league. ESPN coverage can also vary by competition.
+Before trusting the new predictions, make the AI IDE confirm which of your existing APIs actually returns these statistics for the competitions Apex supports. If the data is missing, the correct solution is to find a suitable data source or exclude that market—not estimate it from goals alone.
+Also, the last 10 matches and H2H should be treated as evidence, not a guarantee. A model should earn trust through chronological backtesting and probability calibration, rather than simply showing high percentages.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-10-13T15:20:53+01:00.
+
+The user's current state is as follows:
+Active Document: c:\Users\prosp\Desktop\Apex\backend\tests\predictability.test.js (LANGUAGE_JAVASCRIPT)
+Cursor is on line: 1
+Other open documents:
+- c:\Users\prosp\Desktop\Apex\backend\server.js (LANGUAGE_JAVASCRIPT)
+- c:\Users\prosp\Desktop\Apex\backend\tests\football-ranking.test.js (LANGUAGE_JAVASCRIPT)
+- c:\Users\prosp\Desktop\Apex\backend\services\providers\PitchApiProvider.js (LANGUAGE_JAVASCRIPT)
+- c:\Users\prosp\Desktop\Apex\backend\.env (LANGUAGE_UNSPECIFIED)
+- c:\Users\prosp\Desktop\Apex\firestore.rules (LANGUAGE_UNSPECIFIED)
+</ADDITIONAL_METADATA>

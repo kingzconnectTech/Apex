@@ -136,8 +136,8 @@ class EspnProvider {
       const state = e.competitions?.[0]?.status?.type?.state;
       return state === 'post' || state === 'in';
     });
-    const last5 = valid.slice(-5).reverse();
-    return last5.map(event => {
+    const last10 = valid.slice(-10).reverse();
+    return last10.map(event => {
       const comp = event.competitions?.[0];
       if (!comp) return null;
       const teamComp = comp.competitors?.find(c => String(c?.team?.id) === String(teamId));
@@ -151,10 +151,36 @@ class EspnProvider {
       else if (teamScore > oppScore) result = 'W';
       else if (teamScore < oppScore) result = 'L';
       else result = 'D';
+
+      const findStat = (c, names) => {
+        const s = c?.statistics?.find(item => names.includes(item.name) || names.includes(item.label));
+        return s ? parseFloat(s.displayValue ?? s.value) : null;
+      };
+
+      const cornersWon = findStat(teamComp, ['wonCorners', 'cornerKicks', 'corners']);
+      const cornersConceded = findStat(oppComp, ['wonCorners', 'cornerKicks', 'corners']);
+      const totalCorners = (cornersWon != null && cornersConceded != null) ? cornersWon + cornersConceded : null;
+      const yellowCards = findStat(teamComp, ['yellowCards', 'yellow_cards']);
+      const redCards = findStat(teamComp, ['redCards', 'red_cards']);
+      const opponentYellowCards = findStat(oppComp, ['yellowCards', 'yellow_cards']);
+      const opponentRedCards = findStat(oppComp, ['redCards', 'red_cards']);
+      const totalBookings = (yellowCards != null && opponentYellowCards != null)
+        ? yellowCards + opponentYellowCards + (redCards || 0) + (opponentRedCards || 0)
+        : null;
+
       return {
         date: event.date,
         pf: teamScore,
         pa: oppScore,
+        totalGoals: teamScore + oppScore,
+        corners: cornersWon,
+        cornersConceded,
+        totalCorners,
+        yellowCards,
+        redCards,
+        opponentYellowCards,
+        opponentRedCards,
+        totalBookings,
         isHome: teamComp?.homeAway === 'home',
         result,
         opponentId: oppComp?.team?.id,

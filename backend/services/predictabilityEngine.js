@@ -27,10 +27,14 @@ const {
   analyzeUnder45History,
   analyzeUnder25HtHistory,
   analyzeTeamUnder25History,
+  analyzeCornersHistory,
+  analyzeBookingsHistory,
   analyzeH2HHistory,
   calculateUnder45Prediction,
   calculateUnder25HtPrediction,
   calculateTeamUnder25Prediction,
+  calculateCornersPrediction,
+  calculateBookingsPrediction,
 } = require('./footballHistoricalAnalysis');
 
 // ──────────────────────────────────────────────────────────
@@ -77,7 +81,7 @@ const DEFAULT_FILTER_CONFIG = {
  * @param {boolean} [options.requireHt=false]
  * @returns {number} Score between 0.0 and 1.0
  */
-function calculateDataQualityScore(homeMatches = [], awayMatches = [], { requireHt = false } = {}) {
+function calculateDataQualityScore(homeMatches = [], awayMatches = [], { requireHt = false, requireCorners = false, requireBookings = false } = {}) {
   const hList = Array.isArray(homeMatches) ? homeMatches : [];
   const aList = Array.isArray(awayMatches) ? awayMatches : [];
 
@@ -113,12 +117,40 @@ function calculateDataQualityScore(homeMatches = [], awayMatches = [], { require
     htCompleteness = (checkHt(hList) + checkHt(aList)) / 2;
   }
 
-  const score = (
-    0.40 * sampleCoverage +
-    0.35 * scoreCompleteness +
+  // 5. Corners availability (if required for corner markets)
+  let cornersCompleteness = 1.0;
+  if (requireCorners) {
+    const checkCorners = (list) => {
+      if (list.length === 0) return 0;
+      const valid = list.filter(m => m && (typeof m.corners === 'number' || typeof m.totalCorners === 'number'));
+      return valid.length / list.length;
+    };
+    cornersCompleteness = (checkCorners(hList) + checkCorners(aList)) / 2;
+  }
+
+  // 6. Bookings availability (if required for booking markets)
+  let bookingsCompleteness = 1.0;
+  if (requireBookings) {
+    const checkBookings = (list) => {
+      if (list.length === 0) return 0;
+      const valid = list.filter(m => m && (typeof m.yellowCards === 'number' || typeof m.totalBookings === 'number'));
+      return valid.length / list.length;
+    };
+    bookingsCompleteness = (checkBookings(hList) + checkBookings(aList)) / 2;
+  }
+
+  const baseScore = (
+    0.35 * sampleCoverage +
+    0.30 * scoreCompleteness +
     0.15 * dateCompleteness +
-    0.10 * htCompleteness
+    0.08 * htCompleteness +
+    0.06 * cornersCompleteness +
+    0.06 * bookingsCompleteness
   );
+
+  // Sample size penalty if fewer than 14 matches available across both teams
+  const samplePenalty = Math.min(1.0, (hList.length + aList.length) / 14);
+  const score = baseScore * samplePenalty;
 
   return Number(Math.max(0, Math.min(score, 1.0)).toFixed(4));
 }
@@ -247,7 +279,13 @@ function evaluateMarketCandidate({
   }
 
   const isHt = market.includes('ht');
-  const dataQualityScore = calculateDataQualityScore(cleanHomeMatches, cleanAwayMatches, { requireHt: isHt });
+  const isCorners = market.includes('corners');
+  const isBookings = market.includes('bookings');
+  const dataQualityScore = calculateDataQualityScore(cleanHomeMatches, cleanAwayMatches, {
+    requireHt: isHt,
+    requireCorners: isCorners,
+    requireBookings: isBookings,
+  });
 
   // 2. Form consistency & variance
   const homeForm = calculateFormConsistency(cleanHomeMatches);
@@ -255,7 +293,7 @@ function evaluateMarketCandidate({
   const avgFormConsistency = (homeForm.consistencyScore + awayForm.consistencyScore) / 2;
 
   // 3. Model agreement
-  // Compare prediction's empirical base rate with its expected goals Poisson CDF
+  // Compare prediction's empirical base rate with its expected goals / count model Poisson CDF
   let modelAgreementScore = 0.85; // default fallback
   if (market === 'home_team_under_2_5' || market === 'away_team_under_2_5') {
     const expGoals = predictionResult.expectedGoals || (market === 'home_team_under_2_5' ? 1.1 : 0.9);
@@ -264,6 +302,20 @@ function evaluateMarketCandidate({
   } else if (market === 'under_4_5_goals') {
     const expGoals = predictionResult.expectedGoals || 2.4;
     const poissonProb = poissonCdf(4, expGoals);
+    modelAgreementScore = calculateModelAgreement(predictionResult.probability, poissonProb);
+  } else if (isCorners) {
+    const expCorners = predictionResult.expectedCorners || 9.8;
+    const line = predictionResult.line || 10.5;
+    const poissonProb = predictionResult.marketType === 'over'
+      ? (1 - poissonCdf(Math.floor(line), expCorners))
+      : poissonCdf(Math.floor(line), expCorners);
+    modelAgreementScore = calculateModelAgreement(predictionResult.probability, poissonProb);
+  } else if (isBookings) {
+    const expBookings = predictionResult.expectedBookings || 4.2;
+    const line = predictionResult.line || 3.5;
+    const poissonProb = predictionResult.marketType === 'over'
+      ? (1 - poissonCdf(Math.floor(line), expBookings))
+      : poissonCdf(Math.floor(line), expBookings);
     modelAgreementScore = calculateModelAgreement(predictionResult.probability, poissonProb);
   }
 
@@ -349,11 +401,18 @@ function evaluateMarketCandidate({
     supportingEvidence.push(`Model consistency agreement: ${Math.round(modelAgreementScore * 100)}%`);
   }
 
+  const selection = predictionResult.selection || predictionResult.label || (
+    market === 'home_team_under_2_5' || market === 'away_team_under_2_5' ? 'Under 2.5' :
+    market === 'under_4_5_goals' ? 'Under 4.5' :
+    market === 'under_2_5_ht' ? 'Under 2.5 HT' :
+    predictionResult.value || market
+  );
+
   return {
     market,
     label: predictionResult.label || market,
     value: predictionResult.value || market,
-    selection: 'Under 2.5',
+    selection,
     is_eligible: isEligible,
     rejection_reasons: rejectionReasons,
     predictability_score: predictabilityScore,
@@ -366,6 +425,9 @@ function evaluateMarketCandidate({
     supporting_evidence: supportingEvidence,
     color: predictionResult.color || (isEligible ? '#40c057' : '#868e96'),
     expectedGoals: predictionResult.expectedGoals || null,
+    expectedCorners: predictionResult.expectedCorners || null,
+    expectedBookings: predictionResult.expectedBookings || null,
+    line: predictionResult.line || null,
   };
 }
 
@@ -393,20 +455,33 @@ function evaluateFixture({
 }) {
   const cfg = { ...DEFAULT_FILTER_CONFIG, ...(config || {}) };
 
-  // 1. Run historical analysis models for all 4 key football markets
+  // 1. Run historical analysis models for all key football markets
   const homeU45 = analyzeUnder45History(cleanHomeMatches);
   const awayU45 = analyzeUnder45History(cleanAwayMatches);
   const homeHt = analyzeUnder25HtHistory(cleanHomeMatches);
   const awayHt = analyzeUnder25HtHistory(cleanAwayMatches);
   const homeTeamU25 = analyzeTeamUnder25History(cleanHomeMatches, { isHomeContext: true });
   const awayTeamU25 = analyzeTeamUnder25History(cleanAwayMatches, { isHomeContext: false });
+  const homeCorners = analyzeCornersHistory(cleanHomeMatches, { isHomeContext: true });
+  const awayCorners = analyzeCornersHistory(cleanAwayMatches, { isHomeContext: false });
+  const homeBookings = analyzeBookingsHistory(cleanHomeMatches, { isHomeContext: true });
+  const awayBookings = analyzeBookingsHistory(cleanAwayMatches, { isHomeContext: false });
 
   // H2H analysis
   let h2hAnalysis = null;
   if (h2h?.recent && Array.isArray(h2h.recent)) {
     const mapped = h2h.recent.filter(g => g.score && g.score.includes('-')).map(g => {
       const parts = g.score.split('-').map(s => parseInt(s, 10));
-      return { id: g.id, date: g.date, pf: parts[0], pa: parts[1], isHome: true, htScore: null };
+      return {
+        id: g.id,
+        date: g.date,
+        pf: parts[0],
+        pa: parts[1],
+        isHome: true,
+        htScore: null,
+        totalCorners: g.totalCorners ?? null,
+        totalBookings: g.totalBookings ?? null,
+      };
     });
     h2hAnalysis = analyzeH2HHistory(mapped);
   }
@@ -430,6 +505,22 @@ function evaluateFixture({
     h2hAnalysis,
   });
 
+  const predUnderCorners = calculateCornersPrediction({
+    homeCornersAnalysis: homeCorners,
+    awayCornersAnalysis: awayCorners,
+    h2hAnalysis,
+    targetLine: 10.5,
+    marketType: 'under',
+  });
+
+  const predUnderBookings = calculateBookingsPrediction({
+    homeBookingsAnalysis: homeBookings,
+    awayBookingsAnalysis: awayBookings,
+    h2hAnalysis,
+    targetLine: 3.5,
+    marketType: 'under',
+  });
+
   const predU45 = calculateUnder45Prediction({
     homeAnalysis: homeU45,
     awayAnalysis: awayU45,
@@ -446,6 +537,8 @@ function evaluateFixture({
   const candidateMarkets = [
     { market: 'home_team_under_2_5', pred: predHomeU25 },
     { market: 'away_team_under_2_5', pred: predAwayU25 },
+    { market: 'under_corners', pred: predUnderCorners },
+    { market: 'under_bookings', pred: predUnderBookings },
     { market: 'under_4_5_goals', pred: predU45 },
     { market: 'under_2_5_ht', pred: predU25Ht },
   ];

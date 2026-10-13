@@ -96,11 +96,39 @@ function settleMarket(market, selection, homeGoals, awayGoals, extra = {}) {
       return ag <= 2 ? 'won' : 'lost';
 
     // ── Corners ─────────────────────────────────────────
-    case 'under_corners': {
+    case 'under_corners':
+    case 'under_total_corners': {
       const totalCorners = extra.totalCorners;
       const line = extra.cornersLine || 10.5;
       if (!isValidScore(totalCorners)) return null;
       return Number(totalCorners) < line ? 'won' : 'lost';
+    }
+
+    case 'over_corners':
+    case 'over_total_corners': {
+      const totalCorners = extra.totalCorners;
+      const line = extra.cornersLine || 10.5;
+      if (!isValidScore(totalCorners)) return null;
+      return Number(totalCorners) > line ? 'won' : 'lost';
+    }
+
+    // ── Bookings ─────────────────────────────────────────
+    case 'under_bookings':
+    case 'under_total_bookings':
+    case 'under_cards': {
+      const totalBookings = extra.totalBookings;
+      const line = extra.bookingsLine || 3.5;
+      if (!isValidScore(totalBookings)) return null;
+      return Number(totalBookings) < line ? 'won' : 'lost';
+    }
+
+    case 'over_bookings':
+    case 'over_total_bookings':
+    case 'over_cards': {
+      const totalBookings = extra.totalBookings;
+      const line = extra.bookingsLine || 3.5;
+      if (!isValidScore(totalBookings)) return null;
+      return Number(totalBookings) > line ? 'won' : 'lost';
     }
 
     // ── Double chance ───────────────────────────────────
@@ -338,13 +366,15 @@ async function settlePrediction(admin, predictionDoc, scoreData, source, logger)
         htHome: scoreData.htHome,
         htAway: scoreData.htAway,
         totalCorners: scoreData.totalCorners,
-        cornersLine: scoreData.cornersLine,
+        cornersLine: pred.cornersLine || pred.line || scoreData.cornersLine,
+        totalBookings: scoreData.totalBookings,
+        bookingsLine: pred.bookingsLine || pred.line || scoreData.bookingsLine,
       }
     );
     return {
       market: pred.market,
       label: pred.label,
-      outcome: outcome || 'void', // null = unsupported market → void
+      outcome: outcome || 'void', // null = unsupported market or missing stat → void
     };
   });
 
@@ -355,6 +385,8 @@ async function settlePrediction(admin, predictionDoc, scoreData, source, logger)
     actualAwayScore: scoreData.awayGoals,
     actualHtHome: scoreData.htHome ?? null,
     actualHtAway: scoreData.htAway ?? null,
+    actualTotalCorners: scoreData.totalCorners ?? null,
+    actualTotalBookings: scoreData.totalBookings ?? null,
     settlementSource: source || 'unknown',
     settlementVersion: (data.settlementVersion || 0) + 1,
     results,
@@ -581,6 +613,40 @@ async function autoSettleFinishedMatches(admin, fetchMatchSummary, logger) {
       let htHome = null;
       let htAway = null;
       let totalCorners = null;
+      let totalBookings = null;
+
+      // Extract boxscore statistics if available
+      if (summary.boxscore?.teams && Array.isArray(summary.boxscore.teams)) {
+        const teams = summary.boxscore.teams;
+        const findStat = (teamStats, names) => {
+          const s = teamStats?.statistics?.find(i => names.includes(i.name) || names.includes(i.label));
+          return s ? parseFloat(s.displayValue ?? s.value) : null;
+        };
+        const hCorners = findStat(teams[0], ['wonCorners', 'cornerKicks', 'corners']);
+        const aCorners = findStat(teams[1], ['wonCorners', 'cornerKicks', 'corners']);
+        if (isValidScore(hCorners) && isValidScore(aCorners)) {
+          totalCorners = hCorners + aCorners;
+        }
+
+        const hYellow = findStat(teams[0], ['yellowCards', 'yellow_cards']);
+        const aYellow = findStat(teams[1], ['yellowCards', 'yellow_cards']);
+        const hRed = findStat(teams[0], ['redCards', 'red_cards']) ?? 0;
+        const aRed = findStat(teams[1], ['redCards', 'red_cards']) ?? 0;
+        if (isValidScore(hYellow) && isValidScore(aYellow)) {
+          totalBookings = hYellow + aYellow + (isValidScore(hRed) ? hRed : 0) + (isValidScore(aRed) ? aRed : 0);
+        }
+      } else if (summary.stats) {
+        if (isValidScore(summary.stats.totalCorners)) {
+          totalCorners = Number(summary.stats.totalCorners);
+        } else if (isValidScore(summary.stats.homeCorners) && isValidScore(summary.stats.awayCorners)) {
+          totalCorners = Number(summary.stats.homeCorners) + Number(summary.stats.awayCorners);
+        }
+        if (isValidScore(summary.stats.totalBookings)) {
+          totalBookings = Number(summary.stats.totalBookings);
+        } else if (isValidScore(summary.stats.homeYellowCards) && isValidScore(summary.stats.awayYellowCards)) {
+          totalBookings = Number(summary.stats.homeYellowCards) + Number(summary.stats.awayYellowCards) + (Number(summary.stats.homeRedCards) || 0) + (Number(summary.stats.awayRedCards) || 0);
+        }
+      }
 
       // Format 1: ESPN summary { header: { competitions: [{ status, competitors }] } }
       const competition = summary.header?.competitions?.[0] || summary.competitions?.[0];
@@ -643,6 +709,7 @@ async function autoSettleFinishedMatches(admin, fetchMatchSummary, logger) {
             htHome,
             htAway,
             totalCorners,
+            totalBookings,
           }, 'espn-auto', logger);
           if (res) {
             settledCount++;

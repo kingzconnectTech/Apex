@@ -17,10 +17,14 @@ const {
   analyzeUnder45History,
   analyzeUnder25HtHistory,
   analyzeTeamUnder25History,
+  analyzeCornersHistory,
+  analyzeBookingsHistory,
   analyzeH2HHistory,
   calculateUnder45Prediction,
   calculateUnder25HtPrediction,
   calculateTeamUnder25Prediction,
+  calculateCornersPrediction,
+  calculateBookingsPrediction,
 } = require('./services/footballHistoricalAnalysis');
 const {
   settleMarket,
@@ -132,6 +136,9 @@ const FOOTBALL_MARKET_PRIORITY = [
   'home_team_under_2_5',
   'away_team_under_2_5',
   'under_corners',
+  'over_corners',
+  'under_bookings',
+  'over_bookings',
   'under_1_5_ht',
 ];
 
@@ -1633,6 +1640,40 @@ function analyzeMatchServer({
         const existingIdx = footballPredictions.findIndex(p => p.market === 'away_team_under_2_5');
         if (existingIdx !== -1) footballPredictions.splice(existingIdx, 1);
         footballPredictions.push(historicalAwayU25);
+      }
+
+      // 9. Calculate Over/Under Corners prediction from dedicated corners engine
+      const homeCornersAnalysis = analyzeCornersHistory(cleanHomeMatches, { isHomeContext: true });
+      const awayCornersAnalysis = analyzeCornersHistory(cleanAwayMatches, { isHomeContext: false });
+      const statisticalCorners = calculateCornersPrediction({
+        homeCornersAnalysis,
+        awayCornersAnalysis,
+        h2hAnalysis: h2hHistoricalAnalysis,
+        targetLine: FOOTBALL_UNDER_CORNERS_LINE,
+        marketType: 'under',
+      });
+
+      if (statisticalCorners) {
+        const existingIdx = footballPredictions.findIndex(p => p.market === 'under_corners');
+        if (existingIdx !== -1) footballPredictions.splice(existingIdx, 1);
+        footballPredictions.push(statisticalCorners);
+      }
+
+      // 10. Calculate Over/Under Bookings prediction from dedicated bookings engine
+      const homeBookingsAnalysis = analyzeBookingsHistory(cleanHomeMatches, { isHomeContext: true });
+      const awayBookingsAnalysis = analyzeBookingsHistory(cleanAwayMatches, { isHomeContext: false });
+      const statisticalBookings = calculateBookingsPrediction({
+        homeBookingsAnalysis,
+        awayBookingsAnalysis,
+        h2hAnalysis: h2hHistoricalAnalysis,
+        targetLine: 3.5,
+        marketType: 'under',
+      });
+
+      if (statisticalBookings) {
+        const existingIdx = footballPredictions.findIndex(p => p.market === 'under_bookings');
+        if (existingIdx !== -1) footballPredictions.splice(existingIdx, 1);
+        footballPredictions.push(statisticalBookings);
       }
     } catch (histErr) {
       // Historical analysis errors should never crash the prediction — log and continue

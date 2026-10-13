@@ -374,12 +374,27 @@ function normalizeTeamStatsPitchAPI(rawStats, teamId = null) {
   const xgItem = findStat('expected_goals');
   const shotsItem = findStat('shots') || findStat('total_shots');
   const cornersItem = findStat('corners') || findStat('corner_kicks');
+  const yellowCardsItem = findStat('yellow_cards') || findStat('yellow_card') || findStat('yellowcards');
+  const redCardsItem = findStat('red_cards') || findStat('red_card') || findStat('redcards');
+  const foulsItem = findStat('fouls') || findStat('fouls_committed');
 
   const parseVal = (val) => {
     if (val == null) return null;
     const num = parseFloat(val);
     return isNaN(num) ? null : num;
   };
+
+  const homeCorners = parseVal(cornersItem?.home);
+  const awayCorners = parseVal(cornersItem?.away);
+  const totalCorners = (homeCorners != null && awayCorners != null) ? homeCorners + awayCorners : null;
+
+  const homeYellow = parseVal(yellowCardsItem?.home);
+  const awayYellow = parseVal(yellowCardsItem?.away);
+  const homeRed = parseVal(redCardsItem?.home);
+  const awayRed = parseVal(redCardsItem?.away);
+  const totalYellow = (homeYellow != null && awayYellow != null) ? homeYellow + awayYellow : null;
+  const totalRed = (homeRed != null && awayRed != null) ? homeRed + awayRed : null;
+  const totalBookings = (totalYellow != null) ? totalYellow + (totalRed || 0) : null;
 
   return {
     source: PROVIDERS.PITCHAPI,
@@ -389,8 +404,18 @@ function normalizeTeamStatsPitchAPI(rawStats, teamId = null) {
       awayXG: parseVal(xgItem?.away),
       homeShots: parseVal(shotsItem?.home),
       awayShots: parseVal(shotsItem?.away),
-      homeCorners: parseVal(cornersItem?.home),
-      awayCorners: parseVal(cornersItem?.away),
+      homeCorners,
+      awayCorners,
+      totalCorners,
+      homeYellowCards: homeYellow,
+      awayYellowCards: awayYellow,
+      homeRedCards: homeRed,
+      awayRedCards: awayRed,
+      totalYellowCards: totalYellow,
+      totalRedCards: totalRed,
+      totalBookings,
+      homeFouls: parseVal(foulsItem?.home),
+      awayFouls: parseVal(foulsItem?.away),
     },
     raw: rawStats,
   };

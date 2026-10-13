@@ -158,6 +158,9 @@ describe('Football Prediction Ranking Logic', () => {
       'home_team_under_2_5',
       'away_team_under_2_5',
       'under_corners',
+      'over_corners',
+      'under_bookings',
+      'over_bookings',
       'under_1_5_ht',
     ]);
   });

@@ -19,7 +19,32 @@ const BASELINE_PRIORS = {
   UNDER_2_5_HT: 0.90,        // ~90% of first halves finish <= 2 goals
   HOME_TEAM_UNDER_2_5: 0.84, // ~84% of matches home team scores <= 2 goals
   AWAY_TEAM_UNDER_2_5: 0.88, // ~88% of matches away team scores <= 2 goals
+  UNDER_10_5_CORNERS: 0.62,  // ~62% of matches finish under 10.5 total corners
+  UNDER_9_5_CORNERS: 0.50,   // ~50% of matches finish under 9.5 total corners
+  UNDER_8_5_CORNERS: 0.38,   // ~38% of matches finish under 8.5 total corners
+  UNDER_3_5_BOOKINGS: 0.42,  // ~42% of matches finish under 3.5 total bookings
+  UNDER_4_5_BOOKINGS: 0.65,  // ~65% of matches finish under 4.5 total bookings
+  DEFAULT_MATCH_CORNERS: 9.8,// European league average ~9.8 corners per match (~5.4 home, ~4.4 away)
+  DEFAULT_MATCH_BOOKINGS: 4.2,// Global soccer average ~4.2 bookings per match (~2.0 home, ~2.2 away)
 };
+
+/** Documented booking convention: Total Cards issued (Yellow Cards + Red Cards) */
+const BOOKING_CONVENTION = 'TOTAL_CARDS';
+const DEFAULT_CORNER_LINES = [7.5, 8.5, 9.5, 10.5, 11.5];
+const DEFAULT_BOOKING_LINES = [2.5, 3.5, 4.5, 5.5, 6.5];
+
+/**
+ * Median calculation helper
+ * @param {Array<number>} arr
+ * @returns {number|null}
+ */
+function calculateMedian(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const nums = arr.map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
+  if (nums.length === 0) return null;
+  const mid = Math.floor(nums.length / 2);
+  return nums.length % 2 !== 0 ? nums[mid] : Number(((nums[mid - 1] + nums[mid]) / 2).toFixed(2));
+}
 
 /**
  * Factorial helper
@@ -114,11 +139,61 @@ function validateAndFilterHistoricalMatches(matches, { kickoffDate = null } = {}
     if (seenSignatures.has(sig)) continue;
     seenSignatures.add(sig);
 
+    // Extract corners if present as numbers, keeping null if absent
+    const corners = (m.corners !== undefined && m.corners !== null && !isNaN(Number(m.corners)))
+      ? Number(m.corners)
+      : (m.stats?.corners !== undefined && m.stats?.corners !== null && !isNaN(Number(m.stats.corners))
+        ? Number(m.stats.corners)
+        : null);
+
+    const cornersConceded = (m.cornersConceded !== undefined && m.cornersConceded !== null && !isNaN(Number(m.cornersConceded)))
+      ? Number(m.cornersConceded)
+      : (m.oppCorners !== undefined && m.oppCorners !== null && !isNaN(Number(m.oppCorners))
+        ? Number(m.oppCorners)
+        : null);
+
+    const totalCorners = (corners !== null && cornersConceded !== null)
+      ? corners + cornersConceded
+      : (m.totalCorners !== undefined && m.totalCorners !== null && !isNaN(Number(m.totalCorners))
+        ? Number(m.totalCorners)
+        : null);
+
+    // Cards / Bookings
+    const yellowCards = (m.yellowCards !== undefined && m.yellowCards !== null && !isNaN(Number(m.yellowCards)))
+      ? Number(m.yellowCards)
+      : null;
+    const redCards = (m.redCards !== undefined && m.redCards !== null && !isNaN(Number(m.redCards)))
+      ? Number(m.redCards)
+      : null;
+    const opponentYellowCards = (m.opponentYellowCards !== undefined && m.opponentYellowCards !== null && !isNaN(Number(m.opponentYellowCards)))
+      ? Number(m.opponentYellowCards)
+      : null;
+    const opponentRedCards = (m.opponentRedCards !== undefined && m.opponentRedCards !== null && !isNaN(Number(m.opponentRedCards)))
+      ? Number(m.opponentRedCards)
+      : null;
+
+    let totalBookings = null;
+    if (m.totalBookings !== undefined && m.totalBookings !== null && !isNaN(Number(m.totalBookings))) {
+      totalBookings = Number(m.totalBookings);
+    } else if (yellowCards !== null && opponentYellowCards !== null) {
+      totalBookings = yellowCards + opponentYellowCards + (redCards || 0) + (opponentRedCards || 0);
+    } else if (yellowCards !== null && redCards !== null) {
+      totalBookings = yellowCards + redCards;
+    }
+
     valid.push({
       ...m,
       pf,
       pa,
       totalGoals: pf + pa,
+      corners,
+      cornersConceded,
+      totalCorners,
+      yellowCards,
+      redCards,
+      opponentYellowCards,
+      opponentRedCards,
+      totalBookings,
       date: m.date ? new Date(m.date).toISOString() : null,
       timestamp: m.date ? new Date(m.date).getTime() : 0,
     });
@@ -476,6 +551,9 @@ function analyzeTeamUnder25History(matches, { isHomeContext = null } = {}) {
   let scoredSum = 0;
   let concededSum = 0;
   const goalsScoredDistribution = { 0: 0, 1: 0, 2: 0, '3+': 0 };
+  const goalsConcededDistribution = { 0: 0, 1: 0, 2: 0, '3+': 0 };
+  const pfArr = [];
+  const paArr = [];
 
   let validMatchesCount = 0;
   matches.forEach((m) => {
@@ -486,6 +564,8 @@ function analyzeTeamUnder25History(matches, { isHomeContext = null } = {}) {
     validMatchesCount++;
     scoredSum += pf;
     concededSum += pa;
+    pfArr.push(pf);
+    paArr.push(pa);
 
     if (pf <= 2) {
       under25Count++;
@@ -497,8 +577,11 @@ function analyzeTeamUnder25History(matches, { isHomeContext = null } = {}) {
       under25ConcededCount++;
     }
 
-    const key = pf >= 3 ? '3+' : String(pf);
-    goalsScoredDistribution[key] = (goalsScoredDistribution[key] || 0) + 1;
+    const sKey = pf >= 3 ? '3+' : String(pf);
+    goalsScoredDistribution[sKey] = (goalsScoredDistribution[sKey] || 0) + 1;
+
+    const cKey = pa >= 3 ? '3+' : String(pa);
+    goalsConcededDistribution[cKey] = (goalsConcededDistribution[cKey] || 0) + 1;
   });
 
   const sampleSize = validMatchesCount || totalMatches;
@@ -507,8 +590,24 @@ function analyzeTeamUnder25History(matches, { isHomeContext = null } = {}) {
   const under25ConcededRate = sampleSize > 0 ? under25ConcededCount / sampleSize : 0;
   const avgGoalsScored = sampleSize > 0 ? scoredSum / sampleSize : 0;
   const avgGoalsConceded = sampleSize > 0 ? concededSum / sampleSize : 0;
+  const medianGoalsScored = calculateMedian(pfArr);
+  const medianGoalsConceded = calculateMedian(paArr);
 
-  // Recent attacking trend: compare last 3 matches goals scored vs older matches
+  const goalsScoredPercentages = {
+    0: sampleSize > 0 ? Number(((goalsScoredDistribution[0] || 0) / sampleSize).toFixed(4)) : 0,
+    1: sampleSize > 0 ? Number(((goalsScoredDistribution[1] || 0) / sampleSize).toFixed(4)) : 0,
+    2: sampleSize > 0 ? Number(((goalsScoredDistribution[2] || 0) / sampleSize).toFixed(4)) : 0,
+    '3+': sampleSize > 0 ? Number(((goalsScoredDistribution['3+'] || 0) / sampleSize).toFixed(4)) : 0,
+  };
+
+  const goalsConcededPercentages = {
+    0: sampleSize > 0 ? Number(((goalsConcededDistribution[0] || 0) / sampleSize).toFixed(4)) : 0,
+    1: sampleSize > 0 ? Number(((goalsConcededDistribution[1] || 0) / sampleSize).toFixed(4)) : 0,
+    2: sampleSize > 0 ? Number(((goalsConcededDistribution[2] || 0) / sampleSize).toFixed(4)) : 0,
+    '3+': sampleSize > 0 ? Number(((goalsConcededDistribution['3+'] || 0) / sampleSize).toFixed(4)) : 0,
+  };
+
+  // Recent attacking trend: compare last 3-5 matches goals scored vs older matches
   let recentTrend = { direction: 'stable', diff: 0, last3ScoredAvg: null };
   if (sampleSize >= 4) {
     const last3 = matches.slice(0, 3);
@@ -558,13 +657,18 @@ function analyzeTeamUnder25History(matches, { isHomeContext = null } = {}) {
     under25ConcededCount,
     avgGoalsScored: Number(avgGoalsScored.toFixed(2)),
     avgGoalsConceded: Number(avgGoalsConceded.toFixed(2)),
+    medianGoalsScored,
+    medianGoalsConceded,
+    goalsScoredDistribution,
+    goalsScoredPercentages,
+    goalsConcededDistribution,
+    goalsConcededPercentages,
     recentTrend,
     homeAwaySplit: {
       home: homeSplit,
       away: awaySplit,
       relevant: relevantSplit,
     },
-    goalsScoredDistribution,
   };
 }
 
@@ -664,13 +768,67 @@ function analyzeH2HHistory(h2hMatches) {
     };
   }
 
+  // --- Corners H2H ---
+  const validCorners = h2hMatches.filter((m) => {
+    const tot = m.totalCorners !== undefined && m.totalCorners !== null
+      ? Number(m.totalCorners)
+      : (m.homeCorners != null && m.awayCorners != null
+        ? Number(m.homeCorners) + Number(m.awayCorners)
+        : m.stats?.corners != null
+          ? Number(m.stats.corners)
+          : NaN);
+    return !isNaN(tot);
+  });
+  let h2hCorners = null;
+  if (validCorners.length > 0) {
+    let totCornersSum = 0;
+    validCorners.forEach(m => {
+      const tot = m.totalCorners != null
+        ? Number(m.totalCorners)
+        : (m.homeCorners != null && m.awayCorners != null
+          ? Number(m.homeCorners) + Number(m.awayCorners)
+          : Number(m.stats.corners));
+      totCornersSum += tot;
+    });
+    h2hCorners = {
+      sampleSize: validCorners.length,
+      avgCorners: Number((totCornersSum / validCorners.length).toFixed(2)),
+    };
+  }
+
+  // --- Bookings H2H ---
+  const validBookings = h2hMatches.filter((m) => {
+    const tot = m.totalBookings !== undefined && m.totalBookings !== null
+      ? Number(m.totalBookings)
+      : (m.yellowCards != null && m.opponentYellowCards != null
+        ? Number(m.yellowCards) + Number(m.opponentYellowCards)
+        : NaN);
+    return !isNaN(tot);
+  });
+  let h2hBookings = null;
+  if (validBookings.length > 0) {
+    let totBookingsSum = 0;
+    validBookings.forEach(m => {
+      const tot = m.totalBookings != null
+        ? Number(m.totalBookings)
+        : Number(m.yellowCards) + Number(m.opponentYellowCards);
+      totBookingsSum += tot;
+    });
+    h2hBookings = {
+      sampleSize: validBookings.length,
+      avgBookings: Number((totBookingsSum / validBookings.length).toFixed(2)),
+    };
+  }
+
   return {
-    valid: validFT.length > 0 || validHT.length > 0,
+    valid: validFT.length > 0 || validHT.length > 0 || validCorners.length > 0 || validBookings.length > 0,
     sampleSize: validFT.length,
     under45: u45,
     under25Ht: u25Ht,
     homeUnder25,
     awayUnder25,
+    corners: h2hCorners,
+    bookings: h2hBookings,
   };
 }
 
@@ -1087,6 +1245,12 @@ function calculateTeamUnder25Prediction({
     color: confidence >= 70 ? '#40c057' : confidence >= 60 ? '#ffa94d' : '#4dabf7',
     factors,
     expectedGoals: Number(lambda.toFixed(2)),
+    probabilities: {
+      zeroGoals: Number(poissonPmf(0, lambda).toFixed(4)),
+      oneGoal: Number(poissonPmf(1, lambda).toFixed(4)),
+      twoGoals: Number(poissonPmf(2, lambda).toFixed(4)),
+      threePlusGoals: Number((1 - poissonCdf(2, lambda)).toFixed(4)),
+    },
   };
 }
 
@@ -1111,6 +1275,551 @@ function settleTeamUnder25(homeGoals, awayGoals) {
 }
 
 /**
+ * 6c. Corners History Analysis
+ *
+ * Analyzes historical match corners won, conceded, and total corners per team.
+ * Preserves missing values as null (never substitutes zero).
+ *
+ * @param {Array} matches - Clean historical matches
+ * @param {Object} options
+ * @param {boolean} [options.isHomeContext]
+ * @param {Array<number>} [options.lines] - Half-line thresholds e.g. [7.5, 8.5, 9.5, 10.5, 11.5]
+ * @returns {Object} Corners history analysis
+ */
+function analyzeCornersHistory(matches, { isHomeContext = null, lines = DEFAULT_CORNER_LINES } = {}) {
+  const list = Array.isArray(matches) ? matches : [];
+  const validMatches = list.filter(m => m && (typeof m.corners === 'number' || typeof m.totalCorners === 'number'));
+
+  if (validMatches.length === 0) {
+    return {
+      valid: false,
+      sampleSize: 0,
+      avgCornersWon: null,
+      medianCornersWon: null,
+      avgCornersConceded: null,
+      medianCornersConceded: null,
+      avgTotalCorners: null,
+      medianTotalCorners: null,
+      lineFrequencies: {},
+      homeAwaySplit: null,
+      recentTrend: null,
+    };
+  }
+
+  const sampleSize = validMatches.length;
+  const cornersWonArr = validMatches.filter(m => typeof m.corners === 'number').map(m => m.corners);
+  const cornersConcededArr = validMatches.filter(m => typeof m.cornersConceded === 'number').map(m => m.cornersConceded);
+  const totalCornersArr = validMatches.filter(m => typeof m.totalCorners === 'number').map(m => m.totalCorners);
+
+  const avgCornersWon = cornersWonArr.length > 0 ? cornersWonArr.reduce((s, c) => s + c, 0) / cornersWonArr.length : null;
+  const medianCornersWon = calculateMedian(cornersWonArr);
+
+  const avgCornersConceded = cornersConcededArr.length > 0 ? cornersConcededArr.reduce((s, c) => s + c, 0) / cornersConcededArr.length : null;
+  const medianCornersConceded = calculateMedian(cornersConcededArr);
+
+  const avgTotalCorners = totalCornersArr.length > 0
+    ? totalCornersArr.reduce((s, c) => s + c, 0) / totalCornersArr.length
+    : (avgCornersWon != null && avgCornersConceded != null ? avgCornersWon + avgCornersConceded : null);
+  const medianTotalCorners = calculateMedian(totalCornersArr);
+
+  // Line frequencies across configurable thresholds
+  const lineFrequencies = {};
+  lines.forEach(line => {
+    if (totalCornersArr.length > 0) {
+      const underCount = totalCornersArr.filter(t => t < line).length;
+      lineFrequencies[line] = {
+        underRate: Number((underCount / totalCornersArr.length).toFixed(4)),
+        overRate: Number((1 - (underCount / totalCornersArr.length)).toFixed(4)),
+        underCount,
+        overCount: totalCornersArr.length - underCount,
+        sampleSize: totalCornersArr.length,
+      };
+    }
+  });
+
+  // Home / Away venue split
+  const homeMatches = validMatches.filter(m => m.isHome === true);
+  const awayMatches = validMatches.filter(m => m.isHome === false);
+
+  const calcCornerSplit = (subList) => {
+    if (!subList || subList.length === 0) return null;
+    const won = subList.filter(m => typeof m.corners === 'number').map(m => m.corners);
+    const conc = subList.filter(m => typeof m.cornersConceded === 'number').map(m => m.cornersConceded);
+    const tot = subList.filter(m => typeof m.totalCorners === 'number').map(m => m.totalCorners);
+    return {
+      sampleSize: subList.length,
+      avgCornersWon: won.length > 0 ? Number((won.reduce((s, c) => s + c, 0) / won.length).toFixed(2)) : null,
+      avgCornersConceded: conc.length > 0 ? Number((conc.reduce((s, c) => s + c, 0) / conc.length).toFixed(2)) : null,
+      avgTotalCorners: tot.length > 0 ? Number((tot.reduce((s, c) => s + c, 0) / tot.length).toFixed(2)) : null,
+    };
+  };
+
+  const homeSplit = calcCornerSplit(homeMatches);
+  const awaySplit = calcCornerSplit(awayMatches);
+  const relevantSplit = isHomeContext === true ? homeSplit : isHomeContext === false ? awaySplit : null;
+
+  // Recent form trend
+  let recentTrend = { direction: 'stable', diff: 0 };
+  if (totalCornersArr.length >= 4) {
+    const last3 = totalCornersArr.slice(0, 3);
+    const older = totalCornersArr.slice(3);
+    const last3Avg = last3.reduce((s, c) => s + c, 0) / 3;
+    const olderAvg = older.reduce((s, c) => s + c, 0) / older.length;
+    const diff = last3Avg - olderAvg;
+    recentTrend = {
+      direction: diff > 1.5 ? 'more_corners' : diff < -1.5 ? 'fewer_corners' : 'stable',
+      diff: Number(diff.toFixed(2)),
+      last3Avg: Number(last3Avg.toFixed(2)),
+    };
+  }
+
+  return {
+    valid: true,
+    sampleSize,
+    avgCornersWon: avgCornersWon != null ? Number(avgCornersWon.toFixed(2)) : null,
+    medianCornersWon,
+    avgCornersConceded: avgCornersConceded != null ? Number(avgCornersConceded.toFixed(2)) : null,
+    medianCornersConceded,
+    avgTotalCorners: avgTotalCorners != null ? Number(avgTotalCorners.toFixed(2)) : null,
+    medianTotalCorners,
+    lineFrequencies,
+    homeAwaySplit: {
+      home: homeSplit,
+      away: awaySplit,
+      relevant: relevantSplit,
+    },
+    recentTrend,
+  };
+}
+
+/**
+ * 6d. Expected Corners Prediction Engine
+ *
+ * Dedicated statistical count model for Total Match Corners:
+ *   - Blends home attacking corners won + away defensive corners conceded
+ *   - Blends away attacking corners won + home defensive corners conceded
+ *   - Shrinkage towards competition baseline (~5.4 home, ~4.4 away = 9.8 total)
+ *   - Poisson count model CDF for configurable half-lines
+ *   - Strictly complementary Over/Under probabilities
+ *
+ * @param {Object} params
+ * @param {Object} params.homeCornersAnalysis
+ * @param {Object} params.awayCornersAnalysis
+ * @param {Object} [params.h2hAnalysis]
+ * @param {number} [params.targetLine=10.5]
+ * @param {'under'|'over'} [params.marketType='under']
+ * @param {Array<number>} [params.lines]
+ * @returns {Object|null} Corners prediction
+ */
+function calculateCornersPrediction({
+  homeCornersAnalysis,
+  awayCornersAnalysis,
+  h2hAnalysis = null,
+  targetLine = 10.5,
+  marketType = 'under',
+  lines = DEFAULT_CORNER_LINES,
+}) {
+  const homeValid = homeCornersAnalysis?.valid && homeCornersAnalysis.sampleSize >= 2;
+  const awayValid = awayCornersAnalysis?.valid && awayCornersAnalysis.sampleSize >= 2;
+
+  // Abstain if neither team has verified corner statistics (never fabricate!)
+  if (!homeValid && !awayValid) {
+    return null;
+  }
+
+  const factors = [];
+  const compHomeBaseline = 5.4;
+  const compAwayBaseline = 4.4;
+
+  // 1. Home expected corners
+  const hWon = homeCornersAnalysis?.homeAwaySplit?.relevant?.avgCornersWon ?? homeCornersAnalysis?.avgCornersWon ?? compHomeBaseline;
+  const aConc = awayCornersAnalysis?.homeAwaySplit?.relevant?.avgCornersConceded ?? awayCornersAnalysis?.avgCornersConceded ?? compHomeBaseline;
+  const homeSample = homeCornersAnalysis?.sampleSize || 0;
+  const hShrinkage = Math.min(0.8, homeSample / (homeSample + 4));
+  const rawLambdaHome = (hWon + aConc) / 2;
+  const lambdaHome = (rawLambdaHome * hShrinkage) + (compHomeBaseline * (1 - hShrinkage));
+
+  // 2. Away expected corners
+  const aWon = awayCornersAnalysis?.homeAwaySplit?.relevant?.avgCornersWon ?? awayCornersAnalysis?.avgCornersWon ?? compAwayBaseline;
+  const hConc = homeCornersAnalysis?.homeAwaySplit?.relevant?.avgCornersConceded ?? homeCornersAnalysis?.avgCornersConceded ?? compAwayBaseline;
+  const awaySample = awayCornersAnalysis?.sampleSize || 0;
+  const aShrinkage = Math.min(0.8, awaySample / (awaySample + 4));
+  const rawLambdaAway = (aWon + hConc) / 2;
+  const lambdaAway = (rawLambdaAway * aShrinkage) + (compAwayBaseline * (1 - aShrinkage));
+
+  let lambdaCorners = lambdaHome + lambdaAway;
+
+  // 3. H2H corner statistics adjustment
+  let h2hWeight = 0;
+  if (h2hAnalysis?.corners && h2hAnalysis.corners.sampleSize >= 2) {
+    const h2h = h2hAnalysis.corners;
+    h2hWeight = Math.min(0.20, h2h.sampleSize * 0.04);
+    lambdaCorners = lambdaCorners * (1 - h2hWeight) + (h2h.avgCorners * h2hWeight);
+    factors.push({
+      label: `H2H Avg Corners: ${h2h.avgCorners.toFixed(1)} (${h2h.sampleSize} matches)`,
+      side: 'neutral',
+      type: 'info',
+    });
+  }
+
+  if (homeValid) {
+    factors.push({
+      label: `Home Corners: ${homeCornersAnalysis.avgCornersWon} won, ${homeCornersAnalysis.avgCornersConceded ?? 'N/A'} conceded`,
+      side: 'home',
+      type: 'info',
+    });
+  }
+  if (awayValid) {
+    factors.push({
+      label: `Away Corners: ${awayCornersAnalysis.avgCornersWon} won, ${awayCornersAnalysis.avgCornersConceded ?? 'N/A'} conceded`,
+      side: 'away',
+      type: 'info',
+    });
+  }
+
+  // 4. Calculate probabilities for each configurable line from Poisson count distribution
+  const allLineProbabilities = {};
+  lines.forEach(l => {
+    const kThreshold = Math.floor(l); // for 10.5, under means <= 10
+    const pUnder = poissonCdf(kThreshold, lambdaCorners);
+    const pOver = 1 - pUnder;
+    allLineProbabilities[l] = {
+      line: l,
+      underProbability: Number(pUnder.toFixed(4)),
+      overProbability: Number(pOver.toFixed(4)),
+    };
+  });
+
+  const chosenLine = typeof targetLine === 'number' ? targetLine : 10.5;
+  const lineStats = allLineProbabilities[chosenLine] || allLineProbabilities[10.5];
+  const pUnder = lineStats.underProbability;
+  const pOver = lineStats.overProbability;
+
+  // Empirical hit rate
+  let empiricalUnderRate = null;
+  const hFreq = homeCornersAnalysis?.lineFrequencies?.[chosenLine];
+  const aFreq = awayCornersAnalysis?.lineFrequencies?.[chosenLine];
+  if (hFreq && aFreq) {
+    empiricalUnderRate = (hFreq.underRate + aFreq.underRate) / 2;
+  } else if (hFreq) {
+    empiricalUnderRate = hFreq.underRate;
+  } else if (aFreq) {
+    empiricalUnderRate = aFreq.underRate;
+  }
+
+  const rawProb = marketType === 'over' ? pOver : pUnder;
+  let blendedProb = rawProb;
+  if (empiricalUnderRate !== null) {
+    const empTarget = marketType === 'over' ? (1 - empiricalUnderRate) : empiricalUnderRate;
+    blendedProb = (0.55 * rawProb) + (0.45 * empTarget);
+  }
+
+  const calibratedProb = Math.min(Math.max(blendedProb, 0.30), 0.95);
+  const confidence = Math.round(calibratedProb * 100);
+
+  factors.push({
+    label: `Expected Corners: ${lambdaCorners.toFixed(1)} (Home: ${lambdaHome.toFixed(1)}, Away: ${lambdaAway.toFixed(1)})`,
+    side: 'neutral',
+    type: 'success',
+  });
+
+  const market = marketType === 'over' ? 'over_corners' : 'under_corners';
+  const label = `${marketType === 'over' ? 'Over' : 'Under'} ${chosenLine} Corners`;
+  const value = `${marketType === 'over' ? 'Over' : 'Under'} ${chosenLine} Total Corners`;
+
+  return {
+    market,
+    label,
+    value,
+    line: chosenLine,
+    marketType,
+    confidence,
+    probability: Number(calibratedProb.toFixed(4)),
+    complementaryProbability: Number((1 - calibratedProb).toFixed(4)),
+    expectedCorners: Number(lambdaCorners.toFixed(2)),
+    expectedHomeCorners: Number(lambdaHome.toFixed(2)),
+    expectedAwayCorners: Number(lambdaAway.toFixed(2)),
+    allLineProbabilities,
+    factors,
+    color: confidence >= 70 ? '#40c057' : confidence >= 60 ? '#ffa94d' : '#4dabf7',
+  };
+}
+
+/**
+ * Settlement evaluation for Corners
+ *
+ * @param {number} totalCorners
+ * @param {number} [line=10.5]
+ * @param {'under'|'over'} [marketType='under']
+ * @returns {'WIN'|'LOSS'|null}
+ */
+function settleCorners(totalCorners, line = 10.5, marketType = 'under') {
+  if (totalCorners === undefined || totalCorners === null || isNaN(Number(totalCorners))) {
+    return null;
+  }
+  const corners = Number(totalCorners);
+  if (marketType === 'over') {
+    return corners > line ? 'WIN' : 'LOSS';
+  }
+  return corners < line ? 'WIN' : 'LOSS';
+}
+
+/**
+ * 6e. Total Bookings History Analysis
+ *
+ * Tracks yellow cards, red cards, opponent cards, and total bookings.
+ * Follows documented convention: Total Bookings = Total Cards (Yellow Cards + Red Cards).
+ *
+ * @param {Array} matches - Clean historical matches
+ * @param {Object} options
+ * @param {boolean} [options.isHomeContext]
+ * @param {Array<number>} [options.lines] - Half-line thresholds e.g. [2.5, 3.5, 4.5, 5.5, 6.5]
+ * @returns {Object} Bookings history analysis
+ */
+function analyzeBookingsHistory(matches, { isHomeContext = null, lines = DEFAULT_BOOKING_LINES } = {}) {
+  const list = Array.isArray(matches) ? matches : [];
+  const validMatches = list.filter(m => m && (typeof m.yellowCards === 'number' || typeof m.totalBookings === 'number'));
+
+  if (validMatches.length === 0) {
+    return {
+      valid: false,
+      sampleSize: 0,
+      avgYellowCards: null,
+      medianYellowCards: null,
+      avgRedCards: null,
+      avgTotalBookings: null,
+      medianTotalBookings: null,
+      avgOpponentBookings: null,
+      lineFrequencies: {},
+      homeAwaySplit: null,
+      recentTrend: null,
+    };
+  }
+
+  const sampleSize = validMatches.length;
+  const yellowArr = validMatches.filter(m => typeof m.yellowCards === 'number').map(m => m.yellowCards);
+  const redArr = validMatches.filter(m => typeof m.redCards === 'number').map(m => m.redCards);
+  const oppBookingsArr = validMatches.filter(m => typeof m.opponentYellowCards === 'number').map(m => m.opponentYellowCards + (m.opponentRedCards || 0));
+  const totalBookingsArr = validMatches.filter(m => typeof m.totalBookings === 'number').map(m => m.totalBookings);
+
+  const avgYellowCards = yellowArr.length > 0 ? yellowArr.reduce((s, c) => s + c, 0) / yellowArr.length : null;
+  const medianYellowCards = calculateMedian(yellowArr);
+
+  const avgRedCards = redArr.length > 0 ? redArr.reduce((s, c) => s + c, 0) / redArr.length : null;
+
+  const avgTotalBookings = totalBookingsArr.length > 0
+    ? totalBookingsArr.reduce((s, c) => s + c, 0) / totalBookingsArr.length
+    : (avgYellowCards != null ? avgYellowCards + (avgRedCards || 0) : null);
+  const medianTotalBookings = calculateMedian(totalBookingsArr);
+
+  const avgOpponentBookings = oppBookingsArr.length > 0 ? oppBookingsArr.reduce((s, c) => s + c, 0) / oppBookingsArr.length : null;
+
+  // Line frequencies
+  const lineFrequencies = {};
+  lines.forEach(line => {
+    if (totalBookingsArr.length > 0) {
+      const underCount = totalBookingsArr.filter(t => t < line).length;
+      lineFrequencies[line] = {
+        underRate: Number((underCount / totalBookingsArr.length).toFixed(4)),
+        overRate: Number((1 - (underCount / totalBookingsArr.length)).toFixed(4)),
+        underCount,
+        overCount: totalBookingsArr.length - underCount,
+        sampleSize: totalBookingsArr.length,
+      };
+    }
+  });
+
+  // Home / Away venue split
+  const homeMatches = validMatches.filter(m => m.isHome === true);
+  const awayMatches = validMatches.filter(m => m.isHome === false);
+
+  const calcBookingsSplit = (subList) => {
+    if (!subList || subList.length === 0) return null;
+    const tot = subList.filter(m => typeof m.totalBookings === 'number').map(m => m.totalBookings);
+    const yellows = subList.filter(m => typeof m.yellowCards === 'number').map(m => m.yellowCards);
+    return {
+      sampleSize: subList.length,
+      avgYellowCards: yellows.length > 0 ? Number((yellows.reduce((s, c) => s + c, 0) / yellows.length).toFixed(2)) : null,
+      avgTotalBookings: tot.length > 0 ? Number((tot.reduce((s, c) => s + c, 0) / tot.length).toFixed(2)) : null,
+    };
+  };
+
+  const homeSplit = calcBookingsSplit(homeMatches);
+  const awaySplit = calcBookingsSplit(awayMatches);
+  const relevantSplit = isHomeContext === true ? homeSplit : isHomeContext === false ? awaySplit : null;
+
+  return {
+    valid: true,
+    sampleSize,
+    avgYellowCards: avgYellowCards != null ? Number(avgYellowCards.toFixed(2)) : null,
+    medianYellowCards,
+    avgRedCards: avgRedCards != null ? Number(avgRedCards.toFixed(2)) : null,
+    avgTotalBookings: avgTotalBookings != null ? Number(avgTotalBookings.toFixed(2)) : null,
+    medianTotalBookings,
+    avgOpponentBookings: avgOpponentBookings != null ? Number(avgOpponentBookings.toFixed(2)) : null,
+    lineFrequencies,
+    homeAwaySplit: {
+      home: homeSplit,
+      away: awaySplit,
+      relevant: relevantSplit,
+    },
+  };
+}
+
+/**
+ * 6f. Expected Bookings Prediction Engine
+ *
+ * Count-data model for Over/Under Total Match Bookings:
+ *   - Blends team card rates with opponent conceded card rates
+ *   - Shrinkage towards global soccer competition average (~2.0 home, ~2.2 away = 4.2)
+ *   - Poisson count model CDF for lines [2.5, 3.5, 4.5, 5.5, 6.5]
+ *   - Strictly complementary probabilities
+ *
+ * @param {Object} params
+ * @param {Object} params.homeBookingsAnalysis
+ * @param {Object} params.awayBookingsAnalysis
+ * @param {Object} [params.h2hAnalysis]
+ * @param {number} [params.targetLine=3.5]
+ * @param {'under'|'over'} [params.marketType='under']
+ * @param {Array<number>} [params.lines]
+ * @returns {Object|null} Bookings prediction
+ */
+function calculateBookingsPrediction({
+  homeBookingsAnalysis,
+  awayBookingsAnalysis,
+  h2hAnalysis = null,
+  targetLine = 3.5,
+  marketType = 'under',
+  lines = DEFAULT_BOOKING_LINES,
+}) {
+  const homeValid = homeBookingsAnalysis?.valid && homeBookingsAnalysis.sampleSize >= 2;
+  const awayValid = awayBookingsAnalysis?.valid && awayBookingsAnalysis.sampleSize >= 2;
+
+  // Abstain if card statistics are missing (never substitute zero!)
+  if (!homeValid && !awayValid) {
+    return null;
+  }
+
+  const factors = [];
+  const compHomeBaseline = 2.0;
+  const compAwayBaseline = 2.2;
+
+  // 1. Home expected bookings
+  const hCards = homeBookingsAnalysis?.avgTotalBookings ?? compHomeBaseline;
+  const aOppCards = awayBookingsAnalysis?.avgOpponentBookings ?? compHomeBaseline;
+  const homeSample = homeBookingsAnalysis?.sampleSize || 0;
+  const hShrinkage = Math.min(0.8, homeSample / (homeSample + 4));
+  const rawLambdaHome = (hCards + aOppCards) / 2;
+  const lambdaHome = (rawLambdaHome * hShrinkage) + (compHomeBaseline * (1 - hShrinkage));
+
+  // 2. Away expected bookings
+  const aCards = awayBookingsAnalysis?.avgTotalBookings ?? compAwayBaseline;
+  const hOppCards = homeBookingsAnalysis?.avgOpponentBookings ?? compAwayBaseline;
+  const awaySample = awayBookingsAnalysis?.sampleSize || 0;
+  const aShrinkage = Math.min(0.8, awaySample / (awaySample + 4));
+  const rawLambdaAway = (aCards + hOppCards) / 2;
+  const lambdaAway = (rawLambdaAway * aShrinkage) + (compAwayBaseline * (1 - aShrinkage));
+
+  let lambdaBookings = lambdaHome + lambdaAway;
+
+  // 3. H2H card history adjustment
+  if (h2hAnalysis?.bookings && h2hAnalysis.bookings.sampleSize >= 2) {
+    const h2h = h2hAnalysis.bookings;
+    const h2hWeight = Math.min(0.20, h2h.sampleSize * 0.04);
+    lambdaBookings = lambdaBookings * (1 - h2hWeight) + (h2h.avgBookings * h2hWeight);
+    factors.push({
+      label: `H2H Avg Bookings: ${h2h.avgBookings.toFixed(1)} (${h2h.sampleSize} matches)`,
+      side: 'neutral',
+      type: 'info',
+    });
+  }
+
+  if (homeValid) {
+    factors.push({
+      label: `Home Cards: ${homeBookingsAnalysis.avgTotalBookings || homeBookingsAnalysis.avgYellowCards} avg`,
+      side: 'home',
+      type: 'info',
+    });
+  }
+  if (awayValid) {
+    factors.push({
+      label: `Away Cards: ${awayBookingsAnalysis.avgTotalBookings || awayBookingsAnalysis.avgYellowCards} avg`,
+      side: 'away',
+      type: 'info',
+    });
+  }
+
+  // 4. Calculate probabilities for each line
+  const allLineProbabilities = {};
+  lines.forEach(l => {
+    const kThreshold = Math.floor(l);
+    const pUnder = poissonCdf(kThreshold, lambdaBookings);
+    const pOver = 1 - pUnder;
+    allLineProbabilities[l] = {
+      line: l,
+      underProbability: Number(pUnder.toFixed(4)),
+      overProbability: Number(pOver.toFixed(4)),
+    };
+  });
+
+  const chosenLine = typeof targetLine === 'number' ? targetLine : 3.5;
+  const lineStats = allLineProbabilities[chosenLine] || allLineProbabilities[3.5];
+  const pUnder = lineStats.underProbability;
+  const pOver = lineStats.overProbability;
+
+  const rawProb = marketType === 'over' ? pOver : pUnder;
+  const calibratedProb = Math.min(Math.max(rawProb, 0.30), 0.95);
+  const confidence = Math.round(calibratedProb * 100);
+
+  factors.push({
+    label: `Expected Bookings: ${lambdaBookings.toFixed(1)} (${BOOKING_CONVENTION})`,
+    side: 'neutral',
+    type: 'success',
+  });
+
+  const market = marketType === 'over' ? 'over_bookings' : 'under_bookings';
+  const label = `${marketType === 'over' ? 'Over' : 'Under'} ${chosenLine} Bookings`;
+  const value = `${marketType === 'over' ? 'Over' : 'Under'} ${chosenLine} Total Bookings`;
+
+  return {
+    market,
+    label,
+    value,
+    line: chosenLine,
+    marketType,
+    convention: BOOKING_CONVENTION,
+    confidence,
+    probability: Number(calibratedProb.toFixed(4)),
+    complementaryProbability: Number((1 - calibratedProb).toFixed(4)),
+    expectedBookings: Number(lambdaBookings.toFixed(2)),
+    expectedHomeBookings: Number(lambdaHome.toFixed(2)),
+    expectedAwayBookings: Number(lambdaAway.toFixed(2)),
+    allLineProbabilities,
+    factors,
+    color: confidence >= 70 ? '#40c057' : confidence >= 60 ? '#ffa94d' : '#4dabf7',
+  };
+}
+
+/**
+ * Settlement evaluation for Bookings
+ *
+ * @param {number} totalBookings
+ * @param {number} [line=3.5]
+ * @param {'under'|'over'} [marketType='under']
+ * @returns {'WIN'|'LOSS'|null}
+ */
+function settleBookings(totalBookings, line = 3.5, marketType = 'under') {
+  if (totalBookings === undefined || totalBookings === null || isNaN(Number(totalBookings))) {
+    return null;
+  }
+  const bookings = Number(totalBookings);
+  if (marketType === 'over') {
+    return bookings > line ? 'WIN' : 'LOSS';
+  }
+  return bookings < line ? 'WIN' : 'LOSS';
+}
+
+/**
  * 7. Chronological Walk-Forward Backtester
  *
  * Evaluates predictions against actual results without future-data leakage.
@@ -1126,6 +1835,8 @@ function backtestHistoricalFixtures(historicalFixtures) {
       under25Ht: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
       homeTeamUnder25: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
       awayTeamUnder25: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
+      underCorners: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
+      underBookings: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
     };
   }
 
@@ -1138,6 +1849,8 @@ function backtestHistoricalFixtures(historicalFixtures) {
   const resultsU25Ht = [];
   const resultsHomeU25 = [];
   const resultsAwayU25 = [];
+  const resultsCorners = [];
+  const resultsBookings = [];
 
   for (let i = 0; i < sorted.length; i++) {
     const current = sorted[i];
@@ -1155,6 +1868,12 @@ function backtestHistoricalFixtures(historicalFixtures) {
         date: m.date,
         pf: isHome ? m.ftHome : m.ftAway,
         pa: isHome ? m.ftAway : m.ftHome,
+        corners: isHome ? m.homeCorners : m.awayCorners,
+        cornersConceded: isHome ? m.awayCorners : m.homeCorners,
+        totalCorners: m.totalCorners,
+        yellowCards: isHome ? m.homeYellowCards : m.awayYellowCards,
+        redCards: isHome ? m.homeRedCards : m.awayRedCards,
+        totalBookings: m.totalBookings,
         isHome,
         htScore: m.htHome !== undefined && m.htAway !== undefined ? {
           total: m.htHome + m.htAway,
@@ -1173,6 +1892,12 @@ function backtestHistoricalFixtures(historicalFixtures) {
         date: m.date,
         pf: isHome ? m.ftHome : m.ftAway,
         pa: isHome ? m.ftAway : m.ftHome,
+        corners: isHome ? m.homeCorners : m.awayCorners,
+        cornersConceded: isHome ? m.awayCorners : m.homeCorners,
+        totalCorners: m.totalCorners,
+        yellowCards: isHome ? m.homeYellowCards : m.awayYellowCards,
+        redCards: isHome ? m.homeRedCards : m.awayRedCards,
+        totalBookings: m.totalBookings,
         isHome,
         htScore: m.htHome !== undefined && m.htAway !== undefined ? {
           total: m.htHome + m.htAway,
@@ -1253,6 +1978,44 @@ function backtestHistoricalFixtures(historicalFixtures) {
         actualGoals: current.ftAway,
       });
     }
+
+    // Under Corners prediction (10.5 line)
+    const cornersHome = analyzeCornersHistory(cleanHome, { isHomeContext: true });
+    const cornersAway = analyzeCornersHistory(cleanAway, { isHomeContext: false });
+    const predCorners = calculateCornersPrediction({
+      homeCornersAnalysis: cornersHome,
+      awayCornersAnalysis: cornersAway,
+      targetLine: 10.5,
+      marketType: 'under',
+    });
+
+    if (predCorners && current.totalCorners !== undefined && current.totalCorners !== null) {
+      const won = current.totalCorners < 10.5;
+      resultsCorners.push({
+        prob: predCorners.probability,
+        outcome: won ? 1 : 0,
+        actualCorners: current.totalCorners,
+      });
+    }
+
+    // Under Bookings prediction (3.5 line)
+    const bookingsHome = analyzeBookingsHistory(cleanHome, { isHomeContext: true });
+    const bookingsAway = analyzeBookingsHistory(cleanAway, { isHomeContext: false });
+    const predBookings = calculateBookingsPrediction({
+      homeBookingsAnalysis: bookingsHome,
+      awayBookingsAnalysis: bookingsAway,
+      targetLine: 3.5,
+      marketType: 'under',
+    });
+
+    if (predBookings && current.totalBookings !== undefined && current.totalBookings !== null) {
+      const won = current.totalBookings < 3.5;
+      resultsBookings.push({
+        prob: predBookings.probability,
+        outcome: won ? 1 : 0,
+        actualBookings: current.totalBookings,
+      });
+    }
   }
 
   const computeMetrics = (items, baselineRate) => {
@@ -1300,21 +2063,33 @@ function backtestHistoricalFixtures(historicalFixtures) {
     under25Ht: computeMetrics(resultsU25Ht, BASELINE_PRIORS.UNDER_2_5_HT),
     homeTeamUnder25: computeMetrics(resultsHomeU25, BASELINE_PRIORS.HOME_TEAM_UNDER_2_5),
     awayTeamUnder25: computeMetrics(resultsAwayU25, BASELINE_PRIORS.AWAY_TEAM_UNDER_2_5),
+    underCorners: computeMetrics(resultsCorners, BASELINE_PRIORS.UNDER_10_5_CORNERS),
+    underBookings: computeMetrics(resultsBookings, BASELINE_PRIORS.UNDER_3_5_BOOKINGS),
   };
 }
 
 module.exports = {
   BASELINE_PRIORS,
+  BOOKING_CONVENTION,
+  DEFAULT_CORNER_LINES,
+  DEFAULT_BOOKING_LINES,
   poissonPmf,
   poissonCdf,
+  calculateMedian,
   validateAndFilterHistoricalMatches,
   analyzeUnder45History,
   analyzeUnder25HtHistory,
   analyzeTeamUnder25History,
+  analyzeCornersHistory,
+  analyzeBookingsHistory,
   analyzeH2HHistory,
   calculateUnder45Prediction,
   calculateUnder25HtPrediction,
   calculateTeamUnder25Prediction,
+  calculateCornersPrediction,
+  calculateBookingsPrediction,
   settleTeamUnder25,
+  settleCorners,
+  settleBookings,
   backtestHistoricalFixtures,
 };
