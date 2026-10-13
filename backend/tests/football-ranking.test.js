@@ -153,7 +153,12 @@ describe('Football Prediction Ranking Logic', () => {
 
   test('tie-break priority order matches FOOTBALL_MARKET_PRIORITY export', () => {
     expect(FOOTBALL_MARKET_PRIORITY).toEqual([
-      'under_4_5_goals', 'under_2_5_ht', 'under_corners', 'under_1_5_ht',
+      'under_4_5_goals',
+      'under_2_5_ht',
+      'home_team_under_2_5',
+      'away_team_under_2_5',
+      'under_corners',
+      'under_1_5_ht',
     ]);
   });
 
@@ -229,13 +234,20 @@ describe('Football Prediction Ranking Logic', () => {
   // 9 & 10. Only approved markets in output
   test('only approved football markets appear in the output', () => {
     const approvedMarkets = new Set([
-      'under_corners', 'under_4_5_goals', 'under_1_5_ht', 'under_2_5_ht',
+      'under_corners',
+      'under_4_5_goals',
+      'under_1_5_ht',
+      'under_2_5_ht',
+      'home_team_under_2_5',
+      'away_team_under_2_5',
     ]);
     const predictions = [
-      pred('under_corners',   76),
-      pred('under_4_5_goals', 91),
-      pred('under_1_5_ht',   69),
-      pred('under_2_5_ht',   84),
+      pred('under_corners',       76),
+      pred('under_4_5_goals',     91),
+      pred('home_team_under_2_5', 88),
+      pred('away_team_under_2_5', 85),
+      pred('under_1_5_ht',       69),
+      pred('under_2_5_ht',       84),
     ];
     const ranked = rankFootballPredictions(predictions);
     ranked.forEach(r => expect(approvedMarkets.has(r.market)).toBe(true));
@@ -298,7 +310,14 @@ describe('Sport-Specific Prediction Engine (analyzeMatchServer)', () => {
     });
 
     expect(result.recommendations.length).toBeLessThanOrEqual(2);
-    const approvedMarkets = ['UNDER_CORNERS', 'UNDER_4_5_GOALS', 'UNDER_1_5_HT', 'UNDER_2_5_HT'];
+    const approvedMarkets = [
+      'UNDER_CORNERS',
+      'UNDER_4_5_GOALS',
+      'UNDER_1_5_HT',
+      'UNDER_2_5_HT',
+      'HOME_TEAM_UNDER_2_5',
+      'AWAY_TEAM_UNDER_2_5',
+    ];
     result.recommendations.forEach(rec => {
       expect(approvedMarkets).toContain(rec.type);
     });
@@ -340,6 +359,174 @@ describe('Sport-Specific Prediction Engine (analyzeMatchServer)', () => {
 
     expect(result.recommendations.length).toBeGreaterThanOrEqual(1);
     expect(result.recommendations[0].type).toBe('WIN');
+  });
+
+  test('football analyzeMatchServer produces Home/Away Team Under 2.5 when supported by history', () => {
+    const result = analyzeMatchServer({
+      homeName: 'Real Madrid',
+      awayName: 'Getafe',
+      homeStats: {
+        record: '22-4-2',
+        lastMatches: [
+          { pf: 2, pa: 0, isHome: true, result: 'W' },
+          { pf: 1, pa: 0, isHome: false, result: 'W' },
+          { pf: 2, pa: 1, isHome: true, result: 'W' },
+          { pf: 1, pa: 1, isHome: false, result: 'D' },
+          { pf: 0, pa: 0, isHome: true, result: 'D' },
+        ],
+      },
+      awayStats: {
+        record: '8-8-12',
+        lastMatches: [
+          { pf: 0, pa: 1, isHome: false, result: 'L' },
+          { pf: 1, pa: 1, isHome: true, result: 'D' },
+          { pf: 0, pa: 0, isHome: false, result: 'D' },
+          { pf: 1, pa: 2, isHome: true, result: 'L' },
+          { pf: 0, pa: 2, isHome: false, result: 'L' },
+        ],
+      },
+      sport: 'soccer',
+      isDetailed: true,
+    });
+
+    expect(result).toHaveProperty('recommendations');
+    expect(result.recommendations.length).toBeLessThanOrEqual(2);
+    expect(result).toHaveProperty('allMarkets');
+    expect(Array.isArray(result.allMarkets)).toBe(true);
+    const marketTypes = result.allMarkets.map(m => m.market);
+    expect(marketTypes).toContain('home_team_under_2_5');
+    expect(marketTypes).toContain('away_team_under_2_5');
+  });
+});
+
+describe('Section 8 — Team Under 2.5 Scoreline Matrix & Settlement', () => {
+  const { settleTeamUnder25 } = require('../services/footballHistoricalAnalysis');
+
+  const SCORELINE_CASES = [
+    { home: 0, away: 0, expectedHome: 'WIN', expectedAway: 'WIN' },
+    { home: 1, away: 0, expectedHome: 'WIN', expectedAway: 'WIN' },
+    { home: 0, away: 1, expectedHome: 'WIN', expectedAway: 'WIN' },
+    { home: 1, away: 1, expectedHome: 'WIN', expectedAway: 'WIN' },
+    { home: 2, away: 0, expectedHome: 'WIN', expectedAway: 'WIN' },
+    { home: 0, away: 2, expectedHome: 'WIN', expectedAway: 'WIN' },
+    { home: 2, away: 1, expectedHome: 'WIN', expectedAway: 'WIN' },
+    { home: 1, away: 2, expectedHome: 'WIN', expectedAway: 'WIN' },
+    { home: 3, away: 0, expectedHome: 'LOSS', expectedAway: 'WIN' },
+    { home: 0, away: 3, expectedHome: 'WIN', expectedAway: 'LOSS' },
+    { home: 3, away: 2, expectedHome: 'LOSS', expectedAway: 'WIN' },
+    { home: 2, away: 3, expectedHome: 'WIN', expectedAway: 'LOSS' },
+    { home: 3, away: 3, expectedHome: 'LOSS', expectedAway: 'LOSS' },
+  ];
+
+  SCORELINE_CASES.forEach(({ home, away, expectedHome, expectedAway }) => {
+    test(`Scoreline ${home}–${away}: Home Under 2.5 = ${expectedHome}, Away Under 2.5 = ${expectedAway}`, () => {
+      const outcome = settleTeamUnder25(home, away);
+      expect(outcome.homeUnder25).toBe(expectedHome);
+      expect(outcome.awayUnder25).toBe(expectedAway);
+    });
+  });
+
+  test('0–0 is classified as a WIN for both markets', () => {
+    const outcome = settleTeamUnder25(0, 0);
+    expect(outcome.homeUnder25).toBe('WIN');
+    expect(outcome.awayUnder25).toBe('WIN');
+  });
+
+  test('3–1 result: Home loses (3 goals), Away wins (1 goal)', () => {
+    const outcome = settleTeamUnder25(3, 1);
+    expect(outcome.homeUnder25).toBe('LOSS');
+    expect(outcome.awayUnder25).toBe('WIN');
+  });
+
+  test('invalid / missing scores return null', () => {
+    expect(settleTeamUnder25(null, 1)).toEqual({ homeUnder25: null, awayUnder25: null });
+    expect(settleTeamUnder25(1, undefined)).toEqual({ homeUnder25: null, awayUnder25: null });
+    expect(settleTeamUnder25(NaN, 2)).toEqual({ homeUnder25: null, awayUnder25: null });
+  });
+});
+
+describe('Statistical Team Under 2.5 Calculation & Backtesting', () => {
+  const {
+    analyzeTeamUnder25History,
+    calculateTeamUnder25Prediction,
+    backtestHistoricalFixtures,
+  } = require('../services/footballHistoricalAnalysis');
+
+  test('analyzeTeamUnder25History correctly computes hit rates and goal averages', () => {
+    const matches = [
+      { pf: 2, pa: 1, isHome: true },
+      { pf: 1, pa: 0, isHome: false },
+      { pf: 0, pa: 2, isHome: true },
+      { pf: 3, pa: 0, isHome: true }, // Over 2.5
+      { pf: 1, pa: 1, isHome: false },
+    ];
+    const analysis = analyzeTeamUnder25History(matches, { isHomeContext: true });
+    expect(analysis.valid).toBe(true);
+    expect(analysis.sampleSize).toBe(5);
+    expect(analysis.under25Count).toBe(4);
+    expect(analysis.over25Count).toBe(1);
+    expect(analysis.under25HitRate).toBe(0.8);
+    expect(analysis.avgGoalsScored).toBe(1.4);
+    expect(analysis.homeAwaySplit.home.sampleSize).toBe(3);
+  });
+
+  test('calculateTeamUnder25Prediction generates calibrated independent probability', () => {
+    const homeMatches = [
+      { pf: 1, pa: 0, isHome: true },
+      { pf: 2, pa: 1, isHome: true },
+      { pf: 0, pa: 0, isHome: false },
+      { pf: 1, pa: 1, isHome: true },
+      { pf: 2, pa: 0, isHome: false },
+    ];
+    const awayMatches = [
+      { pf: 0, pa: 1, isHome: false },
+      { pf: 1, pa: 2, isHome: true },
+      { pf: 0, pa: 0, isHome: false },
+      { pf: 0, pa: 3, isHome: false }, // high concede
+      { pf: 1, pa: 1, isHome: true },
+    ];
+    const hAnalysis = analyzeTeamUnder25History(homeMatches, { isHomeContext: true });
+    const aAnalysis = analyzeTeamUnder25History(awayMatches, { isHomeContext: false });
+
+    const homePred = calculateTeamUnder25Prediction({
+      teamAnalysis: hAnalysis,
+      oppAnalysis: aAnalysis,
+      isHome: true,
+      teamName: 'Arsenal',
+      oppName: 'Chelsea',
+    });
+
+    const awayPred = calculateTeamUnder25Prediction({
+      teamAnalysis: aAnalysis,
+      oppAnalysis: hAnalysis,
+      isHome: false,
+      teamName: 'Chelsea',
+      oppName: 'Arsenal',
+    });
+
+    expect(homePred).not.toBeNull();
+    expect(awayPred).not.toBeNull();
+    expect(homePred.market).toBe('home_team_under_2_5');
+    expect(awayPred.market).toBe('away_team_under_2_5');
+    expect(homePred.value).toBe('Arsenal Under 2.5 Goals');
+    expect(awayPred.value).toBe('Chelsea Under 2.5 Goals');
+    expect(homePred.confidence).toBeGreaterThanOrEqual(50);
+    expect(awayPred.confidence).toBeGreaterThanOrEqual(50);
+  });
+
+  test('backtestHistoricalFixtures evaluates homeTeamUnder25 and awayTeamUnder25', () => {
+    const fixtures = [
+      { id: '1', date: '2026-01-01', homeTeamId: 't1', awayTeamId: 't2', ftHome: 1, ftAway: 0, htHome: 0, htAway: 0 },
+      { id: '2', date: '2026-01-08', homeTeamId: 't1', awayTeamId: 't3', ftHome: 2, ftAway: 1, htHome: 1, htAway: 0 },
+      { id: '3', date: '2026-01-15', homeTeamId: 't2', awayTeamId: 't1', ftHome: 0, ftAway: 2, htHome: 0, htAway: 1 },
+      { id: '4', date: '2026-01-22', homeTeamId: 't3', awayTeamId: 't1', ftHome: 1, ftAway: 1, htHome: 0, htAway: 0 },
+      { id: '5', date: '2026-01-29', homeTeamId: 't1', awayTeamId: 't2', ftHome: 1, ftAway: 1, htHome: 0, htAway: 0 },
+    ];
+    const report = backtestHistoricalFixtures(fixtures);
+    expect(report.evaluatedCount).toBe(5);
+    expect(report).toHaveProperty('homeTeamUnder25');
+    expect(report).toHaveProperty('awayTeamUnder25');
+    expect(report.homeTeamUnder25.brierScore !== undefined).toBe(true);
   });
 });
 

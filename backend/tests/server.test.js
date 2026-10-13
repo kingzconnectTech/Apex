@@ -323,7 +323,14 @@ describeOrSkip('Apex Backend — Live Server Integration Tests', () => {
         if (res.body.sport === 'soccer') {
           expect(res.body.recommendations.length).toBeLessThanOrEqual(2);
           // Verify that if predictions exist, they are from the approved markets
-          const approvedMarkets = ['UNDER_CORNERS', 'UNDER_4_5_GOALS', 'UNDER_1_5_HT', 'UNDER_2_5_HT'];
+          const approvedMarkets = [
+            'UNDER_CORNERS',
+            'UNDER_4_5_GOALS',
+            'UNDER_1_5_HT',
+            'UNDER_2_5_HT',
+            'HOME_TEAM_UNDER_2_5',
+            'AWAY_TEAM_UNDER_2_5',
+          ];
           res.body.recommendations.forEach(rec => {
             expect(approvedMarkets).toContain(rec.type);
           });

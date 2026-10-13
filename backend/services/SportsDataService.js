@@ -377,7 +377,7 @@ class SportsDataService {
               .filter(f => f.fixture.status === 'finished' &&
                 (f.homeTeam.sourceId === teamSrc || f.awayTeam.sourceId === teamSrc))
               .sort((a, b) => (b.fixture.timestamp || 0) - (a.fixture.timestamp || 0))
-              .slice(0, 5)
+              .slice(0, 10)
               .map(f => {
                 const isHome = f.homeTeam.sourceId === teamSrc;
                 const pf = isHome ? f.homeTeam.score : f.awayTeam.score;
