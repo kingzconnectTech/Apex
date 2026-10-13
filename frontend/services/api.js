@@ -131,4 +131,85 @@ export const fetchPredictionStats = async (userId) => {
   }
 };
 
+/**
+ * Fetch high-confidence recommended predictions that pass the 75%+ calibrated probability filter.
+ *
+ * @param {Object} options
+ * @param {string} [options.sport='soccer']
+ * @param {string} [options.league]
+ * @param {string} [options.date]
+ * @param {number} [options.minProb=0.75]
+ * @returns {Promise<Object>} { success, totalAnalyzed, totalRecommended, totalRejected, acceptanceRate, recommendations }
+ */
+export const fetchRecommendedPredictions = async ({ sport = 'soccer', league = null, date = null, minProb = 0.75 } = {}) => {
+  try {
+    const params = new URLSearchParams();
+    if (sport) params.append('sport', sport);
+    if (league && league !== 'All' && league !== 'Live') params.append('league', league);
+    if (date) params.append('date', date);
+    if (minProb) params.append('minProb', String(minProb));
+
+    const response = await fetch(`${API_URL}/api/predictions/recommended?${params.toString()}`);
+    if (!response.ok) {
+      return { success: false, recommendations: [], totalAnalyzed: 0, totalRecommended: 0, totalRejected: 0 };
+    }
+    return await response.json();
+  } catch (error) {
+    console.warn('[fetchRecommendedPredictions] Network error:', error.message);
+    return { success: false, recommendations: [], totalAnalyzed: 0, totalRecommended: 0, totalRejected: 0 };
+  }
+};
+
+/**
+ * Fetch paginated fixture catalog across all configured providers and leagues.
+ *
+ * @param {Object} options
+ * @param {string} [options.sport='soccer']
+ * @param {string} [options.league]
+ * @param {string} [options.date]
+ * @param {string} [options.status='all']
+ * @param {number} [options.page=1]
+ * @param {number} [options.limit=30]
+ * @returns {Promise<Object>} { success, fixtures, total, totalPages, page, limit }
+ */
+export const fetchAllFixtures = async ({ sport = 'soccer', league = null, date = null, status = 'all', page = 1, limit = 30 } = {}) => {
+  try {
+    const params = new URLSearchParams();
+    if (sport) params.append('sport', sport);
+    if (league && league !== 'All' && league !== 'Live') params.append('league', league);
+    if (date) params.append('date', date);
+    if (status && status !== 'all') params.append('status', status);
+    params.append('page', String(page));
+    params.append('limit', String(limit));
+
+    const response = await fetch(`${API_URL}/api/fixtures/all?${params.toString()}`);
+    if (!response.ok) {
+      return { success: false, fixtures: [], total: 0, totalPages: 0, page: 1 };
+    }
+    return await response.json();
+  } catch (error) {
+    console.warn('[fetchAllFixtures] Network error:', error.message);
+    return { success: false, fixtures: [], total: 0, totalPages: 0, page: 1 };
+  }
+};
+
+/**
+ * Run comprehensive transparent evaluation on a single fixture.
+ */
+export const evaluateFixtureBackend = async ({ fixture, homeMatches, awayMatches, homeName, awayName, h2h }) => {
+  try {
+    const response = await fetch(`${API_URL}/api/fixtures/evaluate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fixture, homeMatches, awayMatches, homeName, awayName, h2h }),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.warn('[evaluateFixtureBackend] Network error:', error.message);
+    return null;
+  }
+};
+
+
 

@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { fetchMatches, fetchLeagueMatches } from '../services/espn';
-import { fetchSportsDataLeagues } from '../services/api';
+import { fetchSportsDataLeagues, fetchRecommendedPredictions } from '../services/api';
 import { PITCHAPI_77_LEAGUES, PITCHAPI_LEAGUE_NAMES } from '../constants/pitchapiLeagues';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
@@ -32,6 +32,17 @@ export default function TipsScreen({ navigation }) {
   const [allMatches, setAllMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Dedicated Recommended Predictions vs All Fixtures View Mode
+  const [activeView, setActiveView] = useState('recommended'); // 'recommended' | 'all_fixtures'
+  const [recommendedData, setRecommendedData] = useState({
+    recommendations: [],
+    totalAnalyzed: 0,
+    totalRecommended: 0,
+    totalRejected: 0,
+    acceptanceRate: 0,
+  });
+  const [loadingRecommended, setLoadingRecommended] = useState(false);
 
   // 77 Leagues Directory State
   const [leaguesCatalog, setLeaguesCatalog] = useState(PITCHAPI_77_LEAGUES);
@@ -72,13 +83,53 @@ export default function TipsScreen({ navigation }) {
     return () => { isMounted = false; };
   }, []);
 
+  const loadRecommended = async (date) => {
+    if (selectedCategory !== 'Football') return;
+    setLoadingRecommended(true);
+    try {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      const dateStr = `${y}${m}${d}`;
+      const res = await fetchRecommendedPredictions({
+        sport: 'soccer',
+        date: dateStr,
+        league: selectedLeague !== 'All' && selectedLeague !== 'Live' ? selectedLeague : null,
+        minProb: 0.75,
+      });
+      if (res && res.success) {
+        setRecommendedData({
+          recommendations: res.recommendations || [],
+          totalAnalyzed: res.totalAnalyzed || 0,
+          totalRecommended: res.totalRecommended || 0,
+          totalRejected: res.totalRejected || 0,
+          acceptanceRate: res.acceptanceRate || 0,
+        });
+      } else {
+        setRecommendedData({
+          recommendations: [],
+          totalAnalyzed: 0,
+          totalRecommended: 0,
+          totalRejected: 0,
+          acceptanceRate: 0,
+        });
+      }
+    } catch (e) {
+      console.warn('Error loading recommended predictions:', e);
+    } finally {
+      setLoadingRecommended(false);
+    }
+  };
+
   useEffect(() => {
     loadMatches(dateFilter);
-  }, [dateFilter]);
+    loadRecommended(dateFilter);
+  }, [dateFilter, selectedCategory, selectedLeague]);
 
   const onRefresh = () => {
     setRefreshing(true);
     loadMatches(dateFilter, true);
+    loadRecommended(dateFilter);
   };
 
   const [visibleMatchesCount, setVisibleMatchesCount] = useState(10);
@@ -269,6 +320,170 @@ export default function TipsScreen({ navigation }) {
     );
   };
 
+  const renderRecommendedCard = ({ item }) => {
+    const isUnder25Home = item.recommendedMarket === 'home_team_under_2_5';
+    const isUnder25Away = item.recommendedMarket === 'away_team_under_2_5';
+    const isUnder45 = item.recommendedMarket === 'under_4_5_goals';
+    const isUnder25Ht = item.recommendedMarket === 'under_2_5_ht';
+
+    const marketDisplayTitle =
+      isUnder25Home ? `${item.homeName} Under 2.5 Goals` :
+      isUnder25Away ? `${item.awayName} Under 2.5 Goals` :
+      isUnder45 ? 'Under 4.5 Match Goals' :
+      isUnder25Ht ? 'Under 2.5 First Half Goals' :
+      item.marketLabel || 'High Confidence Under';
+
+    const formattedKickoff = item.kickoff ? new Date(item.kickoff).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Upcoming';
+    const calProb = Math.round((item.calibrated_probability || 0.75) * 100);
+
+    return (
+      <Animated.View style={{ opacity: fadeAnim }}>
+        <TouchableOpacity
+          style={[styles.cardContainer, styles.recommendedCardContainer]}
+          activeOpacity={0.85}
+          onPress={() => {
+            const matchPayload = item.fullFixture || {
+              id: item.fixtureId,
+              league: item.league,
+              sport: item.sport || 'soccer',
+              date: item.kickoff,
+              time: formattedKickoff,
+              status: item.status || 'pre',
+              homeTeam: { name: item.homeName, logo: item.homeLogo },
+              awayTeam: { name: item.awayName, logo: item.awayLogo },
+            };
+            navigation.navigate('MatchDetails', { match: matchPayload });
+          }}
+        >
+          <View style={styles.cardContent}>
+            {/* Header: League & Calibrated Prob Badge */}
+            <View style={styles.cardHeader}>
+              <View style={styles.leagueBadge}>
+                <Text style={styles.leagueName} numberOfLines={1}>{item.league || 'Football'}</Text>
+              </View>
+              <View style={styles.validatedBadgeHeader}>
+                <Ionicons name="shield-checkmark" size={13} color="#10B981" style={{ marginRight: 4 }} />
+                <Text style={styles.validatedBadgeHeaderText}>
+                  {calProb}% CALIBRATED
+                </Text>
+              </View>
+            </View>
+
+            {/* Teams Row */}
+            <View style={styles.teamsRow}>
+              <View style={styles.teamWrapper}>
+                {item.homeLogo ? (
+                  <Image source={{ uri: item.homeLogo }} style={styles.teamLogo} />
+                ) : (
+                  <View style={[styles.teamLogo, styles.placeholderLogo]}>
+                    <Ionicons name="shield" size={24} color={theme.textSecondary} />
+                  </View>
+                )}
+                <Text style={styles.teamName} numberOfLines={2}>{item.homeName}</Text>
+              </View>
+
+              <View style={styles.vsWrapper}>
+                <Text style={styles.vsText}>VS</Text>
+                <Text style={styles.kickoffTimeText}>{formattedKickoff}</Text>
+              </View>
+
+              <View style={styles.teamWrapper}>
+                {item.awayLogo ? (
+                  <Image source={{ uri: item.awayLogo }} style={styles.teamLogo} />
+                ) : (
+                  <View style={[styles.teamLogo, styles.placeholderLogo]}>
+                    <Ionicons name="shield" size={24} color={theme.textSecondary} />
+                  </View>
+                )}
+                <Text style={styles.teamName} numberOfLines={2}>{item.awayName}</Text>
+              </View>
+            </View>
+
+            {/* Recommended Prediction Highlight Box */}
+            <View style={styles.recMarketBox}>
+              <View style={styles.recMarketTopRow}>
+                <View style={styles.recMarketTag}>
+                  <Text style={styles.recMarketTagText}>QUALIFIED MARKET</Text>
+                </View>
+                <View style={styles.confidenceLabelPill}>
+                  <Text style={styles.confidenceLabelPillText}>{item.confidenceLabel || 'Validated'}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.recMarketTitle}>{marketDisplayTitle}</Text>
+              <Text style={styles.recSelectionText}>
+                Recommended Selection: <Text style={{ color: '#10B981', fontWeight: 'bold' }}>{item.recommendedSelection || 'Under 2.5'}</Text>
+              </Text>
+
+              {/* Statistical Metrics Row */}
+              <View style={styles.metricsRow}>
+                <View style={styles.metricItem}>
+                  <Text style={styles.metricLabel}>Predictability</Text>
+                  <Text style={styles.metricValue}>{Math.round((item.predictability_score || 0.7) * 100)}%</Text>
+                </View>
+                <View style={styles.metricDivider} />
+                <View style={styles.metricItem}>
+                  <Text style={styles.metricLabel}>Sample Size</Text>
+                  <Text style={styles.metricValue}>{item.sample_size || 10}+ Matches</Text>
+                </View>
+                <View style={styles.metricDivider} />
+                <View style={styles.metricItem}>
+                  <Text style={styles.metricLabel}>Data Quality</Text>
+                  <Text style={styles.metricValue}>{Math.round((item.data_quality_score || 0.8) * 100)}%</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Supporting Evidence Bullets */}
+            {Array.isArray(item.supporting_evidence) && item.supporting_evidence.length > 0 && (
+              <View style={styles.evidenceContainer}>
+                <Text style={styles.evidenceHeading}>Supporting Statistical Evidence:</Text>
+                {item.supporting_evidence.slice(0, 3).map((bullet, bIdx) => (
+                  <View key={bIdx} style={styles.evidenceBulletRow}>
+                    <Ionicons name="checkmark-circle" size={14} color="#10B981" style={{ marginRight: 6, marginTop: 2 }} />
+                    <Text style={styles.evidenceBulletText}>{bullet}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Footer */}
+            <View style={styles.cardFooter}>
+              <Text style={styles.footerText}>Tap to View In-Depth Match Analytics</Text>
+              <Ionicons name="chevron-forward-circle" size={20} color={theme.primary} />
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  const renderRecommendedEmptyState = () => {
+    return (
+      <View style={styles.strictEmptyContainer}>
+        <View style={styles.strictEmptyIconCircle}>
+          <Ionicons name="shield-outline" size={48} color="#00F2FE" />
+        </View>
+        <Text style={styles.strictEmptyTitle}>Strict Quality Filter Active</Text>
+        <Text style={styles.strictEmptyDesc}>
+          {recommendedData.totalAnalyzed > 0
+            ? `Analyzed ${recommendedData.totalAnalyzed} upcoming fixtures. None passed our strict 75%+ calibrated probability and data quality requirements today.`
+            : 'No upcoming fixtures currently meet our strict 75%+ calibrated probability, data quality, and sample size criteria.'}
+        </Text>
+        <Text style={styles.strictEmptySubtext}>
+          Apex protects prediction reliability by abstaining when historical evidence is volatile or insufficient, rather than predicting every game.
+        </Text>
+        <TouchableOpacity
+          style={styles.browseAllBtn}
+          onPress={() => setActiveView('all_fixtures')}
+        >
+          <Ionicons name="grid-outline" size={16} color="#FFF" style={{ marginRight: 8 }} />
+          <Text style={styles.browseAllBtnText}>Browse All Scheduled Fixtures</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const filteredTips = getFilteredMatches();
 
   return (
@@ -309,6 +524,28 @@ export default function TipsScreen({ navigation }) {
                 })}
             </ScrollView>
         </View>
+
+        {/* Recommended / All Fixtures Segmented Control — Football only */}
+        {selectedCategory === 'Football' && (
+          <View style={styles.segmentedControlContainer}>
+            <TouchableOpacity
+              style={[styles.segTab, activeView === 'recommended' && styles.segTabActive]}
+              onPress={() => setActiveView('recommended')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="shield-checkmark-outline" size={14} color={activeView === 'recommended' ? '#FFF' : '#10B981'} style={{ marginRight: 6 }} />
+              <Text style={[styles.segTabText, activeView === 'recommended' && styles.segTabTextActive]}>⭐ Recommended</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segTab, activeView === 'all_fixtures' && styles.segTabActive]}
+              onPress={() => setActiveView('all_fixtures')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="globe-outline" size={14} color={activeView === 'all_fixtures' ? '#FFF' : '#00F2FE'} style={{ marginRight: 6 }} />
+              <Text style={[styles.segTabText, activeView === 'all_fixtures' && styles.segTabTextActive]}>🌐 All Fixtures</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Filters */}
         <View style={styles.filtersSection}>
@@ -351,6 +588,36 @@ export default function TipsScreen({ navigation }) {
             <ActivityIndicator size="large" color={theme.primary} />
             <Text style={styles.loadingText}>Finding best matches...</Text>
         </View>
+      ) : selectedCategory === 'Football' && activeView === 'recommended' ? (
+        loadingRecommended ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#10B981" />
+            <Text style={styles.loadingText}>Scanning {recommendedData.totalAnalyzed || 'all'} fixtures for 75%+ probability markets...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={recommendedData.recommendations}
+            renderItem={renderRecommendedCard}
+            keyExtractor={(item, idx) => `rec_${item.fixtureId || idx}`}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={5}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" colors={['#10B981']} />
+            }
+            ListHeaderComponent={
+              recommendedData.totalAnalyzed > 0 ? (
+                <View style={styles.transparencyBar}>
+                  <Ionicons name="analytics-outline" size={14} color={theme.textSecondary} style={{ marginRight: 6 }} />
+                  <Text style={styles.transparencyBarText}>
+                    Analyzed {recommendedData.totalAnalyzed} fixtures • {recommendedData.totalRecommended} qualified • {recommendedData.acceptanceRate}% acceptance rate
+                  </Text>
+                </View>
+              ) : null
+            }
+            ListEmptyComponent={renderRecommendedEmptyState()}
+          />
+        )
       ) : (
         <FlatList
             data={filteredTips.slice(0, visibleMatchesCount)}
@@ -780,6 +1047,244 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     fontSize: getResponsiveFontSize(16),
     marginTop: verticalScale(10),
     fontWeight: '500',
+  },
+  // ── Segmented Control ─────────────────────────────────────
+  segmentedControlContainer: {
+    flexDirection: 'row',
+    marginHorizontal: moderateScale(20),
+    marginBottom: verticalScale(8),
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+    borderRadius: moderateScale(14),
+    padding: moderateScale(4),
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  segTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(11),
+  },
+  segTabActive: {
+    backgroundColor: theme.primary,
+    shadowColor: theme.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  segTabText: {
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '700',
+    color: theme.textSecondary,
+  },
+  segTabTextActive: {
+    color: '#FFF',
+  },
+  // ── Recommended Card Extras ────────────────────────────────
+  recommendedCardContainer: {
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.35)' : 'rgba(16, 185, 129, 0.2)',
+    borderWidth: 1.5,
+  },
+  validatedBadgeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)',
+    paddingHorizontal: horizontalScale(8),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(8),
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  validatedBadgeHeaderText: {
+    color: '#10B981',
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  placeholderLogo: {
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+    borderRadius: moderateScale(10),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kickoffTimeText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: '600',
+    marginTop: verticalScale(4),
+  },
+  recMarketBox: {
+    backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.07)' : 'rgba(16, 185, 129, 0.04)',
+    borderRadius: moderateScale(14),
+    padding: moderateScale(14),
+    marginBottom: verticalScale(14),
+    borderWidth: 1,
+    borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : 'rgba(16, 185, 129, 0.12)',
+  },
+  recMarketTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: verticalScale(8),
+  },
+  recMarketTag: {
+    backgroundColor: 'rgba(16, 185, 129, 0.18)',
+    paddingHorizontal: horizontalScale(8),
+    paddingVertical: verticalScale(3),
+    borderRadius: moderateScale(6),
+  },
+  recMarketTagText: {
+    color: '#10B981',
+    fontSize: getResponsiveFontSize(9),
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  confidenceLabelPill: {
+    backgroundColor: isDarkMode ? 'rgba(0, 242, 254, 0.12)' : 'rgba(0, 242, 254, 0.08)',
+    paddingHorizontal: horizontalScale(8),
+    paddingVertical: verticalScale(3),
+    borderRadius: moderateScale(6),
+    borderWidth: 1,
+    borderColor: 'rgba(0, 242, 254, 0.25)',
+  },
+  confidenceLabelPillText: {
+    color: '#00F2FE',
+    fontSize: getResponsiveFontSize(9),
+    fontWeight: '700',
+  },
+  recMarketTitle: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '800',
+    marginBottom: verticalScale(4),
+  },
+  recSelectionText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(13),
+    marginBottom: verticalScale(12),
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  metricItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  metricDivider: {
+    width: 1,
+    height: verticalScale(28),
+    backgroundColor: theme.border,
+  },
+  metricLabel: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: '600',
+    marginBottom: verticalScale(3),
+  },
+  metricValue: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(14),
+    fontWeight: '800',
+  },
+  evidenceContainer: {
+    marginBottom: verticalScale(14),
+    paddingHorizontal: moderateScale(2),
+  },
+  evidenceHeading: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(11),
+    fontWeight: '700',
+    marginBottom: verticalScale(6),
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  evidenceBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: verticalScale(4),
+  },
+  evidenceBulletText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    flex: 1,
+    lineHeight: verticalScale(17),
+  },
+  // ── Strict Empty State ─────────────────────────────────────
+  strictEmptyContainer: {
+    alignItems: 'center',
+    marginTop: verticalScale(40),
+    marginHorizontal: moderateScale(24),
+    paddingHorizontal: moderateScale(10),
+  },
+  strictEmptyIconCircle: {
+    width: moderateScale(90),
+    height: moderateScale(90),
+    borderRadius: moderateScale(45),
+    backgroundColor: isDarkMode ? 'rgba(0, 242, 254, 0.08)' : 'rgba(0, 242, 254, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 242, 254, 0.2)',
+    marginBottom: verticalScale(20),
+  },
+  strictEmptyTitle: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(20),
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: verticalScale(12),
+  },
+  strictEmptyDesc: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(14),
+    textAlign: 'center',
+    lineHeight: verticalScale(21),
+    marginBottom: verticalScale(10),
+  },
+  strictEmptySubtext: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    textAlign: 'center',
+    lineHeight: verticalScale(18),
+    opacity: 0.7,
+    marginBottom: verticalScale(24),
+    fontStyle: 'italic',
+  },
+  browseAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.primary,
+    paddingHorizontal: horizontalScale(20),
+    paddingVertical: verticalScale(12),
+    borderRadius: moderateScale(14),
+  },
+  browseAllBtnText: {
+    color: '#FFF',
+    fontSize: getResponsiveFontSize(14),
+    fontWeight: '700',
+  },
+  // ── Transparency Bar ───────────────────────────────────────
+  transparencyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+    borderRadius: moderateScale(10),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: verticalScale(8),
+    marginBottom: verticalScale(10),
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  transparencyBarText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(11),
+    fontWeight: '500',
+    flex: 1,
   },
   allLeaguesBtn: {
     flexDirection: 'row',
