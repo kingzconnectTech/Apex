@@ -2195,17 +2195,21 @@ function buildH2H(headToHeadGames, matchId, homeTeamId, awayTeamId) {
 /**
  * POST /api/match-prediction
  *
- * Body: { matchId, sport, leagueSlug, homeTeamId, awayTeamId }
+ * Body: { matchId, sport, leagueSlug, homeTeamId, awayTeamId, userId? }
  *
  * Fetches all required ESPN data server-side, runs the full prediction
  * algorithm, caches the result for 2 minutes, and returns structured
  * prediction output to the frontend.
+ *
+ * NEW: If userId is provided, first checks Firestore for a saved prediction.
+ * If found, returns the saved prediction (preserving original pre-match data).
+ * Only generates new prediction when no saved prediction exists.
  */
 app.post('/api/match-prediction', async (req, res) => {
   const { traceId } = req;
 
   // --- Input Validation ---
-  const { matchId, sport, leagueSlug, homeTeamId, awayTeamId } = req.body || {};
+  const { matchId, sport, leagueSlug, homeTeamId, awayTeamId, userId } = req.body || {};
 
   if (!matchId || !sport || !leagueSlug || !homeTeamId || !awayTeamId) {
     return res.status(400).json({
@@ -2237,14 +2241,112 @@ app.post('/api/match-prediction', async (req, res) => {
 
   const cacheKey = `prediction:${sport}:${leagueSlug}:${matchId}`;
 
-  // --- Serve from cache if available ---
+  // --- STEP 1: Check Firestore for saved prediction (preserves original data) ---
+  if (userId && admin.firestore) {
+    try {
+      const db = admin.firestore();
+      const savedSnap = await db.collection('predictions')
+        .where('userId', '==', String(userId))
+        .where('matchId', '==', String(matchId))
+        .limit(1)
+        .get();
+
+      if (!savedSnap.empty) {
+        const savedDoc = savedSnap.docs[0];
+        const savedData = savedDoc.data();
+
+        logger.info('Found saved prediction in Firestore', {
+          traceId,
+          matchId,
+          userId,
+          settlementStatus: savedData.settlementStatus,
+          hasResults: Boolean(savedData.results && savedData.results.length > 0),
+          savedAt: savedData.createdAt,
+        });
+
+        // Reconstruct prediction response from saved data
+        // IMPORTANT: We preserve EXACT original prediction values - no post-match data leakage
+        const savedPrediction = {
+          matchId: savedData.matchId,
+          sport: savedData.sport,
+          leagueSlug: savedData.leagueSlug,
+          homeName: savedData.homeName,
+          awayName: savedData.awayName,
+          recommendations: (savedData.predictions || []).map(p => ({
+            type: p.market,
+            label: p.label,
+            value: p.selection || p.value,
+            confidence: p.confidence,
+          })),
+          prediction: savedData.predictions?.[0]?.label || 'Unknown',
+          confidence: savedData.predictions?.[0]?.confidence || 0,
+          fromSavedPrediction: true,
+          savedAt: savedData.createdAt,
+          settlementStatus: savedData.settlementStatus,
+          results: savedData.results,
+          actualHomeScore: savedData.actualHomeScore,
+          actualAwayScore: savedData.actualAwayScore,
+          meta: {
+            generatedAt: savedData.createdAt,
+            dataSource: 'saved_prediction',
+            homeRecord: 'N/A',
+            awayRecord: 'N/A',
+            homeFormMatches: 0,
+            awayFormMatches: 0,
+            h2hGamesAnalyzed: 0,
+          },
+        };
+
+        logger.info('Served saved prediction from Firestore (preserving original data)', {
+          traceId,
+          matchId,
+          userId,
+          settlementStatus: savedData.settlementStatus,
+          marketsCount: savedPrediction.recommendations.length,
+        });
+
+        return res.json({ ...savedPrediction, traceId, fromCache: false });
+      } else {
+        logger.info('No saved prediction found in Firestore, will generate new', {
+          traceId,
+          matchId,
+          userId,
+        });
+      }
+    } catch (firestoreErr) {
+      logger.warn('Failed to check Firestore for saved prediction, proceeding with generation', {
+        traceId,
+        matchId,
+        userId,
+        error: firestoreErr.message,
+      });
+      // Continue to generation if Firestore check fails
+    }
+  } else {
+    logger.info('No userId provided or Firebase not initialized, skipping saved prediction check', {
+      traceId,
+      matchId,
+      hasUserId: Boolean(userId),
+      hasFirebase: Boolean(admin.firestore),
+    });
+  }
+
+  // --- Serve from in-memory cache if available (for new predictions) ---
   const cached = getPredictionFromCache(cacheKey);
   if (cached) {
     logger.info('Prediction served from cache', { traceId, cacheKey });
     return res.json({ ...cached, traceId, fromCache: true });
   }
 
-  logger.info('Match prediction requested', { traceId, matchId, sport, leagueSlug, homeTeamId, awayTeamId });
+  logger.info('Match prediction requested (generating new prediction)', {
+    traceId,
+    matchId,
+    sport,
+    leagueSlug,
+    homeTeamId,
+    awayTeamId,
+    userId: userId || 'not_provided',
+  });
 
   // --- Unified prediction data ---
   // Primary: Direct ESPN fetch (preserves 100% existing behavior)
@@ -2320,6 +2422,17 @@ app.post('/api/match-prediction', async (req, res) => {
       (homeTeam?.displayName || awayTeam?.displayName) &&
       (homeLastMatches.length > 0 || awayLastMatches.length > 0 || h2h)
     );
+
+    logger.info('ESPN data fetch result', {
+      traceId,
+      matchId,
+      hasHomeTeam: Boolean(homeTeam),
+      hasAwayTeam: Boolean(awayTeam),
+      homeFormMatches: homeLastMatches.length,
+      awayFormMatches: awayLastMatches.length,
+      hasH2H: Boolean(h2h),
+      espnSufficient,
+    });
   } catch (espnError) {
     logger.warn('ESPN direct fetch/parse failed, attempting SportsDataService fallback', {
       traceId, matchId, sport, leagueSlug, error: espnError.message,

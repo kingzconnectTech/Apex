@@ -2,7 +2,8 @@ import { API_URL } from '../constants/config';
 
 /**
  * Fetch a full match prediction from the backend.
- * The backend fetches ESPN data server-side, runs analyzeMatchServer,
+ * The backend first checks Firestore for a saved prediction (preserving original data).
+ * If not found, it fetches ESPN data server-side, runs analyzeMatchServer,
  * caches the result for 2 minutes, and returns structured prediction output.
  *
  * @param {string|number} matchId      - ESPN event/match ID
@@ -10,9 +11,10 @@ import { API_URL } from '../constants/config';
  * @param {string}        leagueSlug   - ESPN league slug (e.g. 'eng.1', 'nba')
  * @param {string|number} homeTeamId   - ESPN team ID for home side
  * @param {string|number} awayTeamId   - ESPN team ID for away side
+ * @param {string}        [userId]     - User ID to check for saved predictions
  * @returns {Promise<Object|null>} prediction object or null on failure
  */
-export const fetchMatchPrediction = async (matchId, sport, leagueSlug, homeTeamId, awayTeamId) => {
+export const fetchMatchPrediction = async (matchId, sport, leagueSlug, homeTeamId, awayTeamId, userId = null) => {
   try {
     const response = await fetch(`${API_URL}/api/match-prediction`, {
       method: 'POST',
@@ -23,6 +25,7 @@ export const fetchMatchPrediction = async (matchId, sport, leagueSlug, homeTeamI
         leagueSlug,
         homeTeamId: String(homeTeamId),
         awayTeamId: String(awayTeamId),
+        userId: userId || undefined,
       }),
     });
 

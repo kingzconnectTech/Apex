@@ -132,16 +132,26 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 match.sport,
                 match.leagueSlug,
                 homeId,
-                awayId
+                awayId,
+                user?.uid // Pass userId to check for saved predictions
               );
               if (predResult && predResult.recommendations) {
                 setBotAnalysis(predResult);
+                // If loaded from saved prediction, show settlement data if available
+                if (predResult.fromSavedPrediction && predResult.settlementStatus === 'settled') {
+                  setShowPrediction(true);
+                }
               } else {
                 setPredictionError('Prediction data unavailable. Try again later.');
               }
             } catch (predErr) {
               console.warn('Prediction fetch failed:', predErr);
-              setPredictionError('Could not generate prediction. Check your connection.');
+              // Distinguish between network errors and server errors
+              if (predErr.message?.includes('Network') || predErr.message?.includes('fetch')) {
+                setPredictionError('Network error. Check your connection.');
+              } else {
+                setPredictionError('Could not generate prediction. Please try again.');
+              }
             } finally {
               setPredictionLoading(false);
             }
@@ -171,7 +181,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
     };
 
     loadData();
-  }, [match]);
+  }, [match, user?.uid]);
 
   // Refresh settlement when screen regains focus (avoids stale Pending after background settle)
   useEffect(() => {
