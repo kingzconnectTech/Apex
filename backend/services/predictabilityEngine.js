@@ -37,6 +37,12 @@ const {
   calculateBookingsPrediction,
 } = require('./footballHistoricalAnalysis');
 
+const {
+  analyzeShotsHistory,
+  analyzeH2HShotsHistory,
+  calculateShotsPrediction,
+} = require('./footballShotsAnalysis');
+
 // ──────────────────────────────────────────────────────────
 // 1. Configurable Eligibility Filter Thresholds
 // ──────────────────────────────────────────────────────────
@@ -281,6 +287,7 @@ function evaluateMarketCandidate({
   const isHt = market.includes('ht');
   const isCorners = market.includes('corners');
   const isBookings = market.includes('bookings');
+  const isShots = market.includes('shots');
   const dataQualityScore = calculateDataQualityScore(cleanHomeMatches, cleanAwayMatches, {
     requireHt: isHt,
     requireCorners: isCorners,
@@ -316,6 +323,15 @@ function evaluateMarketCandidate({
     const poissonProb = predictionResult.marketType === 'over'
       ? (1 - poissonCdf(Math.floor(line), expBookings))
       : poissonCdf(Math.floor(line), expBookings);
+    modelAgreementScore = calculateModelAgreement(predictionResult.probability, poissonProb);
+  } else if (isShots) {
+    const expShots = predictionResult.expectedTotalShots || 24;
+    const line = predictionResult.line || 23.5;
+    const floorLine = Math.floor(line);
+    // Shots use NB-dispersed distribution; Poisson is a sanity-check upper bound.
+    const poissonProb = predictionResult.marketType === 'over'
+      ? (1 - poissonCdf(floorLine, expShots))
+      : poissonCdf(floorLine, expShots);
     modelAgreementScore = calculateModelAgreement(predictionResult.probability, poissonProb);
   }
 
@@ -427,6 +443,10 @@ function evaluateMarketCandidate({
     expectedGoals: predictionResult.expectedGoals || null,
     expectedCorners: predictionResult.expectedCorners || null,
     expectedBookings: predictionResult.expectedBookings || null,
+    expectedTotalShots: predictionResult.expectedTotalShots || null,
+    expectedHomeShots: predictionResult.expectedHomeShots || null,
+    expectedAwayShots: predictionResult.expectedAwayShots || null,
+    category: predictionResult.category || null,
     line: predictionResult.line || null,
   };
 }
@@ -466,6 +486,8 @@ function evaluateFixture({
   const awayCorners = analyzeCornersHistory(cleanAwayMatches, { isHomeContext: false });
   const homeBookings = analyzeBookingsHistory(cleanHomeMatches, { isHomeContext: true });
   const awayBookings = analyzeBookingsHistory(cleanAwayMatches, { isHomeContext: false });
+  const homeShots = analyzeShotsHistory(cleanHomeMatches, { isHomeContext: true });
+  const awayShots = analyzeShotsHistory(cleanAwayMatches, { isHomeContext: false });
 
   // H2H analysis
   let h2hAnalysis = null;
@@ -533,6 +555,12 @@ function evaluateFixture({
     h2hAnalysis,
   });
 
+  const predShots = calculateShotsPrediction({
+    homeAnalysis: homeShots,
+    awayAnalysis: awayShots,
+    h2hAnalysis: h2hAnalysis?.shots ?? null,
+  });
+
   // 3. Evaluate each market candidate with strict eligibility filters
   const candidateMarkets = [
     { market: 'home_team_under_2_5', pred: predHomeU25 },
@@ -541,6 +569,7 @@ function evaluateFixture({
     { market: 'under_bookings', pred: predUnderBookings },
     { market: 'under_4_5_goals', pred: predU45 },
     { market: 'under_2_5_ht', pred: predU25Ht },
+    { market: predShots?.market || 'total_shots', pred: predShots },
   ];
 
   const evaluatedCandidates = candidateMarkets.map(item =>
@@ -653,6 +682,14 @@ function filterAndRankFixtures(evaluatedFixturesList = []) {
         sampleSize: item.topCandidate.historical_sample_size,
         confidenceLabel: item.confidenceLabel,
         supportingEvidence: item.topCandidate.supporting_evidence,
+        category: item.topCandidate.category,
+        line: item.topCandidate.line,
+        expectedTotalShots: item.topCandidate.expectedTotalShots,
+        expectedHomeShots: item.topCandidate.expectedHomeShots,
+        expectedAwayShots: item.topCandidate.expectedAwayShots,
+        expectedGoals: item.topCandidate.expectedGoals,
+        expectedCorners: item.topCandidate.expectedCorners,
+        expectedBookings: item.topCandidate.expectedBookings,
         allEligibleMarkets: item.eligibleCandidates,
       });
     } else {

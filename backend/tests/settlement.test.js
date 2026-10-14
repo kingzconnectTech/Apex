@@ -206,6 +206,81 @@ describe('Market Settlement Rules', () => {
       expect(settleMarket('btts', 'no', 1, 1)).toBe('lost');
     });
   });
+
+  describe('AC-8: Football Shots Markets', () => {
+    test('settles total shots over/under correctly', () => {
+      const extra = { totalShots: 22 };
+
+      expect(settleMarket('total_shots_over_21_5', null, 0, 0, extra)).toBe('won'); // 22 > 21.5
+      expect(settleMarket('total_shots_under_21_5', null, 0, 0, extra)).toBe('lost');
+
+      const extra2 = { totalShots: 20 };
+      expect(settleMarket('total_shots_over_21_5', null, 0, 0, extra2)).toBe('lost'); // 20 < 21.5
+      expect(settleMarket('total_shots_under_21_5', null, 0, 0, extra2)).toBe('won');
+    });
+
+    test('settles home shots over/under correctly', () => {
+      const extra = { homeShots: 12 };
+
+      expect(settleMarket('home_shots_over_10_5', null, 0, 0, extra)).toBe('won'); // 12 > 10.5
+      expect(settleMarket('home_shots_under_10_5', null, 0, 0, extra)).toBe('lost');
+
+      const extra2 = { homeShots: 8 };
+      expect(settleMarket('home_shots_over_10_5', null, 0, 0, extra2)).toBe('lost'); // 8 < 10.5
+      expect(settleMarket('home_shots_under_10_5', null, 0, 0, extra2)).toBe('won');
+    });
+
+    test('settles away shots over/under correctly', () => {
+      const extra = { awayShots: 12 };
+
+      expect(settleMarket('away_shots_over_10_5', null, 0, 0, extra)).toBe('won'); // 12 > 10.5
+      expect(settleMarket('away_shots_under_10_5', null, 0, 0, extra)).toBe('lost');
+
+      const extra2 = { awayShots: 8 };
+      expect(settleMarket('away_shots_over_10_5', null, 0, 0, extra2)).toBe('lost'); // 8 < 10.5
+      expect(settleMarket('away_shots_under_10_5', null, 0, 0, extra2)).toBe('won');
+    });
+
+    test('uses prediction line for settlement when extra.line not provided', () => {
+      const extra = { totalShots: 22, line: 21.5 };
+      expect(settleMarket('total_shots_over_21_5', null, 0, 0, extra)).toBe('won');
+    });
+  });
+
+  describe('AC-8: Basketball Markets', () => {
+    test('settles basketball match winner correctly', () => {
+      expect(settleMarket('basketball_match_winner_home', null, 110, 105)).toBe('won');
+      expect(settleMarket('basketball_match_winner_away', null, 110, 105)).toBe('lost');
+      expect(settleMarket('basketball_match_winner', null, 110, 105)).toBe('won');
+
+      expect(settleMarket('basketball_match_winner_home', null, 100, 115)).toBe('lost');
+      expect(settleMarket('basketball_match_winner_away', null, 100, 115)).toBe('won');
+    });
+
+    test('settles basketball total points over/under correctly', () => {
+      const extra = { line: 215.5 };
+      const homeGoals = 110;
+      const awayGoals = 108; // total = 218
+
+      expect(settleMarket('basketball_total_points_over_215_5', null, homeGoals, awayGoals, extra)).toBe('won');
+      expect(settleMarket('basketball_total_points_under_215_5', null, homeGoals, awayGoals, extra)).toBe('lost');
+
+      const homeGoals2 = 105;
+      const awayGoals2 = 100; // total = 205
+      expect(settleMarket('basketball_total_points_over_215_5', null, homeGoals2, awayGoals2, extra)).toBe('lost');
+      expect(settleMarket('basketball_total_points_under_215_5', null, homeGoals2, awayGoals2, extra)).toBe('won');
+    });
+
+    test('settles basketball team points over/under correctly', () => {
+      const extra = { line: 105.5 };
+
+      expect(settleMarket('basketball_home_points_over_105_5', null, 110, 100, extra)).toBe('won');
+      expect(settleMarket('basketball_home_points_under_105_5', null, 110, 100, extra)).toBe('lost');
+
+      expect(settleMarket('basketball_away_points_over_105_5', null, 110, 100, extra)).toBe('lost');
+      expect(settleMarket('basketball_away_points_under_105_5', null, 110, 100, extra)).toBe('won');
+    });
+  });
 });
 
 // ──────────────────────────────────────────────────────────

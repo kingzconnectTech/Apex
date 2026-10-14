@@ -181,6 +181,30 @@ function validateAndFilterHistoricalMatches(matches, { kickoffDate = null } = {}
       totalBookings = yellowCards + redCards;
     }
 
+    // Shots (total shots, NOT shots-on-target). Preserve null when absent.
+    const shots = (m.shots !== undefined && m.shots !== null && !isNaN(Number(m.shots)))
+      ? Number(m.shots)
+      : (m.stats?.shots !== undefined && m.stats?.shots !== null && !isNaN(Number(m.stats.shots))
+        ? Number(m.stats.shots)
+        : null);
+    const shotsOnTarget = (m.shotsOnTarget !== undefined && m.shotsOnTarget !== null && !isNaN(Number(m.shotsOnTarget)))
+      ? Number(m.shotsOnTarget)
+      : (m.stats?.shotsOnTarget !== undefined && m.stats?.shotsOnTarget !== null && !isNaN(Number(m.stats.shotsOnTarget))
+        ? Number(m.stats.shotsOnTarget)
+        : null);
+    const shotsConceded = (m.shotsConceded !== undefined && m.shotsConceded !== null && !isNaN(Number(m.shotsConceded)))
+      ? Number(m.shotsConceded)
+      : (m.oppShots !== undefined && m.oppShots !== null && !isNaN(Number(m.oppShots))
+        ? Number(m.oppShots)
+        : null);
+
+    let totalShots = null;
+    if (m.totalShots !== undefined && m.totalShots !== null && !isNaN(Number(m.totalShots))) {
+      totalShots = Number(m.totalShots);
+    } else if (shots !== null && shotsConceded !== null) {
+      totalShots = shots + shotsConceded;
+    }
+
     valid.push({
       ...m,
       pf,
@@ -194,6 +218,10 @@ function validateAndFilterHistoricalMatches(matches, { kickoffDate = null } = {}
       opponentYellowCards,
       opponentRedCards,
       totalBookings,
+      shots,
+      shotsOnTarget,
+      shotsConceded,
+      totalShots,
       date: m.date ? new Date(m.date).toISOString() : null,
       timestamp: m.date ? new Date(m.date).getTime() : 0,
     });
@@ -820,8 +848,36 @@ function analyzeH2HHistory(h2hMatches) {
     };
   }
 
+  // --- Shots H2H (total shots, NOT shots-on-target) ---
+  const validShots = h2hMatches.filter((m) => {
+    const tot = m.totalShots !== undefined && m.totalShots !== null
+      ? Number(m.totalShots)
+      : (m.homeShots != null && m.awayShots != null
+        ? Number(m.homeShots) + Number(m.awayShots)
+        : (m.shots != null && m.shotsConceded != null
+          ? Number(m.shots) + Number(m.shotsConceded)
+          : NaN));
+    return !isNaN(tot);
+  });
+  let h2hShots = null;
+  if (validShots.length > 0) {
+    let totShotsSum = 0;
+    validShots.forEach(m => {
+      const tot = m.totalShots != null
+        ? Number(m.totalShots)
+        : (m.homeShots != null && m.awayShots != null
+          ? Number(m.homeShots) + Number(m.awayShots)
+          : Number(m.shots) + Number(m.shotsConceded));
+      totShotsSum += tot;
+    });
+    h2hShots = {
+      sampleSize: validShots.length,
+      avgShots: Number((totShotsSum / validShots.length).toFixed(2)),
+    };
+  }
+
   return {
-    valid: validFT.length > 0 || validHT.length > 0 || validCorners.length > 0 || validBookings.length > 0,
+    valid: validFT.length > 0 || validHT.length > 0 || validCorners.length > 0 || validBookings.length > 0 || validShots.length > 0,
     sampleSize: validFT.length,
     under45: u45,
     under25Ht: u25Ht,
@@ -829,6 +885,7 @@ function analyzeH2HHistory(h2hMatches) {
     awayUnder25,
     corners: h2hCorners,
     bookings: h2hBookings,
+    shots: h2hShots,
   };
 }
 

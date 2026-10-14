@@ -13,6 +13,17 @@ import { useTheme } from '../context/ThemeContext';
 
 const CATEGORIES = ['Football', 'Basketball', 'Tennis'];
 
+const toSnake = (obj) => {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(toSnake);
+  const out = {};
+  for (const k of Object.keys(obj)) {
+    const snake = k.replace(/([A-Z])/g, '_$1').toLowerCase();
+    out[snake] = toSnake(obj[k]);
+  }
+  return out;
+};
+
 const REGIONS = ['All (77)', 'Europe', 'Americas', 'Asia', 'Middle East & Africa'];
 
 const LEAGUES_FILTER = {
@@ -84,26 +95,28 @@ export default function TipsScreen({ navigation }) {
   }, []);
 
   const loadRecommended = async (date) => {
-    if (selectedCategory !== 'Football') return;
+    if (selectedCategory !== 'Football' && selectedCategory !== 'Basketball') return;
     setLoadingRecommended(true);
     try {
       const y = date.getFullYear();
       const m = String(date.getMonth() + 1).padStart(2, '0');
       const d = String(date.getDate()).padStart(2, '0');
       const dateStr = `${y}${m}${d}`;
+      const sport = selectedCategory === 'Football' ? 'soccer' : 'basketball';
       const res = await fetchRecommendedPredictions({
-        sport: 'soccer',
+        sport,
         date: dateStr,
         league: selectedLeague !== 'All' && selectedLeague !== 'Live' ? selectedLeague : null,
         minProb: 0.75,
       });
       if (res && res.success) {
+        const recs = Array.isArray(res.recommended) ? res.recommended.map(toSnake) : [];
         setRecommendedData({
-          recommendations: res.recommendations || [],
-          totalAnalyzed: res.totalAnalyzed || 0,
-          totalRecommended: res.totalRecommended || 0,
-          totalRejected: res.totalRejected || 0,
-          acceptanceRate: res.acceptanceRate || 0,
+          recommendations: recs,
+          totalAnalyzed: res.stats?.totalAnalyzed || res.totalAnalyzed || 0,
+          totalRecommended: res.stats?.totalRecommended || res.totalRecommended || 0,
+          totalRejected: res.stats?.totalRejected || res.totalRejected || 0,
+          acceptanceRate: res.stats?.acceptanceRate || res.acceptanceRate || 0,
         });
       } else {
         setRecommendedData({
@@ -328,8 +341,12 @@ export default function TipsScreen({ navigation }) {
     const isUnder25Ht = marketKey === 'under_2_5_ht';
     const isCorners = marketKey.includes('corners');
     const isBookings = marketKey.includes('bookings');
+    const isShots = marketKey.startsWith('total_shots_') || marketKey.startsWith('home_shots_') || marketKey.startsWith('away_shots_') || item.category === 'shots';
+    const isBasketball = item.category === 'basketball' || marketKey.startsWith('basketball_');
 
     const marketDisplayTitle =
+      isShots ? (item.label || item.value || item.marketLabel || 'Total Shots Over/Under') :
+      isBasketball ? (item.label || item.value || item.marketLabel || 'Basketball Prediction') :
       isUnder25Home ? `${item.homeName} Under 2.5 Goals` :
       isUnder25Away ? `${item.awayName} Under 2.5 Goals` :
       isUnder45 ? 'Under 4.5 Match Goals' :
@@ -339,7 +356,16 @@ export default function TipsScreen({ navigation }) {
       item.marketLabel || item.label || 'High Confidence Prediction';
 
     const formattedKickoff = item.kickoff ? new Date(item.kickoff).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Upcoming';
-    const calProb = Math.round((item.calibrated_probability || 0.75) * 100);
+    const calProb = Math.round((item.calibrated_probability || item.probability || 0.75) * 100);
+
+    // Market-specific supporting stats from the model (never hardcoded)
+    const shotsInfo = isShots && (item.expected_total_shots != null || item.expected_home_shots != null)
+      ? `Exp. Shots: ${item.expected_total_shots ?? (item.expected_home_shots + item.expected_away_shots)} (H:${item.expected_home_shots ?? '-'} A:${item.expected_away_shots ?? '-'})`
+      : null;
+
+    const basketballInfo = isBasketball && (item.expected_home_points != null)
+      ? `Exp: ${Math.round(item.expected_home_points)}-${Math.round(item.expected_away_points)} (Total: ${Math.round(item.expected_total_points)}) | Pace: ${Math.round(item.pace || 98)}`
+      : null;
 
     return (
       <Animated.View style={{ opacity: fadeAnim }}>
@@ -440,10 +466,22 @@ export default function TipsScreen({ navigation }) {
             </View>
 
             {/* Supporting Evidence Bullets */}
-            {Array.isArray(item.supporting_evidence) && item.supporting_evidence.length > 0 && (
+            {(shotsInfo || basketballInfo || (Array.isArray(item.supporting_evidence) && item.supporting_evidence.length > 0)) && (
               <View style={styles.evidenceContainer}>
                 <Text style={styles.evidenceHeading}>Supporting Statistical Evidence:</Text>
-                {item.supporting_evidence.slice(0, 3).map((bullet, bIdx) => (
+                {shotsInfo && (
+                  <View style={styles.evidenceBulletRow}>
+                    <Ionicons name="analytics" size={14} color="#00F2FE" style={{ marginRight: 6, marginTop: 2 }} />
+                    <Text style={styles.evidenceBulletText}>{shotsInfo}</Text>
+                  </View>
+                )}
+                {basketballInfo && (
+                  <View style={styles.evidenceBulletRow}>
+                    <Ionicons name="basketball" size={14} color="#FF6B6B" style={{ marginRight: 6, marginTop: 2 }} />
+                    <Text style={styles.evidenceBulletText}>{basketballInfo}</Text>
+                  </View>
+                )}
+                {Array.isArray(item.supporting_evidence) && item.supporting_evidence.slice(0, 3).map((bullet, bIdx) => (
                   <View key={bIdx} style={styles.evidenceBulletRow}>
                     <Ionicons name="checkmark-circle" size={14} color="#10B981" style={{ marginRight: 6, marginTop: 2 }} />
                     <Text style={styles.evidenceBulletText}>{bullet}</Text>

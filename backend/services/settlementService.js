@@ -37,6 +37,69 @@ function settleMarket(market, selection, homeGoals, awayGoals, extra = {}) {
 
   const m = String(market || '').toLowerCase().replace(/ /g, '_');
 
+  // ── Dynamic-line markets (shots, basketball points) ──────────────
+  // Market keys encode the line, e.g. total_shots_over_21_5 -> line 21.5
+  const lineMatch = m.match(/(\d+)_(\d)$/);
+  const parsedLine = lineMatch ? parseFloat(`${lineMatch[1]}.${lineMatch[2]}`) : null;
+
+  // Football shots
+  if (m.startsWith('total_shots_')) {
+    const side = m.includes('_over_') ? 'over' : 'under';
+    const line = parsedLine ?? extra.line ?? 21.5;
+    const totalShots = extra.totalShots;
+    if (!isValidScore(totalShots)) return null;
+    return side === 'over'
+      ? Number(totalShots) > line ? 'won' : 'lost'
+      : Number(totalShots) < line ? 'won' : 'lost';
+  }
+  if (m.startsWith('home_shots_')) {
+    const side = m.includes('_over_') ? 'over' : 'under';
+    const line = parsedLine ?? extra.line ?? 10.5;
+    const homeShots = extra.homeShots;
+    if (!isValidScore(homeShots)) return null;
+    return side === 'over'
+      ? Number(homeShots) > line ? 'won' : 'lost'
+      : Number(homeShots) < line ? 'won' : 'lost';
+  }
+  if (m.startsWith('away_shots_')) {
+    const side = m.includes('_over_') ? 'over' : 'under';
+    const line = parsedLine ?? extra.line ?? 10.5;
+    const awayShots = extra.awayShots;
+    if (!isValidScore(awayShots)) return null;
+    return side === 'over'
+      ? Number(awayShots) > line ? 'won' : 'lost'
+      : Number(awayShots) < line ? 'won' : 'lost';
+  }
+
+  // Basketball (homeGoals/awayGoals carry final points for basketball)
+  if (m === 'basketball_match_winner' || m === 'basketball_match_winner_home') {
+    return hg > ag ? 'won' : 'lost';
+  }
+  if (m === 'basketball_match_winner_away') {
+    return ag > hg ? 'won' : 'lost';
+  }
+  if (m.startsWith('basketball_total_points_')) {
+    const side = m.includes('_over_') ? 'over' : 'under';
+    const line = parsedLine ?? extra.line ?? 215.5;
+    return side === 'over'
+      ? total > line ? 'won' : 'lost'
+      : total < line ? 'won' : 'lost';
+  }
+  if (m.startsWith('basketball_home_points_')) {
+    const side = m.includes('_over_') ? 'over' : 'under';
+    const line = parsedLine ?? extra.line ?? 105.5;
+    return side === 'over'
+      ? hg > line ? 'won' : 'lost'
+      : hg < line ? 'won' : 'lost';
+  }
+  if (m.startsWith('basketball_away_points_')) {
+    const side = m.includes('_over_') ? 'over' : 'under';
+    const line = parsedLine ?? extra.line ?? 105.5;
+    return side === 'over'
+      ? ag > line ? 'won' : 'lost'
+      : ag < line ? 'won' : 'lost';
+  }
+
   switch (m) {
     // ── Goals totals ────────────────────────────────────
     case 'under_4_5_goals':
@@ -369,6 +432,10 @@ async function settlePrediction(admin, predictionDoc, scoreData, source, logger)
         cornersLine: pred.cornersLine || pred.line || scoreData.cornersLine,
         totalBookings: scoreData.totalBookings,
         bookingsLine: pred.bookingsLine || pred.line || scoreData.bookingsLine,
+        homeShots: scoreData.homeShots,
+        awayShots: scoreData.awayShots,
+        totalShots: scoreData.totalShots,
+        line: pred.line,
       }
     );
     return {
@@ -387,6 +454,9 @@ async function settlePrediction(admin, predictionDoc, scoreData, source, logger)
     actualHtAway: scoreData.htAway ?? null,
     actualTotalCorners: scoreData.totalCorners ?? null,
     actualTotalBookings: scoreData.totalBookings ?? null,
+    actualHomeShots: scoreData.homeShots ?? null,
+    actualAwayShots: scoreData.awayShots ?? null,
+    actualTotalShots: scoreData.totalShots ?? null,
     settlementSource: source || 'unknown',
     settlementVersion: (data.settlementVersion || 0) + 1,
     results,
@@ -614,6 +684,9 @@ async function autoSettleFinishedMatches(admin, fetchMatchSummary, logger) {
       let htAway = null;
       let totalCorners = null;
       let totalBookings = null;
+      let homeShots = null;
+      let awayShots = null;
+      let totalShots = null;
 
       // Extract boxscore statistics if available
       if (summary.boxscore?.teams && Array.isArray(summary.boxscore.teams)) {
@@ -634,6 +707,15 @@ async function autoSettleFinishedMatches(admin, fetchMatchSummary, logger) {
         const aRed = findStat(teams[1], ['redCards', 'red_cards']) ?? 0;
         if (isValidScore(hYellow) && isValidScore(aYellow)) {
           totalBookings = hYellow + aYellow + (isValidScore(hRed) ? hRed : 0) + (isValidScore(aRed) ? aRed : 0);
+        }
+
+        // Football shots (total shots, NOT shots-on-target)
+        const hShots = findStat(teams[0], ['totalShots', 'shots', 'shotsTotal']);
+        const aShots = findStat(teams[1], ['totalShots', 'shots', 'shotsTotal']);
+        if (isValidScore(hShots)) homeShots = hShots;
+        if (isValidScore(aShots)) awayShots = aShots;
+        if (homeShots != null && awayShots != null) {
+          totalShots = homeShots + awayShots;
         }
       } else if (summary.stats) {
         if (isValidScore(summary.stats.totalCorners)) {
@@ -710,6 +792,9 @@ async function autoSettleFinishedMatches(admin, fetchMatchSummary, logger) {
             htAway,
             totalCorners,
             totalBookings,
+            homeShots,
+            awayShots,
+            totalShots,
           }, 'espn-auto', logger);
           if (res) {
             settledCount++;

@@ -27,6 +27,14 @@ const {
   calculateBookingsPrediction,
 } = require('./services/footballHistoricalAnalysis');
 const {
+  analyzeShotsHistory,
+  calculateShotsPrediction,
+} = require('./services/footballShotsAnalysis');
+const {
+  analyzeBasketballHistory,
+  calculateBasketballPrediction,
+} = require('./services/basketballEngine');
+const {
   settleMarket,
   classifyMatchStatus,
   normaliseMarketKey,
@@ -52,6 +60,9 @@ const {
 } = require('./services/predictabilityEngine');
 
 const IS_ENTRY_POINT = require.main === module;
+
+// Global flag to prevent duplicate cron job initialization in cluster/PM2 environments
+let cronJobsInitialized = false;
 
 // Logger Configuration
 const logger = winston.createLogger({
@@ -140,6 +151,16 @@ const FOOTBALL_MARKET_PRIORITY = [
   'under_bookings',
   'over_bookings',
   'under_1_5_ht',
+  'total_shots_over_19_5',
+  'total_shots_under_19_5',
+  'total_shots_over_21_5',
+  'total_shots_under_21_5',
+  'total_shots_over_23_5',
+  'total_shots_under_23_5',
+  'total_shots_over_25_5',
+  'total_shots_under_25_5',
+  'total_shots_over_27_5',
+  'total_shots_under_27_5',
 ];
 
 // Enhanced Cache
@@ -360,49 +381,54 @@ app.get('/api/proxy', async (req, res) => {
 });
 
 // Periodic cache cleanup
-if (IS_ENTRY_POINT) cron.schedule('*/5 * * * *', () => {
-  const nowTs = Date.now();
-  let removedProxy = 0;
-  for (const [key, entry] of cache.entries()) {
-    if (entry.expiresAt < nowTs) {
-      cache.delete(key);
-      removedProxy++;
-    }
-  }
-  let removedPred = 0;
-  for (const [k, v] of predictionCache.entries()) {
-    if (v.expiresAt < nowTs) { predictionCache.delete(k); removedPred++; }
-  }
-  const removedShared = sportsData.purgeExpired();
-  const total = removedProxy + removedPred + removedShared;
-  if (total > 0) {
-    logger.info(`Cache cleanup: removed ${total} expired entries`, {
-      espnProxy: removedProxy,
-      predictions: removedPred,
-      sportsDataShared: removedShared,
-    });
-  }
-});
-
-// Automatic Prediction Settlement Worker (every 5 minutes)
-if (IS_ENTRY_POINT) cron.schedule('*/5 * * * *', async () => {
-  const traceId = uuidv4();
-  try {
-    const summaryFetcher = async (sport, leagueSlug, matchId) => {
-      try {
-        return await fetchFromBackendOrESPN(`${sport}/${leagueSlug}/summary?event=${matchId}`);
-      } catch (e) {
-        return null;
+if (!cronJobsInitialized) {
+  cron.schedule('*/5 * * * *', () => {
+    const nowTs = Date.now();
+    let removedProxy = 0;
+    for (const [key, entry] of cache.entries()) {
+      if (entry.expiresAt < nowTs) {
+        cache.delete(key);
+        removedProxy++;
       }
-    };
-    const report = await autoSettleFinishedMatches(admin, summaryFetcher, logger);
-    if (report && report.settled > 0) {
-      logger.info('Auto-settlement completed', { traceId, ...report });
     }
-  } catch (err) {
-    logger.error('Error in auto-settlement cron', { traceId, error: err.message });
-  }
-});
+    let removedPred = 0;
+    for (const [k, v] of predictionCache.entries()) {
+      if (v.expiresAt < nowTs) { predictionCache.delete(k); removedPred++; }
+    }
+    const removedShared = sportsData.purgeExpired();
+    const total = removedProxy + removedPred + removedShared;
+    if (total > 0) {
+      logger.info(`Cache cleanup: removed ${total} expired entries`, {
+        espnProxy: removedProxy,
+        predictions: removedPred,
+        sportsDataShared: removedShared,
+      });
+    }
+  });
+
+  // Automatic Prediction Settlement Worker (every 5 minutes)
+  cron.schedule('*/5 * * * *', async () => {
+    const traceId = uuidv4();
+    try {
+      const summaryFetcher = async (sport, leagueSlug, matchId) => {
+        try {
+          return await fetchFromBackendOrESPN(`${sport}/${leagueSlug}/summary?event=${matchId}`);
+        } catch (e) {
+          return null;
+        }
+      };
+      const report = await autoSettleFinishedMatches(admin, summaryFetcher, logger);
+      if (report && report.settled > 0) {
+        logger.info('Auto-settlement completed', { traceId, ...report });
+      }
+    } catch (err) {
+      logger.error('Error in auto-settlement cron', { traceId, error: err.message });
+    }
+  });
+
+  cronJobsInitialized = true;
+  logger.info('Cron jobs initialized');
+}
 
 // Automated stats update for all leagues (every 15 minutes)
 const leaguesToRefresh = [
@@ -1675,6 +1701,21 @@ function analyzeMatchServer({
         if (existingIdx !== -1) footballPredictions.splice(existingIdx, 1);
         footballPredictions.push(statisticalBookings);
       }
+
+      // 11. Calculate Total Shots prediction from dedicated shots engine
+      const homeShotsAnalysis = analyzeShotsHistory(cleanHomeMatches, { isHomeContext: true });
+      const awayShotsAnalysis = analyzeShotsHistory(cleanAwayMatches, { isHomeContext: false });
+      const statisticalShots = calculateShotsPrediction({
+        homeAnalysis: homeShotsAnalysis,
+        awayAnalysis: awayShotsAnalysis,
+        h2hAnalysis: h2hHistoricalAnalysis,
+      });
+
+      if (statisticalShots) {
+        const existingIdx = footballPredictions.findIndex(p => p.category === 'shots' || (p.market && p.market.startsWith('total_shots_')));
+        if (existingIdx !== -1) footballPredictions.splice(existingIdx, 1);
+        footballPredictions.push(statisticalShots);
+      }
     } catch (histErr) {
       // Historical analysis errors should never crash the prediction — log and continue
       logger.warn('[HistoricalAnalysis] Non-fatal error during historical analysis enrichment', {
@@ -1690,7 +1731,34 @@ function analyzeMatchServer({
   const recommendations = [];
 
   if (isBasketball) {
-    // Basketball — keep Match Winner and Total Points
+    // Basketball — use advanced pace/efficiency engine when team histories are available
+    let bballEngine = null;
+    try {
+      const homeBball = analyzeBasketballHistory(homeStats?.lastMatches || [], { isHomeContext: true });
+      const awayBball = analyzeBasketballHistory(awayStats?.lastMatches || [], { isHomeContext: false });
+      bballEngine = calculateBasketballPrediction({
+        homeAnalysis: homeBball,
+        awayAnalysis: awayBball,
+        h2h: h2h,
+      });
+    } catch (bErr) {
+      logger.warn('[BasketballEngine] Non-fatal error', { error: bErr.message });
+    }
+
+    // Match Winner
+    if (bballEngine) {
+      const winnerSide = bballEngine.market.endsWith('_home') ? 'home' : 'away';
+      winPrediction = `${winnerSide === 'home' ? homeName : awayName} Win`;
+      winConfidence = bballEngine.confidence;
+      projectedMargin = winnerSide === 'home'
+        ? bballEngine.expectedHomePoints - bballEngine.expectedAwayPoints
+        : bballEngine.expectedAwayPoints - bballEngine.expectedHomePoints;
+      factors.push({
+        label: `Model expects ${bballEngine.expectedHomePoints.toFixed(0)}-${bballEngine.expectedAwayPoints.toFixed(0)}, pace ${bballEngine.pace.toFixed(0)}`,
+        side: 'neutral',
+        type: 'success',
+      });
+    }
     if (winPrediction) {
       recommendations.push({
         type: 'WIN',
@@ -1699,6 +1767,13 @@ function analyzeMatchServer({
         confidence: Math.round(winConfidence),
         color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96'),
       });
+    }
+
+    // Total Points
+    if (bballEngine?.bestTotalLine) {
+      const bt = bballEngine.bestTotalLine;
+      goalsPrediction = `${bt.side === 'over' ? 'Over' : 'Under'} ${bt.line}`;
+      goalsConfidence = Math.round(bt.probability * 100);
     }
     if (goalsPrediction) {
       recommendations.push({

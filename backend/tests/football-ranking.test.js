@@ -162,6 +162,16 @@ describe('Football Prediction Ranking Logic', () => {
       'under_bookings',
       'over_bookings',
       'under_1_5_ht',
+      'total_shots_over_19_5',
+      'total_shots_under_19_5',
+      'total_shots_over_21_5',
+      'total_shots_under_21_5',
+      'total_shots_over_23_5',
+      'total_shots_under_23_5',
+      'total_shots_over_25_5',
+      'total_shots_under_25_5',
+      'total_shots_over_27_5',
+      'total_shots_under_27_5',
     ]);
   });
 

@@ -130,6 +130,79 @@ class EspnProvider {
     });
   }
 
+  /**
+   * Extract a single numeric stat from a competitor's statistics array.
+   * Searches by both `name` and `label` fields. Returns null when absent.
+   */
+  static findStatValue(competitor, names) {
+    if (!competitor?.statistics) return null;
+    const s = competitor.statistics.find(item => names.includes(item.name) || names.includes(item.label));
+    if (!s) return null;
+    const raw = s.displayValue ?? s.value;
+    if (raw === undefined || raw === null || raw === '') return null;
+    const num = parseFloat(raw);
+    return isNaN(num) ? null : num;
+  }
+
+  /**
+   * Extract football shot statistics for both teams.
+   * Total shots uses the provider's total-shots field — NEVER shots-on-target.
+   * Returns null for any stat the provider does not supply.
+   */
+  static extractFootballShotStats(teamComp, oppComp) {
+    const find = (c, names) => EspnProvider.findStatValue(c, names);
+
+    const shots = find(teamComp, ['totalShots', 'shots', 'shotsTotal']);
+    const shotsOnTarget = find(teamComp, ['shotsOnTarget', 'shots_on_target', 'shotsOnTargetPercentage']);
+    const shotsConceded = find(oppComp, ['totalShots', 'shots', 'shotsTotal']);
+    const shotsOnTargetConceded = find(oppComp, ['shotsOnTarget', 'shots_on_target']);
+    const blockedShots = find(teamComp, ['blockedShots', 'blocked_shots']);
+    const totalShots = (shots != null && shotsConceded != null) ? shots + shotsConceded : null;
+
+    return {
+      shots,
+      shotsOnTarget,
+      shotsConceded,
+      shotsOnTargetConceded,
+      blockedShots,
+      totalShots,
+    };
+  }
+
+  /**
+   * Extract a basketball box score for both teams.
+   * Returns null for any stat the provider does not supply.
+   */
+  static extractBasketballBoxScore(teamComp, oppComp) {
+    const find = (c, names) => EspnProvider.findStatValue(c, names);
+
+    const fgm = find(teamComp, ['fieldGoalsMade', 'field_goals_made', 'fgMade']);
+    const fga = find(teamComp, ['fieldGoalsAttempted', 'field_goals_attempted', 'fgAttempted']);
+    const tpm = find(teamComp, ['threePointFieldGoalsMade', 'three_point_field_goals_made', 'threePointersMade', 'threeMade']);
+    const tpa = find(teamComp, ['threePointFieldGoalsAttempted', 'three_point_field_goals_attempted', 'threePointersAttempted', 'threeAttempted']);
+    const ftm = find(teamComp, ['freeThrowsMade', 'free_throws_made', 'ftMade']);
+    const fta = find(teamComp, ['freeThrowsAttempted', 'free_throws_attempted', 'ftAttempted']);
+    const orb = find(teamComp, ['offensiveRebounds', 'offensive_rebounds', 'offRebounds']);
+    const drb = find(teamComp, ['defensiveRebounds', 'defensive_rebounds', 'defRebounds']);
+    const trb = find(teamComp, ['totalRebounds', 'total_rebounds', 'rebounds']);
+    const ast = find(teamComp, ['assists', 'assist']);
+    const tov = find(teamComp, ['turnovers', 'turnover']);
+    const stl = find(teamComp, ['steals', 'steal']);
+    const blk = find(teamComp, ['blocks', 'block']);
+    const pf = find(teamComp, ['fouls', 'foul', 'personalFouls', 'personal_fouls']);
+
+    const oppFgm = find(oppComp, ['fieldGoalsMade', 'field_goals_made', 'fgMade']);
+    const oppFga = find(oppComp, ['fieldGoalsAttempted', 'field_goals_attempted', 'fgAttempted']);
+    const oppOrb = find(oppComp, ['offensiveRebounds', 'offensive_rebounds', 'offRebounds']);
+    const oppTov = find(oppComp, ['turnovers', 'turnover']);
+    const oppFta = find(oppComp, ['freeThrowsAttempted', 'free_throws_attempted', 'ftAttempted']);
+
+    return {
+      fgm, fga, tpm, tpa, ftm, fta, orb, drb, trb, ast, tov, stl, blk, pf,
+      oppFgm, oppFga, oppOrb, oppTov, oppFta,
+    };
+  }
+
   processScheduleForTeam(events, teamId) {
     if (!events) return [];
     const valid = events.filter(e => {
@@ -152,10 +225,7 @@ class EspnProvider {
       else if (teamScore < oppScore) result = 'L';
       else result = 'D';
 
-      const findStat = (c, names) => {
-        const s = c?.statistics?.find(item => names.includes(item.name) || names.includes(item.label));
-        return s ? parseFloat(s.displayValue ?? s.value) : null;
-      };
+      const findStat = (c, names) => EspnProvider.findStatValue(c, names);
 
       const cornersWon = findStat(teamComp, ['wonCorners', 'cornerKicks', 'corners']);
       const cornersConceded = findStat(oppComp, ['wonCorners', 'cornerKicks', 'corners']);
@@ -167,6 +237,11 @@ class EspnProvider {
       const totalBookings = (yellowCards != null && opponentYellowCards != null)
         ? yellowCards + opponentYellowCards + (redCards || 0) + (opponentRedCards || 0)
         : null;
+
+      // Football shot statistics (null when not supplied by provider)
+      const shotStats = EspnProvider.extractFootballShotStats(teamComp, oppComp);
+      // Basketball box-score statistics (null when not supplied by provider)
+      const boxScore = EspnProvider.extractBasketballBoxScore(teamComp, oppComp);
 
       return {
         date: event.date,
@@ -181,6 +256,13 @@ class EspnProvider {
         opponentYellowCards,
         opponentRedCards,
         totalBookings,
+        shots: shotStats.shots,
+        shotsOnTarget: shotStats.shotsOnTarget,
+        shotsConceded: shotStats.shotsConceded,
+        shotsOnTargetConceded: shotStats.shotsOnTargetConceded,
+        blockedShots: shotStats.blockedShots,
+        totalShots: shotStats.totalShots,
+        boxScore,
         isHome: teamComp?.homeAway === 'home',
         result,
         opponentId: oppComp?.team?.id,
