@@ -173,6 +173,66 @@ export default function MatchDetailsScreen({ route, navigation }) {
     loadData();
   }, [match]);
 
+  // Refresh settlement when screen regains focus (avoids stale Pending after background settle)
+  useEffect(() => {
+    const refreshSettlement = async () => {
+      if (!match?.id) return;
+      try {
+        const settleRes = await fetchPredictionSettlement(match.id, user?.uid);
+        if (!settleRes) return;
+        setSettlementData(prev => {
+          // Never overwrite a settled result with an older pending cache
+          if (prev?.settlementStatus === 'settled' && settleRes.settlementStatus !== 'settled') {
+            return prev;
+          }
+          return settleRes;
+        });
+        if (settleRes.settlementStatus === 'settled') {
+          setShowPrediction(true);
+        }
+      } catch (e) {
+        console.warn('Settlement refresh failed:', e);
+      }
+    };
+
+    const unsub = navigation.addListener('focus', refreshSettlement);
+    return unsub;
+  }, [navigation, match?.id, user?.uid]);
+
+  // Poll while the match is finished but markets are still pending (bounded interval)
+  useEffect(() => {
+    const isFinished = match?.status === 'post' || match?.status === 'finished';
+    const stillPending =
+      !settlementData ||
+      settlementData.settlementStatus !== 'settled' ||
+      (settlementData.results || []).some(r => r.outcome === 'pending');
+
+    if (!isFinished || !stillPending || !match?.id) return undefined;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const settleRes = await fetchPredictionSettlement(match.id, user?.uid);
+        if (cancelled || !settleRes) return;
+        setSettlementData(prev => {
+          if (prev?.settlementStatus === 'settled' && settleRes.settlementStatus !== 'settled') {
+            return prev;
+          }
+          return settleRes;
+        });
+        if (settleRes.settlementStatus === 'settled') {
+          setShowPrediction(true);
+        }
+      } catch (_) { /* ignore poll errors */ }
+    };
+
+    const intervalId = setInterval(tick, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [match?.id, match?.status, settlementData?.settlementStatus, user?.uid]);
+
   // Generate consistent stats based on team name (Fallback if API fails)
   const getAverageStats = (name, sport) => {
     return '-';
@@ -560,12 +620,17 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 </View>
               ) : (
                 <>
-                  {/* Verified Settlement Banner */}
-                  {settlementData?.settlementStatus === 'settled' && (
+                  {/* Verified Settlement Banner (full or partial with verified score) */}
+                  {(settlementData?.settlementStatus === 'settled' ||
+                    (settlementData?.actualHomeScore != null && settlementData?.actualAwayScore != null)) && (
                     <View style={styles.settlementBanner}>
                       <View style={styles.settlementBannerHeader}>
                         <Ionicons name="checkmark-done-circle" size={20} color="#10B981" />
-                        <Text style={styles.settlementBannerTitle}>Match Completed & Settled</Text>
+                        <Text style={styles.settlementBannerTitle}>
+                          {settlementData.settlementStatus === 'settled'
+                            ? 'Match Completed & Settled'
+                            : 'Match Completed — Finalizing Markets'}
+                        </Text>
                       </View>
                       <Text style={styles.settlementScoreText}>
                         Final Score: {homeName} {settlementData.actualHomeScore} - {settlementData.actualAwayScore} {awayName}
@@ -608,6 +673,11 @@ export default function MatchDetailsScreen({ route, navigation }) {
                                   <View style={styles.settleLostBadge}>
                                     <Ionicons name="close-circle" size={13} color="#EF4444" />
                                     <Text style={styles.settleLostText}>LOST</Text>
+                                  </View>
+                                ) : outcome === 'void' ? (
+                                  <View style={styles.settleUpcomingBadge}>
+                                    <Ionicons name="remove-circle-outline" size={13} color={theme.textSecondary} />
+                                    <Text style={styles.settleUpcomingText}>VOID</Text>
                                   </View>
                                 ) : (
                                   <View style={styles.settlePendingBadge}>

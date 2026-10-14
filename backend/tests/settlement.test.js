@@ -85,6 +85,8 @@ const admin = require('firebase-admin');
 const {
   settleMarket,
   classifyMatchStatus,
+  extractMatchResultFromSummary,
+  marketRequiresStatistic,
   normaliseMarketKey,
   normaliseSelection,
   isValidScore,
@@ -318,6 +320,21 @@ describe('Status Classification & Score Validation', () => {
     expect(classifyMatchStatus('abandoned')).toBe('cancelled');
   });
 
+  test('treats awarded / AET / penalties as finished (not cancelled)', () => {
+    expect(classifyMatchStatus('awarded')).toBe('finished');
+    expect(classifyMatchStatus('aet')).toBe('finished');
+    expect(classifyMatchStatus('after_penalties')).toBe('finished');
+    expect(classifyMatchStatus('walkover')).toBe('finished');
+  });
+
+  test('marketRequiresStatistic maps corners/shots/bookings/ht', () => {
+    expect(marketRequiresStatistic('under_corners')).toBe('corners');
+    expect(marketRequiresStatistic('total_shots_over_21_5')).toBe('shots');
+    expect(marketRequiresStatistic('under_bookings')).toBe('bookings');
+    expect(marketRequiresStatistic('under_2_5_ht')).toBe('ht');
+    expect(marketRequiresStatistic('home_team_under_2_5')).toBeNull();
+  });
+
   test('validates numeric non-negative finite scores', () => {
     expect(isValidScore(0)).toBe(true);
     expect(isValidScore(3)).toBe(true);
@@ -438,6 +455,61 @@ describe('Prediction Persistence & Settlement Lifecycle', () => {
 // 4. Batch Auto-Settlement Worker
 // ──────────────────────────────────────────────────────────
 
+describe('extractMatchResultFromSummary', () => {
+  test('parses ESPN finished summary', () => {
+    const extracted = extractMatchResultFromSummary({
+      header: {
+        competitions: [{
+          status: { type: { state: 'post' } },
+          competitors: [
+            { homeAway: 'home', score: '2' },
+            { homeAway: 'away', score: '1' },
+          ],
+        }],
+      },
+    });
+    expect(extracted.matchStatus).toBe('finished');
+    expect(extracted.homeGoals).toBe(2);
+    expect(extracted.awayGoals).toBe(1);
+  });
+
+  test('parses PitchAPI normalized fixture', () => {
+    const extracted = extractMatchResultFromSummary({
+      fixture: { status: 'finished', id: 'pa-99' },
+      homeTeam: { score: 1 },
+      awayTeam: { score: 0 },
+      stats: { totalCorners: 9, homeShots: 10, awayShots: 8, totalShots: 18 },
+      _settlementSource: 'pitchapi',
+    });
+    expect(extracted.matchStatus).toBe('finished');
+    expect(extracted.homeGoals).toBe(1);
+    expect(extracted.awayGoals).toBe(0);
+    expect(extracted.totalCorners).toBe(9);
+    expect(extracted.totalShots).toBe(18);
+    expect(extracted.settlementSource).toBe('pitchapi');
+  });
+
+  test('scheduled → finished jump and live → finished', () => {
+    expect(extractMatchResultFromSummary({
+      fixture: { status: 'finished' },
+      homeTeam: { score: 3 },
+      awayTeam: { score: 2 },
+    }).matchStatus).toBe('finished');
+
+    expect(extractMatchResultFromSummary({
+      header: {
+        competitions: [{
+          status: { type: { state: 'in' } },
+          competitors: [
+            { homeAway: 'home', score: '1' },
+            { homeAway: 'away', score: '0' },
+          ],
+        }],
+      },
+    }).matchStatus).toBe('live');
+  });
+});
+
 describe('autoSettleFinishedMatches Worker', () => {
   test('automatically fetches and settles pending matches when finished', async () => {
     await savePrediction(admin, {
@@ -445,6 +517,7 @@ describe('autoSettleFinishedMatches Worker', () => {
       matchId: 'match_finish_100',
       sport: 'soccer',
       leagueSlug: 'eng.1',
+      matchDate: '2020-01-01T12:00:00Z',
       predictions: [
         { market: 'under_4_5_goals', label: 'Under 4.5', value: 'Under 4.5', confidence: 85 },
       ],
@@ -473,6 +546,147 @@ describe('autoSettleFinishedMatches Worker', () => {
     expect(report.errors).toBe(0);
   });
 
+  test('settles PitchAPI pa-* fixtures via normalized fixture payload', async () => {
+    await savePrediction(admin, {
+      userId: 'user_pa_1',
+      matchId: 'pa-555',
+      sport: 'soccer',
+      leagueSlug: 'eng.1',
+      matchDate: '2020-06-01T15:00:00Z',
+      predictions: [
+        { market: 'home_team_under_2_5', label: 'Home U2.5', value: 'Home Under 2.5', confidence: 80 },
+      ],
+    });
+
+    const mockFetcher = jest.fn(async () => ({
+      fixture: { status: 'finished' },
+      homeTeam: { score: 1 },
+      awayTeam: { score: 2 },
+      _settlementSource: 'pitchapi',
+    }));
+
+    const report = await autoSettleFinishedMatches(admin, mockFetcher);
+    expect(report.settled).toBe(1);
+    const stored = [...mockFirestoreStore.values()].find(d => d.matchId === 'pa-555');
+    expect(stored.settlementStatus).toBe('settled');
+    expect(stored.results[0].outcome).toBe('won');
+    expect(stored.settlementSource).toBe('pitchapi');
+  });
+
+  test('settles score market while corners market stays pending without inventing stats', async () => {
+    await savePrediction(admin, {
+      userId: 'user_partial_1',
+      matchId: 'match_partial_1',
+      sport: 'soccer',
+      leagueSlug: 'eng.1',
+      matchDate: '2020-03-01T12:00:00Z',
+      predictions: [
+        { market: 'under_4_5_goals', label: 'Under 4.5', value: 'Under 4.5', confidence: 85 },
+        { market: 'under_corners', label: 'Under Corners', value: 'Under 10.5', confidence: 70 },
+      ],
+    });
+
+    const mockFetcher = jest.fn(async () => ({
+      header: {
+        competitions: [{
+          status: { type: { state: 'post' } },
+          competitors: [
+            { homeAway: 'home', score: '1' },
+            { homeAway: 'away', score: '1' },
+          ],
+        }],
+      },
+      // no boxscore / corners
+    }));
+
+    const report = await autoSettleFinishedMatches(admin, mockFetcher);
+    expect(report.partial).toBe(1);
+    expect(report.settled).toBe(0);
+
+    const stored = [...mockFirestoreStore.values()].find(d => d.matchId === 'match_partial_1');
+    expect(stored.settlementStatus).toBe('pending');
+    expect(stored.actualHomeScore).toBe(1);
+    expect(stored.results.find(r => r.market === 'under_4_5_goals').outcome).toBe('won');
+    expect(stored.results.find(r => r.market === 'under_corners').outcome).toBe('pending');
+
+    // Retry with corners available settles fully
+    const mockFetcher2 = jest.fn(async () => ({
+      header: {
+        competitions: [{
+          status: { type: { state: 'post' } },
+          competitors: [
+            { homeAway: 'home', score: '1' },
+            { homeAway: 'away', score: '1' },
+          ],
+        }],
+      },
+      stats: { totalCorners: 8 },
+    }));
+    const report2 = await autoSettleFinishedMatches(admin, mockFetcher2);
+    expect(report2.settled).toBe(1);
+    const stored2 = [...mockFirestoreStore.values()].find(d => d.matchId === 'match_partial_1');
+    expect(stored2.settlementStatus).toBe('settled');
+    expect(stored2.results.find(r => r.market === 'under_corners').outcome).toBe('won');
+  });
+
+  test('settles shots markets with correct home/away/total stats', async () => {
+    await savePrediction(admin, {
+      userId: 'user_shots_1',
+      matchId: 'match_shots_1',
+      sport: 'soccer',
+      matchDate: '2020-04-01T12:00:00Z',
+      predictions: [
+        { market: 'total_shots_over_21_5', label: 'Total Shots O21.5', confidence: 75 },
+        { market: 'home_shots_under_10_5', label: 'Home Shots U10.5', confidence: 70 },
+        { market: 'away_shots_over_10_5', label: 'Away Shots O10.5', confidence: 70 },
+      ],
+    });
+
+    const report = await autoSettleFinishedMatches(admin, async () => ({
+      fixture: { status: 'finished' },
+      homeTeam: { score: 2 },
+      awayTeam: { score: 1 },
+      stats: { homeShots: 9, awayShots: 14, totalShots: 23 },
+      _settlementSource: 'pitchapi',
+    }));
+
+    expect(report.settled).toBe(1);
+    const stored = [...mockFirestoreStore.values()].find(d => d.matchId === 'match_shots_1');
+    expect(stored.results.find(r => r.market === 'total_shots_over_21_5').outcome).toBe('won');
+    expect(stored.results.find(r => r.market === 'home_shots_under_10_5').outcome).toBe('won');
+    expect(stored.results.find(r => r.market === 'away_shots_over_10_5').outcome).toBe('won');
+  });
+
+  test('idempotent: running settlement twice does not duplicate results', async () => {
+    await savePrediction(admin, {
+      userId: 'user_idemp_1',
+      matchId: 'match_idemp_1',
+      sport: 'soccer',
+      matchDate: '2020-05-01T12:00:00Z',
+      predictions: [{ market: 'under_2_5_goals', label: 'U2.5', confidence: 80 }],
+    });
+
+    const fetcher = jest.fn(async () => ({
+      header: {
+        competitions: [{
+          status: { type: { state: 'post' } },
+          competitors: [
+            { homeAway: 'home', score: 1 },
+            { homeAway: 'away', score: 0 },
+          ],
+        }],
+      },
+    }));
+
+    const r1 = await autoSettleFinishedMatches(admin, fetcher);
+    const r2 = await autoSettleFinishedMatches(admin, fetcher);
+    expect(r1.settled).toBe(1);
+    expect(r2.settled).toBe(0); // already settled, not in pending query meaningfully / idempotent
+    const stored = [...mockFirestoreStore.values()].find(d => d.matchId === 'match_idemp_1');
+    expect(stored.settlementStatus).toBe('settled');
+    expect(stored.results.length).toBe(1);
+  });
+
   test('leaves live or upcoming matches as pending', async () => {
     await savePrediction(admin, {
       userId: 'user_auto_2',
@@ -495,6 +709,71 @@ describe('autoSettleFinishedMatches Worker', () => {
 
     const report = await autoSettleFinishedMatches(admin, mockFetcher);
     expect(report.settled).toBe(0); // Not settled because not finished
+  });
+
+  test('provider timeout / null summary does not crash worker', async () => {
+    await savePrediction(admin, {
+      userId: 'user_timeout',
+      matchId: 'match_timeout_1',
+      sport: 'soccer',
+      matchDate: '2020-07-01T12:00:00Z',
+      predictions: [{ market: 'under_4_5_goals', label: 'U4.5', confidence: 80 }],
+    });
+
+    const report = await autoSettleFinishedMatches(admin, async () => null);
+    expect(report.settled).toBe(0);
+    expect(report.errors).toBe(0);
+    expect(report.skipped).toBeGreaterThanOrEqual(1);
+  });
+
+  test('postponed matches are not settled as completed', async () => {
+    await savePrediction(admin, {
+      userId: 'user_pst',
+      matchId: 'match_pst_1',
+      sport: 'soccer',
+      matchDate: '2020-08-01T12:00:00Z',
+      predictions: [{ market: 'under_4_5_goals', label: 'U4.5', confidence: 80 }],
+    });
+
+    const report = await autoSettleFinishedMatches(admin, async () => ({
+      fixture: { status: 'postponed' },
+      homeTeam: { score: null },
+      awayTeam: { score: null },
+    }));
+    expect(report.settled).toBe(0);
+    const stored = [...mockFirestoreStore.values()].find(d => d.matchId === 'match_pst_1');
+    expect(stored.settlementStatus).toBe('pending');
+  });
+
+  test('basketball finished match settles winner and totals (OT included in FT score)', async () => {
+    await savePrediction(admin, {
+      userId: 'user_bball',
+      matchId: 'match_nba_1',
+      sport: 'basketball',
+      leagueSlug: 'nba',
+      matchDate: '2020-09-01T12:00:00Z',
+      predictions: [
+        { market: 'basketball_match_winner_home', label: 'Home Win', confidence: 70 },
+        { market: 'basketball_total_points_over_215_5', label: 'Over 215.5', confidence: 65 },
+      ],
+    });
+
+    const report = await autoSettleFinishedMatches(admin, async () => ({
+      header: {
+        competitions: [{
+          status: { type: { state: 'post' } },
+          competitors: [
+            { homeAway: 'home', score: '118' },
+            { homeAway: 'away', score: '110' },
+          ],
+        }],
+      },
+    }));
+
+    expect(report.settled).toBe(1);
+    const stored = [...mockFirestoreStore.values()].find(d => d.matchId === 'match_nba_1');
+    expect(stored.results.find(r => r.market === 'basketball_match_winner_home').outcome).toBe('won');
+    expect(stored.results.find(r => r.market === 'basketball_total_points_over_215_5').outcome).toBe('won');
   });
 });
 

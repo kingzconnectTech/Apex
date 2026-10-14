@@ -270,27 +270,75 @@ function classifyMatchStatus(status) {
   if (!status) return 'unknown';
   const s = String(status).toLowerCase().trim();
 
-  // Finished / full-time
-  if (['post', 'ft', 'aet', 'finished', 'full-time', 'fulltime', 'complete', 'final'].includes(s)) {
+  // Finished / full-time / AET / penalties / awarded (has a final result)
+  if ([
+    'post', 'ft', 'aet', 'finished', 'full-time', 'fulltime', 'complete', 'final',
+    'after_extra_time', 'after_penalties', 'aet/pen', 'pen', 'ft_pen',
+    'awarded', 'aw', 'wo', 'walkover',
+  ].includes(s)) {
     return 'finished';
   }
-  // Live / in-progress
-  if (['in', 'live', '1h', '2h', 'ht', 'et', 'bt', 'p', 'in_progress', 'inprogress', 'halftime'].includes(s)) {
+  // Live / in-progress (football + basketball periods)
+  if ([
+    'in', 'live', '1h', '2h', 'ht', 'et', 'bt', 'p', 'in_progress', 'inprogress', 'halftime',
+    'first_half', 'second_half', '1st_quarter', '2nd_quarter', '3rd_quarter', '4th_quarter',
+    'quarter1', 'quarter2', 'quarter3', 'quarter4', 'q1', 'q2', 'q3', 'q4',
+    'overtime', 'ot', 'intermission',
+  ].includes(s)) {
     return 'live';
   }
   // Scheduled / upcoming
   if (['pre', 'scheduled', 'not_started', 'notstarted', 'ns', 'tbd'].includes(s)) {
     return 'scheduled';
   }
-  // Postponed
+  // Postponed / suspended / interrupted — not ordinary completed
   if (['pst', 'postponed', 'delayed', 'susp', 'suspended', 'int', 'interrupted'].includes(s)) {
     return 'postponed';
   }
-  // Cancelled / abandoned
-  if (['canc', 'cancelled', 'canceled', 'abn', 'abandoned', 'aw', 'awarded', 'wo', 'walkover'].includes(s)) {
+  // Cancelled / abandoned — not ordinary completed
+  if (['canc', 'cancelled', 'canceled', 'abn', 'abandoned'].includes(s)) {
     return 'cancelled';
   }
   return 'unknown';
+}
+
+/**
+ * Which extra statistic a market needs beyond FT score.
+ * Returns null for score-only markets.
+ */
+function marketRequiresStatistic(market) {
+  const m = normaliseMarketKey(market);
+  if (!m) return null;
+  if (m.includes('corner')) return 'corners';
+  if (m.includes('booking') || m.includes('card')) return 'bookings';
+  if (m.startsWith('total_shots_') || m.startsWith('home_shots_') || m.startsWith('away_shots_') || m.includes('shots')) {
+    return 'shots';
+  }
+  if (m.includes('_ht') || m.includes('first_half') || m.includes('half_time') || m.includes('halftime')) {
+    return 'ht';
+  }
+  return null;
+}
+
+/**
+ * Resolve outcome when settleMarket returns null.
+ * Missing required stats → 'pending'. Truly unsupported → 'void' once finished.
+ */
+function resolveNullOutcome(market, scoreData) {
+  const needed = marketRequiresStatistic(market);
+  if (needed === 'corners' && !isValidScore(scoreData.totalCorners)) return 'pending';
+  if (needed === 'bookings' && !isValidScore(scoreData.totalBookings)) return 'pending';
+  if (needed === 'shots') {
+    const m = normaliseMarketKey(market);
+    if (m.startsWith('home_shots_') && !isValidScore(scoreData.homeShots)) return 'pending';
+    if (m.startsWith('away_shots_') && !isValidScore(scoreData.awayShots)) return 'pending';
+    if (!isValidScore(scoreData.totalShots) && !isValidScore(scoreData.homeShots)) return 'pending';
+  }
+  if (needed === 'ht' && (!isValidScore(scoreData.htHome) || !isValidScore(scoreData.htAway))) {
+    return 'pending';
+  }
+  // Unsupported market once the match is finished
+  return 'void';
 }
 
 /**
@@ -400,25 +448,90 @@ async function savePrediction(admin, params, logger) {
  * @param {Object}  [logger]
  * @returns {Promise<Object|null>} Settlement result or null if not settleable
  */
+function _canResolvePendingMarkets(existingResults, scoreData) {
+  const pending = (existingResults || []).filter(r => r.outcome === 'pending');
+  if (pending.length === 0) return false;
+  return pending.some(r => {
+    const need = marketRequiresStatistic(r.market);
+    if (need === 'corners') return isValidScore(scoreData.totalCorners);
+    if (need === 'bookings') return isValidScore(scoreData.totalBookings);
+    if (need === 'ht') return isValidScore(scoreData.htHome) && isValidScore(scoreData.htAway);
+    if (need === 'shots') {
+      const m = normaliseMarketKey(r.market);
+      if (m.startsWith('home_shots_')) return isValidScore(scoreData.homeShots);
+      if (m.startsWith('away_shots_')) return isValidScore(scoreData.awayShots);
+      return isValidScore(scoreData.totalShots);
+    }
+    return false;
+  });
+}
+
 async function settlePrediction(admin, predictionDoc, scoreData, source, logger) {
   const data = predictionDoc.data();
 
-  // Already settled — idempotency guard (unless version correction)
+  const scoresMatch =
+    data.actualHomeScore === scoreData.homeGoals &&
+    data.actualAwayScore === scoreData.awayGoals;
+
+  // Already fully settled — idempotency guard (unless version correction)
   if (data.settlementStatus === 'settled' && !scoreData.forceReconcile) {
-    // Check if scores match — if they do, skip. If different, reconcile.
-    if (data.actualHomeScore === scoreData.homeGoals &&
-        data.actualAwayScore === scoreData.awayGoals) {
-      return null; // Already settled with same score
+    const priorPending = (data.results || []).some(r => r.outcome === 'pending');
+    // Same score and no markets waiting on stats → skip
+    if (scoresMatch && !priorPending) {
+      return null;
     }
-    // Score correction — proceed with reconciliation
-    if (logger) logger.info('Score correction detected, reconciling', {
-      docId: predictionDoc.id,
-      oldScore: `${data.actualHomeScore}-${data.actualAwayScore}`,
-      newScore: `${scoreData.homeGoals}-${scoreData.awayGoals}`,
-    });
+    // Settled but still has pending market rows — only rewrite if new stats arrived
+    if (scoresMatch && priorPending && !_canResolvePendingMarkets(data.results, scoreData)) {
+      return null;
+    }
+    if (!scoresMatch && logger) {
+      logger.info('Score correction detected, reconciling', {
+        docId: predictionDoc.id,
+        oldScore: `${data.actualHomeScore}-${data.actualAwayScore}`,
+        newScore: `${scoreData.homeGoals}-${scoreData.awayGoals}`,
+      });
+    }
   }
 
-  // Settle each market prediction
+  // Pending with same verified score and no new stats → avoid rewriting every cron tick
+  if (
+    data.settlementStatus === 'pending' &&
+    !scoreData.forceReconcile &&
+    !scoreData.voidAll &&
+    scoresMatch &&
+    Array.isArray(data.results) &&
+    data.results.length > 0 &&
+    !_canResolvePendingMarkets(data.results, scoreData)
+  ) {
+    return null;
+  }
+
+  // Cancelled / abandoned → void all markets (not ordinary completed)
+  if (scoreData.matchStatus === 'cancelled' || scoreData.voidAll) {
+    const results = (data.predictions || []).map(pred => ({
+      market: pred.market,
+      label: pred.label,
+      outcome: 'void',
+    }));
+    await predictionDoc.ref.update({
+      settlementStatus: 'settled',
+      settledAt: getServerTimestamp(admin),
+      actualHomeScore: isValidScore(scoreData.homeGoals) ? scoreData.homeGoals : null,
+      actualAwayScore: isValidScore(scoreData.awayGoals) ? scoreData.awayGoals : null,
+      settlementSource: source || 'unknown',
+      settlementVersion: (data.settlementVersion || 0) + 1,
+      results,
+      voidReason: scoreData.voidReason || 'match_cancelled_or_abandoned',
+    });
+    if (logger) logger.info('Prediction voided (cancelled/abandoned)', {
+      docId: predictionDoc.id,
+      matchId: data.matchId,
+      source,
+    });
+    return { docId: predictionDoc.id, results, fullySettled: true };
+  }
+
+  // Settle each market; missing required stats stay pending (never invent zeros)
   const results = (data.predictions || []).map(pred => {
     const outcome = settleMarket(
       pred.market,
@@ -441,38 +554,46 @@ async function settlePrediction(admin, predictionDoc, scoreData, source, logger)
     return {
       market: pred.market,
       label: pred.label,
-      outcome: outcome || 'void', // null = unsupported market or missing stat → void
+      outcome: outcome || resolveNullOutcome(pred.market, scoreData),
     };
   });
 
+  const hasPending = results.some(r => r.outcome === 'pending');
+  const fullySettled = !hasPending;
+
   const updateData = {
-    settlementStatus: 'settled',
-    settledAt: getServerTimestamp(admin),
+    settlementStatus: fullySettled ? 'settled' : 'pending',
+    settledAt: fullySettled ? getServerTimestamp(admin) : (data.settledAt || null),
     actualHomeScore: scoreData.homeGoals,
     actualAwayScore: scoreData.awayGoals,
-    actualHtHome: scoreData.htHome ?? null,
-    actualHtAway: scoreData.htAway ?? null,
-    actualTotalCorners: scoreData.totalCorners ?? null,
-    actualTotalBookings: scoreData.totalBookings ?? null,
-    actualHomeShots: scoreData.homeShots ?? null,
-    actualAwayShots: scoreData.awayShots ?? null,
-    actualTotalShots: scoreData.totalShots ?? null,
+    actualHtHome: scoreData.htHome ?? data.actualHtHome ?? null,
+    actualHtAway: scoreData.htAway ?? data.actualHtAway ?? null,
+    actualTotalCorners: scoreData.totalCorners ?? data.actualTotalCorners ?? null,
+    actualTotalBookings: scoreData.totalBookings ?? data.actualTotalBookings ?? null,
+    actualHomeShots: scoreData.homeShots ?? data.actualHomeShots ?? null,
+    actualAwayShots: scoreData.awayShots ?? data.actualAwayShots ?? null,
+    actualTotalShots: scoreData.totalShots ?? data.actualTotalShots ?? null,
     settlementSource: source || 'unknown',
     settlementVersion: (data.settlementVersion || 0) + 1,
     results,
+    resultRetrievedAt: getServerTimestamp(admin),
+    awaitingStatistics: hasPending,
   };
 
   await predictionDoc.ref.update(updateData);
 
-  if (logger) logger.info('Prediction settled', {
-    docId: predictionDoc.id,
-    matchId: data.matchId,
-    score: `${scoreData.homeGoals}-${scoreData.awayGoals}`,
-    results: results.map(r => `${r.market}:${r.outcome}`).join(', '),
-    source,
-  });
+  if (logger) {
+    logger.info(fullySettled ? 'Prediction settled' : 'Prediction partially settled (awaiting stats)', {
+      docId: predictionDoc.id,
+      matchId: data.matchId,
+      score: `${scoreData.homeGoals}-${scoreData.awayGoals}`,
+      results: results.map(r => `${r.market}:${r.outcome}`).join(', '),
+      source,
+      fullySettled,
+    });
+  }
 
-  return { docId: predictionDoc.id, results };
+  return { docId: predictionDoc.id, results, fullySettled };
 }
 
 /**
@@ -630,30 +751,247 @@ async function getMatchSettlement(admin, matchId, userId = null) {
   };
 }
 
+const PENDING_BATCH_LIMIT = 200;
+const MAX_SETTLEMENT_FETCH_FAILURES = 8;
+const SETTLEMENT_BACKOFF_BASE_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Extract verified scores + stats from ESPN, normalized, or PitchAPI payloads.
+ * Never invents missing statistics as zero.
+ *
+ * @param {Object} summary
+ * @returns {Object} Extracted settlement fields
+ */
+function extractMatchResultFromSummary(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return { matchStatus: 'unknown', homeGoals: null, awayGoals: null };
+  }
+
+  let matchStatus = 'unknown';
+  let homeGoals = null;
+  let awayGoals = null;
+  let htHome = null;
+  let htAway = null;
+  let totalCorners = null;
+  let totalBookings = null;
+  let homeShots = null;
+  let awayShots = null;
+  let totalShots = null;
+  const providerStatus = summary._providerStatus || null;
+
+  // Boxscore statistics (ESPN)
+  if (summary.boxscore?.teams && Array.isArray(summary.boxscore.teams)) {
+    const teams = summary.boxscore.teams;
+    const findStat = (teamStats, names) => {
+      const s = teamStats?.statistics?.find(i => names.includes(i.name) || names.includes(i.label));
+      if (!s) return null;
+      const n = parseFloat(s.displayValue ?? s.value);
+      return Number.isFinite(n) ? n : null;
+    };
+    const hCorners = findStat(teams[0], ['wonCorners', 'cornerKicks', 'corners']);
+    const aCorners = findStat(teams[1], ['wonCorners', 'cornerKicks', 'corners']);
+    if (isValidScore(hCorners) && isValidScore(aCorners)) {
+      totalCorners = hCorners + aCorners;
+    }
+
+    const hYellow = findStat(teams[0], ['yellowCards', 'yellow_cards']);
+    const aYellow = findStat(teams[1], ['yellowCards', 'yellow_cards']);
+    const hRed = findStat(teams[0], ['redCards', 'red_cards']);
+    const aRed = findStat(teams[1], ['redCards', 'red_cards']);
+    if (isValidScore(hYellow) && isValidScore(aYellow)) {
+      // Red cards may legitimately be absent from some feeds; only add when present
+      totalBookings = hYellow + aYellow
+        + (isValidScore(hRed) ? hRed : 0)
+        + (isValidScore(aRed) ? aRed : 0);
+    }
+
+    const hShots = findStat(teams[0], ['totalShots', 'shots', 'shotsTotal']);
+    const aShots = findStat(teams[1], ['totalShots', 'shots', 'shotsTotal']);
+    if (isValidScore(hShots)) homeShots = hShots;
+    if (isValidScore(aShots)) awayShots = aShots;
+    if (homeShots != null && awayShots != null) {
+      totalShots = homeShots + awayShots;
+    }
+  } else if (summary.stats) {
+    if (isValidScore(summary.stats.totalCorners)) {
+      totalCorners = Number(summary.stats.totalCorners);
+    } else if (isValidScore(summary.stats.homeCorners) && isValidScore(summary.stats.awayCorners)) {
+      totalCorners = Number(summary.stats.homeCorners) + Number(summary.stats.awayCorners);
+    }
+    if (isValidScore(summary.stats.totalBookings)) {
+      totalBookings = Number(summary.stats.totalBookings);
+    } else if (isValidScore(summary.stats.homeYellowCards) && isValidScore(summary.stats.awayYellowCards)) {
+      totalBookings = Number(summary.stats.homeYellowCards) + Number(summary.stats.awayYellowCards)
+        + (isValidScore(summary.stats.homeRedCards) ? Number(summary.stats.homeRedCards) : 0)
+        + (isValidScore(summary.stats.awayRedCards) ? Number(summary.stats.awayRedCards) : 0);
+    }
+    if (isValidScore(summary.stats.homeShots)) homeShots = Number(summary.stats.homeShots);
+    if (isValidScore(summary.stats.awayShots)) awayShots = Number(summary.stats.awayShots);
+    if (isValidScore(summary.stats.totalShots)) {
+      totalShots = Number(summary.stats.totalShots);
+    } else if (homeShots != null && awayShots != null) {
+      totalShots = homeShots + awayShots;
+    }
+  }
+
+  // Format 1: ESPN summary
+  const competition = summary.header?.competitions?.[0] || summary.competitions?.[0];
+  if (competition) {
+    const state = competition.status?.type?.state
+      || competition.status?.type?.name
+      || competition.status?.state
+      || competition.status?.type?.shortDetail;
+    matchStatus = classifyMatchStatus(state);
+
+    const homeComp = competition.competitors?.find(c => c.homeAway === 'home') || competition.competitors?.[0];
+    const awayComp = competition.competitors?.find(c => c.homeAway === 'away') || competition.competitors?.[1];
+
+    if (homeComp && awayComp) {
+      const rawHg = homeComp.score?.value ?? homeComp.score;
+      const rawAg = awayComp.score?.value ?? awayComp.score;
+      if (isValidScore(rawHg) && isValidScore(rawAg)) {
+        homeGoals = Number(rawHg);
+        awayGoals = Number(rawAg);
+      }
+
+      const homeLines = homeComp.linescores || [];
+      const awayLines = awayComp.linescores || [];
+      if (homeLines.length > 0 && awayLines.length > 0) {
+        const hPeriod1 = homeLines[0]?.value ?? homeLines[0];
+        const aPeriod1 = awayLines[0]?.value ?? awayLines[0];
+        if (isValidScore(hPeriod1) && isValidScore(aPeriod1)) {
+          htHome = Number(hPeriod1);
+          htAway = Number(aPeriod1);
+        }
+      } else if (Array.isArray(competition.linescores) && competition.linescores.length > 0) {
+        const entry = competition.linescores[0];
+        if (isValidScore(entry.home) && isValidScore(entry.away)) {
+          htHome = Number(entry.home);
+          htAway = Number(entry.away);
+        }
+      }
+    }
+  }
+  // Format 2: Normalized { status, score: { home, away } }
+  else if (summary.status != null && summary.score) {
+    matchStatus = classifyMatchStatus(
+      typeof summary.status === 'object'
+        ? (summary.status.state || summary.status.type || summary.status)
+        : summary.status
+    );
+    const rawHg = summary.score.home?.current ?? summary.score.home?.total ?? summary.score.home;
+    const rawAg = summary.score.away?.current ?? summary.score.away?.total ?? summary.score.away;
+    if (isValidScore(rawHg) && isValidScore(rawAg)) {
+      homeGoals = Number(rawHg);
+      awayGoals = Number(rawAg);
+    }
+    const rawHtH = summary.score.home?.period1 ?? summary.score.home?.halftime;
+    const rawHtA = summary.score.away?.period1 ?? summary.score.away?.halftime;
+    if (isValidScore(rawHtH) && isValidScore(rawHtA)) {
+      htHome = Number(rawHtH);
+      htAway = Number(rawHtA);
+    }
+  }
+  // Format 3: PitchAPI / SportsData normalized fixture
+  // { fixture: { status }, homeTeam: { score }, awayTeam: { score } }
+  else if (summary.fixture || summary.homeTeam || summary.awayTeam) {
+    const rawStatus = summary.fixture?.status || summary.status || summary.fixture?.rawStatus;
+    matchStatus = classifyMatchStatus(
+      typeof rawStatus === 'object' ? (rawStatus.state || rawStatus.type || rawStatus) : rawStatus
+    );
+    const rawHg = summary.homeTeam?.score ?? summary.score_home;
+    const rawAg = summary.awayTeam?.score ?? summary.score_away;
+    if (isValidScore(rawHg) && isValidScore(rawAg)) {
+      homeGoals = Number(rawHg);
+      awayGoals = Number(rawAg);
+    }
+  }
+
+  return {
+    matchStatus,
+    providerStatus: providerStatus || matchStatus,
+    homeGoals,
+    awayGoals,
+    htHome,
+    htAway,
+    totalCorners,
+    totalBookings,
+    homeShots,
+    awayShots,
+    totalShots,
+    settlementSource: summary._settlementSource || null,
+  };
+}
+
+function _shouldBackoff(docData, now = Date.now()) {
+  const failures = Number(docData.settlementFetchFailures || 0);
+  if (failures <= 0) return false;
+  const lastAt = docData.lastSettlementAttemptAt
+    ? new Date(docData.lastSettlementAttemptAt).getTime()
+    : 0;
+  if (!lastAt || Number.isNaN(lastAt)) return false;
+  const wait = Math.min(
+    SETTLEMENT_BACKOFF_BASE_MS * Math.pow(2, Math.min(failures - 1, 5)),
+    6 * 60 * 60 * 1000 // cap 6h
+  );
+  return now - lastAt < wait;
+}
+
 /**
  * Automatically fetch upstream match data for pending predictions,
  * check if the match finished, extract score, and settle.
  *
+ * Prioritizes past kickoffs, supports ESPN + PitchAPI summary shapes,
+ * and keeps statistic markets pending until verified data arrives.
+ *
  * @param {Object} admin - firebase-admin
  * @param {Function} fetchMatchSummary - async function(sport, leagueSlug, matchId)
  * @param {Object} [logger]
- * @returns {Promise<{ checked: number, settled: number, errors: number, results: Array }>}
+ * @returns {Promise<Object>}
  */
 async function autoSettleFinishedMatches(admin, fetchMatchSummary, logger) {
+  const startedAt = new Date().toISOString();
   const db = admin.firestore();
   const pendingSnap = await db.collection('predictions')
     .where('settlementStatus', '==', 'pending')
-    .limit(50)
+    .limit(PENDING_BATCH_LIMIT)
     .get();
 
   if (pendingSnap.empty) {
-    return { checked: 0, settled: 0, errors: 0, results: [] };
+    return {
+      checked: 0,
+      settled: 0,
+      partial: 0,
+      skipped: 0,
+      awaitingStats: 0,
+      errors: 0,
+      flagged: 0,
+      results: [],
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    };
   }
 
-  // Group by matchId to avoid duplicate API requests
+  // Prioritize: past kickoffs first, then oldest created. Avoids starvation of finished matches.
+  const now = Date.now();
+  const sortedDocs = [...pendingSnap.docs].sort((a, b) => {
+    const da = a.data();
+    const db_ = b.data();
+    const ta = da.matchDate ? new Date(da.matchDate).getTime() : Number.POSITIVE_INFINITY;
+    const tb = db_.matchDate ? new Date(db_.matchDate).getTime() : Number.POSITIVE_INFINITY;
+    const aPast = Number.isFinite(ta) && ta <= now ? 0 : 1;
+    const bPast = Number.isFinite(tb) && tb <= now ? 0 : 1;
+    if (aPast !== bPast) return aPast - bPast;
+    if (Number.isFinite(ta) && Number.isFinite(tb) && ta !== tb) return ta - tb;
+    return String(a.id).localeCompare(String(b.id));
+  });
+
   const matchGroups = new Map();
-  pendingSnap.docs.forEach(doc => {
+  sortedDocs.forEach(doc => {
     const data = doc.data();
+    if (_shouldBackoff(data, now)) return;
+    if (Number(data.settlementFetchFailures || 0) >= MAX_SETTLEMENT_FETCH_FAILURES) return;
+
     const mId = String(data.matchId);
     if (!matchGroups.has(mId)) {
       matchGroups.set(mId, {
@@ -667,120 +1005,108 @@ async function autoSettleFinishedMatches(admin, fetchMatchSummary, logger) {
   });
 
   let settledCount = 0;
+  let partialCount = 0;
+  let skippedCount = 0;
+  let awaitingStats = 0;
   let errorCount = 0;
+  let flaggedCount = 0;
   const settlementReports = [];
 
   for (const [matchId, group] of matchGroups.entries()) {
     try {
-      if (typeof fetchMatchSummary !== 'function') continue;
+      if (typeof fetchMatchSummary !== 'function') {
+        skippedCount++;
+        continue;
+      }
 
       const summary = await fetchMatchSummary(group.sport, group.leagueSlug, group.matchId);
-      if (!summary) continue;
-
-      let matchStatus = 'unknown';
-      let homeGoals = null;
-      let awayGoals = null;
-      let htHome = null;
-      let htAway = null;
-      let totalCorners = null;
-      let totalBookings = null;
-      let homeShots = null;
-      let awayShots = null;
-      let totalShots = null;
-
-      // Extract boxscore statistics if available
-      if (summary.boxscore?.teams && Array.isArray(summary.boxscore.teams)) {
-        const teams = summary.boxscore.teams;
-        const findStat = (teamStats, names) => {
-          const s = teamStats?.statistics?.find(i => names.includes(i.name) || names.includes(i.label));
-          return s ? parseFloat(s.displayValue ?? s.value) : null;
-        };
-        const hCorners = findStat(teams[0], ['wonCorners', 'cornerKicks', 'corners']);
-        const aCorners = findStat(teams[1], ['wonCorners', 'cornerKicks', 'corners']);
-        if (isValidScore(hCorners) && isValidScore(aCorners)) {
-          totalCorners = hCorners + aCorners;
-        }
-
-        const hYellow = findStat(teams[0], ['yellowCards', 'yellow_cards']);
-        const aYellow = findStat(teams[1], ['yellowCards', 'yellow_cards']);
-        const hRed = findStat(teams[0], ['redCards', 'red_cards']) ?? 0;
-        const aRed = findStat(teams[1], ['redCards', 'red_cards']) ?? 0;
-        if (isValidScore(hYellow) && isValidScore(aYellow)) {
-          totalBookings = hYellow + aYellow + (isValidScore(hRed) ? hRed : 0) + (isValidScore(aRed) ? aRed : 0);
-        }
-
-        // Football shots (total shots, NOT shots-on-target)
-        const hShots = findStat(teams[0], ['totalShots', 'shots', 'shotsTotal']);
-        const aShots = findStat(teams[1], ['totalShots', 'shots', 'shotsTotal']);
-        if (isValidScore(hShots)) homeShots = hShots;
-        if (isValidScore(aShots)) awayShots = aShots;
-        if (homeShots != null && awayShots != null) {
-          totalShots = homeShots + awayShots;
-        }
-      } else if (summary.stats) {
-        if (isValidScore(summary.stats.totalCorners)) {
-          totalCorners = Number(summary.stats.totalCorners);
-        } else if (isValidScore(summary.stats.homeCorners) && isValidScore(summary.stats.awayCorners)) {
-          totalCorners = Number(summary.stats.homeCorners) + Number(summary.stats.awayCorners);
-        }
-        if (isValidScore(summary.stats.totalBookings)) {
-          totalBookings = Number(summary.stats.totalBookings);
-        } else if (isValidScore(summary.stats.homeYellowCards) && isValidScore(summary.stats.awayYellowCards)) {
-          totalBookings = Number(summary.stats.homeYellowCards) + Number(summary.stats.awayYellowCards) + (Number(summary.stats.homeRedCards) || 0) + (Number(summary.stats.awayRedCards) || 0);
-        }
-      }
-
-      // Format 1: ESPN summary { header: { competitions: [{ status, competitors }] } }
-      const competition = summary.header?.competitions?.[0] || summary.competitions?.[0];
-      if (competition) {
-        const state = competition.status?.type?.state || competition.status?.state;
-        matchStatus = classifyMatchStatus(state);
-
-        const homeComp = competition.competitors?.find(c => c.homeAway === 'home');
-        const awayComp = competition.competitors?.find(c => c.homeAway === 'away');
-
-        if (homeComp && awayComp) {
-          const rawHg = homeComp.score?.value ?? homeComp.score;
-          const rawAg = awayComp.score?.value ?? awayComp.score;
-          if (isValidScore(rawHg) && isValidScore(rawAg)) {
-            homeGoals = Number(rawHg);
-            awayGoals = Number(rawAg);
-          }
-
-          // Linescores for half-time
-          const homeLines = homeComp.linescores || [];
-          const awayLines = awayComp.linescores || [];
-          if (homeLines.length > 0 && awayLines.length > 0) {
-            const hPeriod1 = homeLines[0]?.value ?? homeLines[0];
-            const aPeriod1 = awayLines[0]?.value ?? awayLines[0];
-            if (isValidScore(hPeriod1) && isValidScore(aPeriod1)) {
-              htHome = Number(hPeriod1);
-              htAway = Number(aPeriod1);
-            }
-          } else if (Array.isArray(competition.linescores) && competition.linescores.length > 0) {
-            const entry = competition.linescores[0];
-            if (isValidScore(entry.home) && isValidScore(entry.away)) {
-              htHome = Number(entry.home);
-              htAway = Number(entry.away);
+      if (!summary) {
+        skippedCount++;
+        // Record fetch failure + backoff metadata on each doc
+        for (const doc of group.docs) {
+          const data = doc.data();
+          const failures = Number(data.settlementFetchFailures || 0) + 1;
+          const patch = {
+            settlementFetchFailures: failures,
+            lastSettlementAttemptAt: new Date().toISOString(),
+            lastSettlementError: 'summary_unavailable',
+          };
+          if (failures >= MAX_SETTLEMENT_FETCH_FAILURES) {
+            patch.settlementNeedsReview = true;
+            flaggedCount++;
+            if (logger) {
+              logger.warn('Fixture flagged for investigation after repeated fetch failures', {
+                fixtureId: matchId,
+                predictionId: doc.id,
+                failures,
+                provider: String(matchId).startsWith('pa-') ? 'pitchapi' : 'espn',
+                timestamp: new Date().toISOString(),
+              });
             }
           }
+          await doc.ref.update(patch);
         }
+        if (logger) {
+          logger.info('Settlement fetch returned empty', {
+            fixtureId: matchId,
+            sport: group.sport,
+            leagueSlug: group.leagueSlug,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        continue;
       }
-      // Format 2: Normalized fixture structure
-      else if (summary.status && summary.score) {
-        matchStatus = classifyMatchStatus(summary.status.state || summary.status);
-        const rawHg = summary.score.home?.current ?? summary.score.home?.total ?? summary.score.home;
-        const rawAg = summary.score.away?.current ?? summary.score.away?.total ?? summary.score.away;
-        if (isValidScore(rawHg) && isValidScore(rawAg)) {
-          homeGoals = Number(rawHg);
-          awayGoals = Number(rawAg);
+
+      const extracted = extractMatchResultFromSummary(summary);
+      const {
+        matchStatus, homeGoals, awayGoals, htHome, htAway,
+        totalCorners, totalBookings, homeShots, awayShots, totalShots,
+      } = extracted;
+      const source = extracted.settlementSource
+        || summary._settlementSource
+        || (String(matchId).startsWith('pa-') ? 'pitchapi-auto' : 'espn-auto');
+
+      if (logger) {
+        logger.info('Fixture status for settlement', {
+          fixtureId: matchId,
+          providerStatus: extracted.providerStatus,
+          normalizedStatus: matchStatus,
+          hasScore: isValidScore(homeGoals) && isValidScore(awayGoals),
+          source,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Postponed / live / scheduled — leave pending, clear transient fetch failures on success
+      if (matchStatus === 'postponed' || matchStatus === 'live' || matchStatus === 'scheduled' || matchStatus === 'unknown') {
+        skippedCount++;
+        for (const doc of group.docs) {
+          await doc.ref.update({
+            lastSettlementAttemptAt: new Date().toISOString(),
+            lastKnownFixtureStatus: matchStatus,
+            settlementFetchFailures: 0,
+            lastSettlementError: null,
+          });
         }
-        const rawHtH = summary.score.home?.period1 ?? summary.score.home?.halftime;
-        const rawHtA = summary.score.away?.period1 ?? summary.score.away?.halftime;
-        if (isValidScore(rawHtH) && isValidScore(rawHtA)) {
-          htHome = Number(rawHtH);
-          htAway = Number(rawHtA);
+        continue;
+      }
+
+      // Cancelled / abandoned → void
+      if (matchStatus === 'cancelled') {
+        for (const doc of group.docs) {
+          const res = await settlePrediction(admin, doc, {
+            matchStatus: 'cancelled',
+            voidAll: true,
+            voidReason: 'match_cancelled_or_abandoned',
+            homeGoals,
+            awayGoals,
+          }, source, logger);
+          if (res) {
+            settledCount++;
+            settlementReports.push(res);
+          }
         }
+        continue;
       }
 
       if (matchStatus === 'finished' && isValidScore(homeGoals) && isValidScore(awayGoals)) {
@@ -795,24 +1121,159 @@ async function autoSettleFinishedMatches(admin, fetchMatchSummary, logger) {
             homeShots,
             awayShots,
             totalShots,
-          }, 'espn-auto', logger);
+            matchStatus: 'finished',
+          }, source, logger);
           if (res) {
-            settledCount++;
+            if (res.fullySettled) settledCount++;
+            else {
+              partialCount++;
+              awaitingStats++;
+            }
             settlementReports.push(res);
+            await doc.ref.update({
+              settlementFetchFailures: 0,
+              lastSettlementError: null,
+              lastKnownFixtureStatus: 'finished',
+              lastSettlementAttemptAt: new Date().toISOString(),
+            });
           }
+        }
+      } else if (matchStatus === 'finished') {
+        // Finished but score not yet verified — retry later, do not invent
+        skippedCount++;
+        for (const doc of group.docs) {
+          const data = doc.data();
+          const failures = Number(data.settlementFetchFailures || 0) + 1;
+          await doc.ref.update({
+            settlementFetchFailures: failures,
+            lastSettlementAttemptAt: new Date().toISOString(),
+            lastSettlementError: 'finished_without_verified_score',
+            lastKnownFixtureStatus: 'finished',
+            settlementNeedsReview: failures >= MAX_SETTLEMENT_FETCH_FAILURES,
+          });
+          if (failures >= MAX_SETTLEMENT_FETCH_FAILURES) flaggedCount++;
+        }
+        if (logger) {
+          logger.warn('Finished fixture missing verified score', {
+            fixtureId: matchId,
+            source,
+            timestamp: new Date().toISOString(),
+          });
         }
       }
     } catch (err) {
       errorCount++;
-      if (logger) logger.warn('Failed auto-settling match', { matchId, error: err.message });
+      if (logger) logger.warn('Failed auto-settling match', {
+        fixtureId: matchId,
+        error: err.message,
+        timestamp: new Date().toISOString(),
+      });
+      for (const doc of group.docs) {
+        try {
+          const data = doc.data();
+          await doc.ref.update({
+            settlementFetchFailures: Number(data.settlementFetchFailures || 0) + 1,
+            lastSettlementAttemptAt: new Date().toISOString(),
+            lastSettlementError: String(err.message || 'unknown_error').slice(0, 200),
+          });
+        } catch (_) { /* ignore meta update failure */ }
+      }
     }
   }
 
-  return {
+  const report = {
     checked: pendingSnap.size,
     settled: settledCount,
+    partial: partialCount,
+    skipped: skippedCount,
+    awaitingStats,
     errors: errorCount,
+    flagged: flaggedCount,
+    matchGroups: matchGroups.size,
     results: settlementReports,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+  };
+
+  if (logger) {
+    logger.info('Settlement job summary', report);
+  }
+
+  return report;
+}
+
+/**
+ * Reconciliation: find stuck pending predictions and flag/repair unambiguous cases.
+ *
+ * @param {Object} admin
+ * @param {Function} fetchMatchSummary
+ * @param {Object} [logger]
+ * @returns {Promise<Object>}
+ */
+async function reconcileStuckPredictions(admin, fetchMatchSummary, logger) {
+  const db = admin.firestore();
+  const snap = await db.collection('predictions')
+    .where('settlementStatus', '==', 'pending')
+    .limit(PENDING_BATCH_LIMIT)
+    .get();
+
+  const summary = {
+    pendingTotal: snap.size,
+    completedStillPending: 0,
+    missingResults: 0,
+    awaitingStatistics: 0,
+    needsReview: 0,
+    repaired: 0,
+  };
+
+  if (snap.empty) return summary;
+
+  // Re-run settlement on the same batch — repairs unambiguous finished matches
+  const report = await autoSettleFinishedMatches(admin, fetchMatchSummary, logger);
+  summary.repaired = report.settled || 0;
+  summary.awaitingStatistics = report.awaitingStats || 0;
+
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    if (data.settlementNeedsReview) summary.needsReview++;
+    if (data.awaitingStatistics) summary.awaitingStatistics++;
+    if (data.lastKnownFixtureStatus === 'finished' && data.settlementStatus === 'pending') {
+      summary.completedStillPending++;
+      if (!isValidScore(data.actualHomeScore)) summary.missingResults++;
+    }
+  }
+
+  if (logger) logger.info('Reconciliation summary', summary);
+  return summary;
+}
+
+/**
+ * Internal health snapshot for settlement monitoring.
+ */
+async function getSettlementHealthSummary(admin) {
+  const db = admin.firestore();
+  const pendingSnap = await db.collection('predictions')
+    .where('settlementStatus', '==', 'pending')
+    .limit(PENDING_BATCH_LIMIT)
+    .get();
+
+  let awaitingStatistics = 0;
+  let needsReview = 0;
+  let finishedStillPending = 0;
+
+  pendingSnap.docs.forEach(doc => {
+    const d = doc.data();
+    if (d.awaitingStatistics) awaitingStatistics++;
+    if (d.settlementNeedsReview) needsReview++;
+    if (d.lastKnownFixtureStatus === 'finished') finishedStillPending++;
+  });
+
+  return {
+    pendingPredictions: pendingSnap.size,
+    finishedStillPending,
+    awaitingStatistics,
+    needsReview,
+    checkedAt: new Date().toISOString(),
   };
 }
 
@@ -823,6 +1284,9 @@ async function autoSettleFinishedMatches(admin, fetchMatchSummary, logger) {
 module.exports = {
   settleMarket,
   classifyMatchStatus,
+  marketRequiresStatistic,
+  resolveNullOutcome,
+  extractMatchResultFromSummary,
   normaliseMarketKey,
   normaliseSelection,
   isValidScore,
@@ -833,4 +1297,8 @@ module.exports = {
   getUserPredictionStats,
   getMatchSettlement,
   autoSettleFinishedMatches,
+  reconcileStuckPredictions,
+  getSettlementHealthSummary,
+  PENDING_BATCH_LIMIT,
+  MAX_SETTLEMENT_FETCH_FAILURES,
 };

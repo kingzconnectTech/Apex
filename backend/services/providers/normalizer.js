@@ -176,9 +176,24 @@ function normalizeTeamStatsESPN(raw, teamId, sport = 'soccer') {
 
 function _statusFromPitchAPI(status) {
   if (!status) return 'scheduled';
-  const s = String(status).toLowerCase();
-  if (['finished', 'settled', 'ft', 'played', 'ended'].includes(s)) return 'finished';
-  if (['live', 'in_play', 'inprogress', 'in'].includes(s)) return 'live';
+  const s = String(status).toLowerCase().trim();
+  if (['finished', 'settled', 'ft', 'played', 'ended', 'complete', 'final',
+       'aet', 'after_extra_time', 'after_penalties', 'pen', 'awarded', 'aw', 'wo', 'walkover'].includes(s)) {
+    return 'finished';
+  }
+  if (['live', 'in_play', 'inprogress', 'in', '1h', '2h', 'ht', 'et', 'halftime',
+       'first_half', 'second_half'].includes(s)) {
+    return 'live';
+  }
+  if (['pst', 'postponed', 'delayed', 'susp', 'suspended', 'int', 'interrupted'].includes(s)) {
+    return 'postponed';
+  }
+  if (['canc', 'cancelled', 'canceled', 'abn', 'abandoned'].includes(s)) {
+    return 'cancelled';
+  }
+  if (['scheduled', 'not_started', 'notstarted', 'ns', 'tbd', 'pre'].includes(s)) {
+    return 'scheduled';
+  }
   return 'scheduled';
 }
 

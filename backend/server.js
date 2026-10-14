@@ -47,6 +47,8 @@ const {
   getUserPredictionStats,
   getMatchSettlement,
   autoSettleFinishedMatches,
+  reconcileStuckPredictions,
+  getSettlementHealthSummary,
 } = require('./services/settlementService');
 const {
   DEFAULT_FILTER_CONFIG,
@@ -63,6 +65,11 @@ const IS_ENTRY_POINT = require.main === module;
 
 // Global flag to prevent duplicate cron job initialization in cluster/PM2 environments
 let cronJobsInitialized = false;
+// Prevent overlapping settlement / reconciliation jobs
+let settlementJobRunning = false;
+let lastSettlementJobAt = null;
+let lastSettlementJobReport = null;
+let lastReconciliationAt = null;
 
 // Logger Configuration
 const logger = winston.createLogger({
@@ -208,6 +215,120 @@ async function fetchFromBackendOrESPN(target) {
   const data = await fetchWithRetry(upstreamUrl, uuidv4());
   setCache(upstreamUrl, data);
   return data;
+}
+
+/**
+ * Settlement-aware match summary fetcher.
+ * Uses ESPN for numeric ESPN event IDs; PitchAPI for pa-* IDs and as football fallback.
+ * Never fabricates scores when the provider returns nothing.
+ */
+async function fetchMatchSummaryForSettlement(sport, leagueSlug, matchId, traceId = null) {
+  const id = String(matchId || '');
+  const isPitchApiId = id.startsWith('pa-');
+  const sportKey = String(sport || 'soccer').toLowerCase();
+  const isFootball = sportKey === 'soccer' || sportKey === 'football';
+
+  // 1) ESPN path (skip for explicit PitchAPI IDs — they 404 on ESPN)
+  if (!isPitchApiId && leagueSlug) {
+    try {
+      const espnSport = sportKey === 'football' ? 'soccer' : sportKey;
+      const data = await fetchFromBackendOrESPN(`${espnSport}/${leagueSlug}/summary?event=${id}`);
+      if (data) {
+        return { ...data, _settlementSource: 'espn', _providerStatus: data?.header?.competitions?.[0]?.status?.type?.state || null };
+      }
+    } catch (e) {
+      logger.warn('ESPN settlement summary failed', {
+        traceId,
+        matchId: id,
+        leagueSlug,
+        error: e.message,
+      });
+    }
+  }
+
+  // 2) PitchAPI path for pa-* IDs or football ESPN miss
+  if ((isPitchApiId || isFootball) && sportsData?.pitchApi?.isAvailable()) {
+    try {
+      const fixture = await sportsData.pitchApi.getMatchById(id, { traceId });
+      if (!fixture) {
+        logger.info('PitchAPI match not found for settlement', { traceId, matchId: id });
+        return null;
+      }
+
+      let statsPayload = null;
+      try {
+        statsPayload = await sportsData.pitchApi.getMatchStats(id, { traceId });
+      } catch (statsErr) {
+        logger.warn('PitchAPI match stats unavailable during settlement', {
+          traceId,
+          matchId: id,
+          error: statsErr.message,
+        });
+      }
+
+      return {
+        fixture: fixture.fixture,
+        homeTeam: fixture.homeTeam,
+        awayTeam: fixture.awayTeam,
+        status: fixture.fixture?.status,
+        stats: statsPayload?.stats || null,
+        _settlementSource: 'pitchapi',
+        _providerStatus: fixture.fixture?.rawStatus || fixture.fixture?.status || null,
+      };
+    } catch (paErr) {
+      logger.warn('PitchAPI settlement summary failed', {
+        traceId,
+        matchId: id,
+        error: paErr.message,
+      });
+    }
+  }
+
+  return null;
+}
+
+async function runSettlementJob(loggerRef, traceId, { reconcile = false } = {}) {
+  if (settlementJobRunning) {
+    loggerRef.info('Settlement job skipped — already running', { traceId });
+    return { skipped: true, reason: 'already_running', traceId };
+  }
+  settlementJobRunning = true;
+  const started = Date.now();
+  try {
+    const summaryFetcher = (sport, leagueSlug, matchId) =>
+      fetchMatchSummaryForSettlement(sport, leagueSlug, matchId, traceId);
+
+    const report = reconcile
+      ? await reconcileStuckPredictions(admin, summaryFetcher, loggerRef)
+      : await autoSettleFinishedMatches(admin, summaryFetcher, loggerRef);
+
+    lastSettlementJobAt = new Date().toISOString();
+    lastSettlementJobReport = { ...report, durationMs: Date.now() - started, reconcile };
+    if (reconcile) lastReconciliationAt = lastSettlementJobAt;
+
+    loggerRef.info(reconcile ? 'Reconciliation job completed' : 'Auto-settlement completed', {
+      traceId,
+      ...lastSettlementJobReport,
+    });
+    return lastSettlementJobReport;
+  } finally {
+    settlementJobRunning = false;
+  }
+}
+
+function requireSettlementAuth(req, res, next) {
+  const secret = process.env.SETTLEMENT_CRON_SECRET;
+  // Only enforce when configured (dev/tests without secret remain usable)
+  if (!secret) return next();
+  const header =
+    req.headers['x-settlement-secret'] ||
+    (typeof req.headers.authorization === 'string'
+      ? req.headers.authorization.replace(/^Bearer\s+/i, '')
+      : null);
+  if (header !== secret) {
+    return res.status(401).json({ error: 'Unauthorized', traceId: req.traceId });
+  }
+  return next();
 }
 
 async function fetchWithRetry(targetUrl, traceId, retries = 3) {
@@ -410,24 +531,24 @@ if (!cronJobsInitialized) {
   cron.schedule('*/5 * * * *', async () => {
     const traceId = uuidv4();
     try {
-      const summaryFetcher = async (sport, leagueSlug, matchId) => {
-        try {
-          return await fetchFromBackendOrESPN(`${sport}/${leagueSlug}/summary?event=${matchId}`);
-        } catch (e) {
-          return null;
-        }
-      };
-      const report = await autoSettleFinishedMatches(admin, summaryFetcher, logger);
-      if (report && report.settled > 0) {
-        logger.info('Auto-settlement completed', { traceId, ...report });
-      }
+      await runSettlementJob(logger, traceId, { reconcile: false });
     } catch (err) {
       logger.error('Error in auto-settlement cron', { traceId, error: err.message });
     }
   });
 
+  // Reconciliation: catch finished-but-pending and missing-stat cases (every 30 minutes)
+  cron.schedule('*/30 * * * *', async () => {
+    const traceId = uuidv4();
+    try {
+      await runSettlementJob(logger, traceId, { reconcile: true });
+    } catch (err) {
+      logger.error('Error in settlement reconciliation cron', { traceId, error: err.message });
+    }
+  });
+
   cronJobsInitialized = true;
-  logger.info('Cron jobs initialized');
+  logger.info('Cron jobs initialized (settlement every 5m, reconciliation every 30m)');
 }
 
 // Automated stats update for all leagues (every 15 minutes)
@@ -696,22 +817,38 @@ app.get('/api/predictions/settlement/:matchId', async (req, res) => {
 
 /**
  * Trigger manual or scheduled settlement run.
+ * When SETTLEMENT_CRON_SECRET is set, requires header x-settlement-secret (or Bearer).
  */
-app.post('/api/predictions/settle', async (req, res) => {
+app.post('/api/predictions/settle', requireSettlementAuth, async (req, res) => {
   const { traceId } = req;
   try {
-    const summaryFetcher = async (sport, leagueSlug, matchId) => {
-      try {
-        return await fetchFromBackendOrESPN(`${sport}/${leagueSlug}/summary?event=${matchId}`);
-      } catch (e) {
-        return null;
-      }
-    };
-
-    const report = await autoSettleFinishedMatches(admin, summaryFetcher, logger);
+    const reconcile = Boolean(req.query.reconcile === '1' || req.body?.reconcile);
+    const report = await runSettlementJob(logger, traceId, { reconcile });
     return res.json({ success: true, ...report, traceId });
   } catch (error) {
     logger.error('Error in manual settlement trigger', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
+});
+
+/**
+ * Internal settlement health / monitoring summary.
+ * Secured the same way as the settle trigger when SETTLEMENT_CRON_SECRET is set.
+ */
+app.get('/api/predictions/settlement-health', requireSettlementAuth, async (req, res) => {
+  const { traceId } = req;
+  try {
+    const health = await getSettlementHealthSummary(admin);
+    return res.json({
+      ...health,
+      lastSettlementJobAt,
+      lastReconciliationAt,
+      lastSettlementJobReport,
+      settlementJobRunning,
+      traceId,
+    });
+  } catch (error) {
+    logger.error('Error fetching settlement health', { traceId, error: error.message });
     return res.status(500).json({ error: error.message, traceId });
   }
 });

@@ -8,8 +8,10 @@ services:
         value: production
       - key: PORT
         value: 3000
-      # You should add these secrets in the Render dashboard:
-      # - FIREBASE_SERVICE_ACCOUNT_JSON (The content of serviceAccountKey.json)
+      # Add these secrets in the Render dashboard:
+      # - FIREBASE_SERVICE_ACCOUNT_JSON
+      # - PITCHAPI_KEY / PITCHAPI_ENABLED=true
+      # - SETTLEMENT_CRON_SECRET (protects POST /api/predictions/settle)
     healthCheckPath: /health
     autoDeploy: true
     plan: free # or starter, standard, etc.

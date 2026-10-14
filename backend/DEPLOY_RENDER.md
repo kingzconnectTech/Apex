@@ -36,12 +36,20 @@ Make sure you've pushed all the recent changes to your repository, including:
 3.  You can access your API at `https://apex-xgrw.onrender.com/`.
 
 ## Step 5: Prevent Service Sleeping (Keep-Alive)
-Render's free tier spins down services after 15 minutes of inactivity. To prevent this, set up an external monitor to ping your backend:
+Render's free tier spins down services after 15 minutes of inactivity. Settlement runs as an **in-process** cron (`node-cron` every 5 minutes) inside the web service — if the dyno sleeps, predictions stay Pending.
+
+Set up an external monitor to keep the service awake **and** optionally trigger settlement:
+
 1.  Sign up for a free account at [UptimeRobot](https://uptimerobot.com/) or [FastCron](https://www.fastcron.com/).
-2.  Create a new **HTTP(s) Monitor**.
-3.  Set the URL to: `https://apex-xgrw.onrender.com/health`
-4.  Set the interval to every **10–12 minutes**.
-5.  This will keep your backend "awake" and responsive for your users.
+2.  Create a new **HTTP(s) Monitor** to: `https://apex-xgrw.onrender.com/health` every **10–12 minutes**.
+3.  Add env var `SETTLEMENT_CRON_SECRET` in the Render dashboard (long random string).
+4.  Create a second scheduled HTTP request (every 5–10 minutes):
+    - **URL:** `https://apex-xgrw.onrender.com/api/predictions/settle`
+    - **Method:** POST
+    - **Header:** `x-settlement-secret: <SETTLEMENT_CRON_SECRET>`
+5.  Monitor settlement health (authenticated): `GET /api/predictions/settlement-health` with the same secret.
+
+Also ensure `PITCHAPI_KEY` / `PITCHAPI_ENABLED=true` and `FIREBASE_SERVICE_ACCOUNT_JSON` are set so PitchAPI fixtures (`pa-*` match IDs) can settle.
 
 ## Why Docker?
 We use a Docker-based deployment on Render because the backend requires both **Node.js** (for the main server) and **Python 3** (for the prediction engine) along with specialized libraries like `pandas` and `numpy`. Docker ensures all these dependencies are correctly installed in the environment.
