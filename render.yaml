@@ -8,10 +8,12 @@ services:
         value: production
       - key: PORT
         value: 3000
-      # Add these secrets in the Render dashboard:
-      # - FIREBASE_SERVICE_ACCOUNT_JSON
-      # - PITCHAPI_KEY / PITCHAPI_ENABLED=true
-      # - SETTLEMENT_CRON_SECRET (protects POST /api/predictions/settle)
+      - key: PITCHAPI_ENABLED
+        value: "true"
+      # REQUIRED SECRETS - Set these in Render dashboard after deployment:
+      # 1. FIREBASE_SERVICE_ACCOUNT_JSON (paste the full JSON service account key)
+      # 2. PITCHAPI_KEY (your PitchAPI key from https://pitchapi.dev)
+      # 3. SETTLEMENT_CRON_SECRET (generate a long random string for cron authentication)
     healthCheckPath: /health
     autoDeploy: true
     plan: free # or starter, standard, etc.

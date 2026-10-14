@@ -673,6 +673,15 @@ app.get('/', (req, res) => {
   res.send('Apex API is running');
 });
 
+// Health check endpoint for keep-alive monitoring (UptimeRobot, etc.)
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
 app.get('/api/monitoring/accuracy', (req, res) => {
   const metaPath = path.join(__dirname, 'prediction_engine', 'models', 'winning_model.json');
   if (fs.existsSync(metaPath)) {
