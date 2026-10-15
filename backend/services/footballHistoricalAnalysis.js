@@ -17,8 +17,6 @@
 const BASELINE_PRIORS = {
   UNDER_4_5_GOALS: 0.85,     // ~85% of matches in global professional soccer finish <= 4 goals
   UNDER_2_5_HT: 0.90,        // ~90% of first halves finish <= 2 goals
-  HOME_TEAM_UNDER_2_5: 0.84, // ~84% of matches home team scores <= 2 goals
-  AWAY_TEAM_UNDER_2_5: 0.88, // ~88% of matches away team scores <= 2 goals
   UNDER_10_5_CORNERS: 0.62,  // ~62% of matches finish under 10.5 total corners
   UNDER_9_5_CORNERS: 0.50,   // ~50% of matches finish under 9.5 total corners
   UNDER_8_5_CORNERS: 0.38,   // ~38% of matches finish under 8.5 total corners
@@ -545,160 +543,7 @@ function analyzeUnder25HtHistory(matches, { isHomeContext = null } = {}) {
   };
 }
 
-/**
- * 3b. Team History Analysis — Team Under 2.5 Goals (Individual Team Scoring <= 2)
- *
- * Evaluates whether a team scores 0, 1, or 2 goals (Under 2.5 for this team).
- * Excludes opponent's goals from this team's threshold.
- *
- * @param {Array} matches - Clean historical matches for the team
- * @param {Object} options
- * @param {boolean} [options.isHomeContext] - Whether upcoming fixture is at home for this team
- * @returns {Object} Team Under 2.5 metrics
- */
-function analyzeTeamUnder25History(matches, { isHomeContext = null } = {}) {
-  const totalMatches = matches ? matches.length : 0;
-  if (totalMatches === 0) {
-    return {
-      valid: false,
-      sampleSize: 0,
-      under25HitRate: null,
-      over25Frequency: null,
-      avgGoalsScored: null,
-      avgGoalsConceded: null,
-      under25ConcededRate: null,
-      recentTrend: null,
-      homeAwaySplit: null,
-      goalsScoredDistribution: {},
-    };
-  }
 
-  let under25Count = 0;
-  let over25Count = 0;
-  let under25ConcededCount = 0;
-  let scoredSum = 0;
-  let concededSum = 0;
-  const goalsScoredDistribution = { 0: 0, 1: 0, 2: 0, '3+': 0 };
-  const goalsConcededDistribution = { 0: 0, 1: 0, 2: 0, '3+': 0 };
-  const pfArr = [];
-  const paArr = [];
-
-  let validMatchesCount = 0;
-  matches.forEach((m) => {
-    const pf = m.pf !== undefined && m.pf !== null ? Number(m.pf) : NaN;
-    const pa = m.pa !== undefined && m.pa !== null ? Number(m.pa) : NaN;
-    if (isNaN(pf) || isNaN(pa)) return;
-
-    validMatchesCount++;
-    scoredSum += pf;
-    concededSum += pa;
-    pfArr.push(pf);
-    paArr.push(pa);
-
-    if (pf <= 2) {
-      under25Count++;
-    } else {
-      over25Count++;
-    }
-
-    if (pa <= 2) {
-      under25ConcededCount++;
-    }
-
-    const sKey = pf >= 3 ? '3+' : String(pf);
-    goalsScoredDistribution[sKey] = (goalsScoredDistribution[sKey] || 0) + 1;
-
-    const cKey = pa >= 3 ? '3+' : String(pa);
-    goalsConcededDistribution[cKey] = (goalsConcededDistribution[cKey] || 0) + 1;
-  });
-
-  const sampleSize = validMatchesCount || totalMatches;
-  const under25HitRate = sampleSize > 0 ? under25Count / sampleSize : 0;
-  const over25Frequency = sampleSize > 0 ? over25Count / sampleSize : 0;
-  const under25ConcededRate = sampleSize > 0 ? under25ConcededCount / sampleSize : 0;
-  const avgGoalsScored = sampleSize > 0 ? scoredSum / sampleSize : 0;
-  const avgGoalsConceded = sampleSize > 0 ? concededSum / sampleSize : 0;
-  const medianGoalsScored = calculateMedian(pfArr);
-  const medianGoalsConceded = calculateMedian(paArr);
-
-  const goalsScoredPercentages = {
-    0: sampleSize > 0 ? Number(((goalsScoredDistribution[0] || 0) / sampleSize).toFixed(4)) : 0,
-    1: sampleSize > 0 ? Number(((goalsScoredDistribution[1] || 0) / sampleSize).toFixed(4)) : 0,
-    2: sampleSize > 0 ? Number(((goalsScoredDistribution[2] || 0) / sampleSize).toFixed(4)) : 0,
-    '3+': sampleSize > 0 ? Number(((goalsScoredDistribution['3+'] || 0) / sampleSize).toFixed(4)) : 0,
-  };
-
-  const goalsConcededPercentages = {
-    0: sampleSize > 0 ? Number(((goalsConcededDistribution[0] || 0) / sampleSize).toFixed(4)) : 0,
-    1: sampleSize > 0 ? Number(((goalsConcededDistribution[1] || 0) / sampleSize).toFixed(4)) : 0,
-    2: sampleSize > 0 ? Number(((goalsConcededDistribution[2] || 0) / sampleSize).toFixed(4)) : 0,
-    '3+': sampleSize > 0 ? Number(((goalsConcededDistribution['3+'] || 0) / sampleSize).toFixed(4)) : 0,
-  };
-
-  // Recent attacking trend: compare last 3-5 matches goals scored vs older matches
-  let recentTrend = { direction: 'stable', diff: 0, last3ScoredAvg: null };
-  if (sampleSize >= 4) {
-    const last3 = matches.slice(0, 3);
-    const older = matches.slice(3);
-    const last3Avg = last3.reduce((s, m) => s + (Number(m.pf) || 0), 0) / 3;
-    const olderAvg = older.reduce((s, m) => s + (Number(m.pf) || 0), 0) / older.length;
-    const diff = last3Avg - olderAvg;
-    recentTrend = {
-      direction: diff > 0.6 ? 'more_goals' : diff < -0.6 ? 'fewer_goals' : 'stable',
-      diff: Number(diff.toFixed(2)),
-      last3ScoredAvg: Number(last3Avg.toFixed(2)),
-      olderScoredAvg: Number(olderAvg.toFixed(2)),
-    };
-  }
-
-  // Home/away split
-  const homeMatches = matches.filter((m) => m.isHome === true);
-  const awayMatches = matches.filter((m) => m.isHome === false);
-
-  const calcSplit = (subList) => {
-    if (!subList || subList.length === 0) return null;
-    const u25 = subList.filter((m) => Number(m.pf) <= 2).length;
-    const u25Conc = subList.filter((m) => Number(m.pa) <= 2).length;
-    const scored = subList.reduce((s, m) => s + Number(m.pf), 0);
-    const conceded = subList.reduce((s, m) => s + Number(m.pa), 0);
-    return {
-      sampleSize: subList.length,
-      under25HitRate: u25 / subList.length,
-      under25ConcededRate: u25Conc / subList.length,
-      avgGoalsScored: scored / subList.length,
-      avgGoalsConceded: conceded / subList.length,
-    };
-  };
-
-  const homeSplit = calcSplit(homeMatches);
-  const awaySplit = calcSplit(awayMatches);
-  const relevantSplit = isHomeContext === true ? homeSplit : isHomeContext === false ? awaySplit : null;
-
-  return {
-    valid: true,
-    sampleSize,
-    under25Count,
-    over25Count,
-    under25HitRate: Number(under25HitRate.toFixed(4)),
-    over25Frequency: Number(over25Frequency.toFixed(4)),
-    under25ConcededRate: Number(under25ConcededRate.toFixed(4)),
-    under25ConcededCount,
-    avgGoalsScored: Number(avgGoalsScored.toFixed(2)),
-    avgGoalsConceded: Number(avgGoalsConceded.toFixed(2)),
-    medianGoalsScored,
-    medianGoalsConceded,
-    goalsScoredDistribution,
-    goalsScoredPercentages,
-    goalsConcededDistribution,
-    goalsConcededPercentages,
-    recentTrend,
-    homeAwaySplit: {
-      home: homeSplit,
-      away: awaySplit,
-      relevant: relevantSplit,
-    },
-  };
-}
 
 /**
  * 4. Head-to-Head (H2H) Analysis
@@ -726,25 +571,15 @@ function analyzeH2HHistory(h2hMatches) {
   });
 
   let u45 = null;
-  let homeUnder25 = null;
-  let awayUnder25 = null;
   if (validFT.length > 0) {
     let u45Count = 0;
     let totGoals = 0;
-    let homeU25Count = 0;
-    let awayU25Count = 0;
-    let homeGoalsSum = 0;
-    let awayGoalsSum = 0;
     validFT.forEach((m) => {
       const hScore = Number(m.homeTeamScore ?? m.pf);
       const aScore = Number(m.awayTeamScore ?? m.pa);
       const sum = hScore + aScore;
       totGoals += sum;
-      homeGoalsSum += hScore;
-      awayGoalsSum += aScore;
       if (sum <= 4) u45Count++;
-      if (hScore <= 2) homeU25Count++;
-      if (aScore <= 2) awayU25Count++;
     });
     u45 = {
       sampleSize: validFT.length,
@@ -753,18 +588,6 @@ function analyzeH2HHistory(h2hMatches) {
       under45Rate: Number((u45Count / validFT.length).toFixed(4)),
       over45Rate: Number(((validFT.length - u45Count) / validFT.length).toFixed(4)),
       avgGoals: Number((totGoals / validFT.length).toFixed(2)),
-    };
-    homeUnder25 = {
-      sampleSize: validFT.length,
-      under25Count: homeU25Count,
-      under25Rate: Number((homeU25Count / validFT.length).toFixed(4)),
-      avgGoals: Number((homeGoalsSum / validFT.length).toFixed(2)),
-    };
-    awayUnder25 = {
-      sampleSize: validFT.length,
-      under25Count: awayU25Count,
-      under25Rate: Number((awayU25Count / validFT.length).toFixed(4)),
-      avgGoals: Number((awayGoalsSum / validFT.length).toFixed(2)),
     };
   }
 
@@ -881,8 +704,6 @@ function analyzeH2HHistory(h2hMatches) {
     sampleSize: validFT.length,
     under45: u45,
     under25Ht: u25Ht,
-    homeUnder25,
-    awayUnder25,
     corners: h2hCorners,
     bookings: h2hBookings,
     shots: h2hShots,
@@ -1145,191 +966,7 @@ function calculateUnder25HtPrediction({
   };
 }
 
-/**
- * 6b. Probability Estimation for Team Under 2.5 Goals (Home Team or Away Team)
- *
- * Models P(Team Goals <= 2) using:
- *   - Empirical Bayesian smoothed hit rate for target team
- *   - Opponent defensive strength (how often opponent concedes <= 2 goals)
- *   - Poisson expected goals model for target team lambda = (teamScored + oppConceded) / 2
- *   - Head-to-Head goal records against upcoming opponent
- *   - Calibrated probability clamped [0.30, 0.96]
- *
- * @param {Object} params
- * @param {Object} params.teamAnalysis - Historical analysis for the target team
- * @param {Object} [params.oppAnalysis] - Historical analysis for opponent (defensive strength)
- * @param {boolean} [params.isHome=true] - True for Home Team Under 2.5, false for Away Team Under 2.5
- * @param {string} [params.teamName='Home Team']
- * @param {string} [params.oppName='Away Team']
- * @param {Object} [params.h2hAnalysis=null]
- * @param {number} [params.baselinePrior=null]
- * @returns {Object|null} Prediction object or null
- */
-function calculateTeamUnder25Prediction({
-  teamAnalysis,
-  oppAnalysis = null,
-  isHome = true,
-  teamName = isHome ? 'Home Team' : 'Away Team',
-  oppName = isHome ? 'Away Team' : 'Home Team',
-  h2hAnalysis = null,
-  baselinePrior = null,
-}) {
-  if (!teamAnalysis?.valid || teamAnalysis.sampleSize === 0) {
-    return null;
-  }
 
-  const market = isHome ? 'home_team_under_2_5' : 'away_team_under_2_5';
-  const label = isHome ? 'Home Team Under 2.5 Goals' : 'Away Team Under 2.5 Goals';
-  const value = `${teamName} Under 2.5 Goals`;
-  const defaultPrior = isHome ? BASELINE_PRIORS.HOME_TEAM_UNDER_2_5 : BASELINE_PRIORS.AWAY_TEAM_UNDER_2_5;
-  const prior = typeof baselinePrior === 'number' ? baselinePrior : defaultPrior;
-
-  const factors = [];
-  const M = 4; // Empirical prior weight
-
-  // 1. Empirical Bayesian smoothed rates
-  const smoothRate = (count, size, priorVal) => {
-    if (!size || size === 0) return priorVal;
-    return (count + M * priorVal) / (size + M);
-  };
-
-  const teamSmoothed = smoothRate(teamAnalysis.under25Count, teamAnalysis.sampleSize, prior);
-
-  // Relevant venue split for team
-  let teamSplitSmoothed = teamSmoothed;
-  if (teamAnalysis.homeAwaySplit?.relevant?.sampleSize >= 3) {
-    const sp = teamAnalysis.homeAwaySplit.relevant;
-    const spCount = sp.under25HitRate * sp.sampleSize;
-    teamSplitSmoothed = smoothRate(spCount, sp.sampleSize, prior);
-  }
-
-  const teamRate = 0.6 * teamSmoothed + 0.4 * teamSplitSmoothed;
-
-  // Opponent defensive contribution (how often opponent concedes <= 2 goals)
-  let oppDefRate = prior;
-  if (oppAnalysis?.valid) {
-    const oppSmoothed = smoothRate(
-      oppAnalysis.under25ConcededCount || (oppAnalysis.under25ConcededRate * oppAnalysis.sampleSize),
-      oppAnalysis.sampleSize,
-      prior
-    );
-    let oppSplitSmoothed = oppSmoothed;
-    if (oppAnalysis.homeAwaySplit?.relevant?.sampleSize >= 3) {
-      const sp = oppAnalysis.homeAwaySplit.relevant;
-      const spConc = sp.under25ConcededRate * sp.sampleSize;
-      oppSplitSmoothed = smoothRate(spConc, sp.sampleSize, prior);
-    }
-    oppDefRate = 0.6 * oppSmoothed + 0.4 * oppSplitSmoothed;
-  }
-
-  // Blended empirical probability: 70% attacking team scoring history, 30% opponent defensive resilience
-  let empiricalProb = 0.70 * teamRate + 0.30 * oppDefRate;
-
-  factors.push({
-    label: `${teamName} scored <= 2 in ${Math.round(teamAnalysis.under25HitRate * 100)}% (${teamAnalysis.under25Count}/${teamAnalysis.sampleSize})`,
-    side: isHome ? 'home' : 'away',
-    type: teamAnalysis.under25HitRate >= 0.85 ? 'success' : 'info',
-  });
-
-  if (oppAnalysis?.valid) {
-    factors.push({
-      label: `${oppName} conceded <= 2 in ${Math.round(oppAnalysis.under25ConcededRate * 100)}% of recent matches`,
-      side: isHome ? 'away' : 'home',
-      type: oppAnalysis.under25ConcededRate >= 0.85 ? 'success' : 'info',
-    });
-  }
-
-  // 2. Poisson Expected Goals model for this team
-  const teamScored = teamAnalysis.homeAwaySplit?.relevant?.sampleSize >= 3
-    ? 0.6 * teamAnalysis.homeAwaySplit.relevant.avgGoalsScored + 0.4 * teamAnalysis.avgGoalsScored
-    : teamAnalysis.avgGoalsScored || (isHome ? 1.4 : 1.1);
-
-  const oppConceded = oppAnalysis?.valid
-    ? (oppAnalysis.homeAwaySplit?.relevant?.sampleSize >= 3
-        ? 0.6 * oppAnalysis.homeAwaySplit.relevant.avgGoalsConceded + 0.4 * oppAnalysis.avgGoalsConceded
-        : oppAnalysis.avgGoalsConceded || (isHome ? 1.2 : 1.4))
-    : (isHome ? 1.2 : 1.4);
-
-  let lambda = (teamScored + oppConceded) / 2;
-
-  // H2H adjustment if available
-  let h2hWeight = 0;
-  let h2hProb = prior;
-  const h2hData = isHome ? h2hAnalysis?.homeUnder25 : h2hAnalysis?.awayUnder25;
-  if (h2hData && h2hData.sampleSize >= 2) {
-    h2hWeight = Math.min(0.20, h2hData.sampleSize * 0.04);
-    h2hProb = (h2hData.under25Count + 2 * prior) / (h2hData.sampleSize + 2);
-    lambda = lambda * (1 - h2hWeight) + h2hData.avgGoals * h2hWeight;
-
-    factors.push({
-      label: `H2H ${teamName} scored <= 2: ${Math.round(h2hData.under25Rate * 100)}% (${h2hData.under25Count}/${h2hData.sampleSize})`,
-      side: 'neutral',
-      type: h2hData.under25Rate >= 0.85 ? 'success' : 'info',
-    });
-  }
-
-  // Poisson CDF: P(Goals <= 2) = sum_{k=0}^2 e^(-lambda) * lambda^k / k!
-  const poissonProb = poissonCdf(2, lambda);
-
-  // 3. Blend empirical and Poisson
-  const wEmp = 0.55 - (h2hWeight / 2);
-  const wPoi = 0.45 - (h2hWeight / 2);
-  const finalProb = (wEmp * empiricalProb) + (wPoi * poissonProb) + (h2hWeight * h2hProb);
-
-  // Recent goal trend impact
-  let trendAdjustment = 0;
-  if (teamAnalysis.recentTrend?.direction === 'more_goals') {
-    trendAdjustment -= 0.03;
-    factors.push({ label: `${teamName} on recent high-scoring run`, side: isHome ? 'home' : 'away', type: 'warning' });
-  } else if (teamAnalysis.recentTrend?.direction === 'fewer_goals') {
-    trendAdjustment += 0.03;
-    factors.push({ label: `${teamName} scoring dip in last 3 matches`, side: isHome ? 'home' : 'away', type: 'info' });
-  }
-
-  const calibratedProb = Math.min(Math.max(finalProb + trendAdjustment, 0.30), 0.96);
-  const confidence = Math.round(calibratedProb * 100);
-
-  if (confidence < 50) return null;
-
-  return {
-    market,
-    label,
-    value,
-    selectedTeam: teamName,
-    opponentTeam: oppName,
-    confidence,
-    probability: Number(calibratedProb.toFixed(4)),
-    color: confidence >= 70 ? '#40c057' : confidence >= 60 ? '#ffa94d' : '#4dabf7',
-    factors,
-    expectedGoals: Number(lambda.toFixed(2)),
-    probabilities: {
-      zeroGoals: Number(poissonPmf(0, lambda).toFixed(4)),
-      oneGoal: Number(poissonPmf(1, lambda).toFixed(4)),
-      twoGoals: Number(poissonPmf(2, lambda).toFixed(4)),
-      threePlusGoals: Number((1 - poissonCdf(2, lambda)).toFixed(4)),
-    },
-  };
-}
-
-/**
- * Settlement evaluation for Home Team Under 2.5 and Away Team Under 2.5
- *
- * @param {number} homeGoals - Full-time goals scored by home team
- * @param {number} awayGoals - Full-time goals scored by away team
- * @returns {{ homeUnder25: 'WIN'|'LOSS'|null, awayUnder25: 'WIN'|'LOSS'|null }}
- */
-function settleTeamUnder25(homeGoals, awayGoals) {
-  if (homeGoals === undefined || homeGoals === null || isNaN(Number(homeGoals)) ||
-      awayGoals === undefined || awayGoals === null || isNaN(Number(awayGoals))) {
-    return { homeUnder25: null, awayUnder25: null };
-  }
-  const hg = Number(homeGoals);
-  const ag = Number(awayGoals);
-  return {
-    homeUnder25: hg <= 2 ? 'WIN' : 'LOSS',
-    awayUnder25: ag <= 2 ? 'WIN' : 'LOSS',
-  };
-}
 
 /**
  * 6c. Corners History Analysis
@@ -1890,8 +1527,6 @@ function backtestHistoricalFixtures(historicalFixtures) {
       evaluatedCount: 0,
       under45: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
       under25Ht: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
-      homeTeamUnder25: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
-      awayTeamUnder25: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
       underCorners: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
       underBookings: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
     };
@@ -1904,8 +1539,6 @@ function backtestHistoricalFixtures(historicalFixtures) {
 
   const resultsU45 = [];
   const resultsU25Ht = [];
-  const resultsHomeU25 = [];
-  const resultsAwayU25 = [];
   const resultsCorners = [];
   const resultsBookings = [];
 
@@ -1997,45 +1630,6 @@ function backtestHistoricalFixtures(historicalFixtures) {
       });
     }
 
-    // Home Team Under 2.5 Goals prediction
-    const teamHomeU25 = analyzeTeamUnder25History(cleanHome, { isHomeContext: true });
-    const teamAwayU25 = analyzeTeamUnder25History(cleanAway, { isHomeContext: false });
-
-    const predHomeU25 = calculateTeamUnder25Prediction({
-      teamAnalysis: teamHomeU25,
-      oppAnalysis: teamAwayU25,
-      isHome: true,
-      teamName: current.homeName || 'Home',
-      oppName: current.awayName || 'Away',
-    });
-
-    if (predHomeU25 && current.ftHome !== undefined) {
-      const won = current.ftHome <= 2;
-      resultsHomeU25.push({
-        prob: predHomeU25.probability,
-        outcome: won ? 1 : 0,
-        actualGoals: current.ftHome,
-      });
-    }
-
-    // Away Team Under 2.5 Goals prediction
-    const predAwayU25 = calculateTeamUnder25Prediction({
-      teamAnalysis: teamAwayU25,
-      oppAnalysis: teamHomeU25,
-      isHome: false,
-      teamName: current.awayName || 'Away',
-      oppName: current.homeName || 'Home',
-    });
-
-    if (predAwayU25 && current.ftAway !== undefined) {
-      const won = current.ftAway <= 2;
-      resultsAwayU25.push({
-        prob: predAwayU25.probability,
-        outcome: won ? 1 : 0,
-        actualGoals: current.ftAway,
-      });
-    }
-
     // Under Corners prediction (10.5 line)
     const cornersHome = analyzeCornersHistory(cleanHome, { isHomeContext: true });
     const cornersAway = analyzeCornersHistory(cleanAway, { isHomeContext: false });
@@ -2118,8 +1712,6 @@ function backtestHistoricalFixtures(historicalFixtures) {
     evaluatedCount: sorted.length,
     under45: computeMetrics(resultsU45, BASELINE_PRIORS.UNDER_4_5_GOALS),
     under25Ht: computeMetrics(resultsU25Ht, BASELINE_PRIORS.UNDER_2_5_HT),
-    homeTeamUnder25: computeMetrics(resultsHomeU25, BASELINE_PRIORS.HOME_TEAM_UNDER_2_5),
-    awayTeamUnder25: computeMetrics(resultsAwayU25, BASELINE_PRIORS.AWAY_TEAM_UNDER_2_5),
     underCorners: computeMetrics(resultsCorners, BASELINE_PRIORS.UNDER_10_5_CORNERS),
     underBookings: computeMetrics(resultsBookings, BASELINE_PRIORS.UNDER_3_5_BOOKINGS),
   };
@@ -2136,16 +1728,13 @@ module.exports = {
   validateAndFilterHistoricalMatches,
   analyzeUnder45History,
   analyzeUnder25HtHistory,
-  analyzeTeamUnder25History,
   analyzeCornersHistory,
   analyzeBookingsHistory,
   analyzeH2HHistory,
   calculateUnder45Prediction,
   calculateUnder25HtPrediction,
-  calculateTeamUnder25Prediction,
   calculateCornersPrediction,
   calculateBookingsPrediction,
-  settleTeamUnder25,
   settleCorners,
   settleBookings,
   backtestHistoricalFixtures,

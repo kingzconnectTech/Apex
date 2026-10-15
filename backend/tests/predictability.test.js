@@ -7,10 +7,9 @@
  *   3. Model agreement between empirical Bayes and Poisson expectancy
  *   4. Predictability index scoring
  *   5. Strict candidate admission & explicit rejection reasons
- *   6. Independent Home Team Under 2.5 & Away Team Under 2.5 evaluation
- *   7. Fixture ranking and separation of 'All Fixtures' vs 'Recommended Predictions'
- *   8. Zero-recommendation behavior when no fixtures meet strict 75%+ criteria
- *   9. HTTP endpoints for recommended predictions and all fixtures
+ *   6. Fixture ranking and separation of 'All Fixtures' vs 'Recommended Predictions'
+ *   7. Zero-recommendation behavior when no fixtures meet strict 75%+ criteria
+ *   8. HTTP endpoints for recommended predictions and all fixtures
  */
 
 const request = require('supertest');
@@ -280,7 +279,7 @@ describe('Candidate Admission & Strict Filtering', () => {
 describe('evaluateFixture & filterAndRankFixtures', () => {
   const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 3).toISOString();
 
-  test('identifies independent Home and Away Under 2.5 markets on strong defensive fixture', () => {
+  test('identifies Under 4.5 Goals market on strong defensive fixture', () => {
     // Both teams score very few goals historically (avg 0.8)
     const homeMatches = generateMockMatches(10, { avgPf: 0.8, avgPa: 0.6, isHome: true });
     const awayMatches = generateMockMatches(10, { avgPf: 0.7, avgPa: 0.7, isHome: false });

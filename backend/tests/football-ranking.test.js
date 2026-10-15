@@ -322,8 +322,6 @@ describe('Sport-Specific Prediction Engine (analyzeMatchServer)', () => {
       'UNDER_4_5_GOALS',
       'UNDER_1_5_HT',
       'UNDER_2_5_HT',
-      'HOME_TEAM_UNDER_2_5',
-      'AWAY_TEAM_UNDER_2_5',
     ];
     result.recommendations.forEach(rec => {
       expect(approvedMarkets).toContain(rec.type);
@@ -368,7 +366,7 @@ describe('Sport-Specific Prediction Engine (analyzeMatchServer)', () => {
     expect(result.recommendations[0].type).toBe('WIN');
   });
 
-  test('football analyzeMatchServer produces Home/Away Team Under 2.5 when supported by history', () => {
+  test('football analyzeMatchServer produces valid markets when supported by history', () => {
     const result = analyzeMatchServer({
       homeName: 'Real Madrid',
       awayName: 'Getafe',

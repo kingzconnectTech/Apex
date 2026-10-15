@@ -4,21 +4,18 @@
  * Dedicated acceptance tests for:
  * Apex Prediction Engine Upgrade — Goals, Corners and Bookings
  *
- * Verifies all 14 criteria:
- * 1. Home Team Under 2.5 wins when the home team scores 0, 1, or 2 goals and loses at 3 or more.
- * 2. Away Team Under 2.5 uses away goals only.
- * 3. A 0–0 result wins both team-under markets.
- * 4. Total-corners probabilities use the documented full-time corner statistic and the correct market line.
- * 5. Total-bookings predictions and settlement use the same documented booking convention.
- * 6. Missing corners or cards remain missing rather than becoming zero.
- * 7. Missing H2H history does not crash prediction generation.
- * 8. Fewer than 10 valid matches reduces data quality appropriately.
- * 9. Historical features never include the target match's result or future matches.
- * 10. Over/under probabilities are valid, complementary, and internally consistent.
- * 11. Duplicate fixtures do not produce duplicate predictions.
- * 12. Predictions are not settled before the fixture is officially final.
- * 13. API outages and rate limits are handled gracefully.
- * 14. Existing Apex markets, fixtures, and settlement functionality continue working.
+ * Verifies all 11 criteria:
+ * 1. Total-corners probabilities use the documented full-time corner statistic and the correct market line.
+ * 2. Total-bookings predictions and settlement use the same documented booking convention.
+ * 3. Missing corners or cards remain missing rather than becoming zero.
+ * 4. Missing H2H history does not crash prediction generation.
+ * 5. Fewer than 10 valid matches reduces data quality appropriately.
+ * 6. Historical features never include the target match's result or future matches.
+ * 7. Over/under probabilities are valid, complementary, and internally consistent.
+ * 8. Duplicate fixtures do not produce duplicate predictions.
+ * 9. Predictions are not settled before the fixture is officially final.
+ * 10. API outages and rate limits are handled gracefully.
+ * 11. Existing Apex markets, fixtures, and settlement functionality continue working.
  */
 
 const {
@@ -32,16 +29,13 @@ const {
   validateAndFilterHistoricalMatches,
   analyzeUnder45History,
   analyzeUnder25HtHistory,
-  analyzeTeamUnder25History,
   analyzeCornersHistory,
   analyzeBookingsHistory,
   analyzeH2HHistory,
   calculateUnder45Prediction,
   calculateUnder25HtPrediction,
-  calculateTeamUnder25Prediction,
   calculateCornersPrediction,
   calculateBookingsPrediction,
-  settleTeamUnder25,
   settleCorners,
   settleBookings,
   backtestHistoricalFixtures,
@@ -209,29 +203,9 @@ describe('Apex Prediction Engine Upgrade — Acceptance Tests', () => {
     });
   });
 
-  // Criterion 7: Missing H2H history does not crash prediction generation
-  describe('Criterion 7: Missing H2H Resilience', () => {
+  // Criterion 6: Missing H2H history does not crash prediction generation
+  describe('Criterion 6: Missing H2H Resilience', () => {
     test('missing or null H2H history does not crash prediction generation', () => {
-      const teamAnalysis = {
-        valid: true,
-        sampleSize: 8,
-        under25Count: 7,
-        under25HitRate: 0.875,
-        under25ConcededRate: 0.75,
-        avgGoalsScored: 1.1,
-        avgGoalsConceded: 1.0,
-      };
-
-      expect(() => {
-        const pred = calculateTeamUnder25Prediction({
-          teamAnalysis,
-          oppAnalysis: teamAnalysis,
-          h2hAnalysis: null, // explicit null
-        });
-        expect(pred).not.toBeNull();
-        expect(pred.market).toBe('home_team_under_2_5');
-      }).not.toThrow();
-
       expect(() => {
         const emptyH2H = analyzeH2HHistory([]);
         expect(emptyH2H.valid).toBe(false);
@@ -309,20 +283,20 @@ describe('Apex Prediction Engine Upgrade — Acceptance Tests', () => {
   // Criterion 11: Duplicate fixtures do not produce duplicate predictions
   describe('Criterion 11: Deduplication', () => {
     test('duplicate fixtures are deduplicated before prediction and ranking', () => {
-      const predA = { market: 'home_team_under_2_5', confidence: 82, label: 'Home Under 2.5' };
-      const predADup = { market: 'home_team_under_2_5', confidence: 78, label: 'Home Under 2.5' };
+      const predA = { market: 'under_4_5_goals', confidence: 82, label: 'Under 4.5 Goals' };
+      const predADup = { market: 'under_4_5_goals', confidence: 78, label: 'Under 4.5 Goals' };
       const predB = { market: 'under_corners', confidence: 80, label: 'Under 10.5 Corners' };
 
       const ranked = rankFootballPredictions([predA, predADup, predB]);
       expect(ranked.length).toBe(2);
-      expect(ranked[0].market).toBe('home_team_under_2_5');
+      expect(ranked[0].market).toBe('under_4_5_goals');
       expect(ranked[0].confidence).toBe(82); // kept highest
       expect(ranked[1].market).toBe('under_corners');
     });
   });
 
-  // Criterion 12: Predictions are not settled before the fixture is officially final
-  describe('Criterion 12: Premature Settlement Prevention', () => {
+  // Criterion 9: Predictions are not settled before the fixture is officially final
+  describe('Criterion 9: Premature Settlement Prevention', () => {
     test('classifyMatchStatus blocks settlement for scheduled and live matches', () => {
       expect(classifyMatchStatus('pre')).toBe('scheduled');
       expect(classifyMatchStatus('scheduled')).toBe('scheduled');
@@ -338,8 +312,8 @@ describe('Apex Prediction Engine Upgrade — Acceptance Tests', () => {
     });
   });
 
-  // Criterion 13 & 14: Predictability filter and Backtester integration
-  describe('Criterion 13 & 14: Predictability Engine and Walk-Forward Backtest', () => {
+  // Criterion 10 & 11: Predictability filter and Backtester integration
+  describe('Criterion 10 & 11: Predictability Engine and Walk-Forward Backtest', () => {
     test('evaluateFixture evaluates candidate markets and filters recommendations', () => {
       const homeMatches = Array.from({ length: 8 }, (_, i) => ({
         id: `h${i}`, date: '2026-09-01', pf: 1, pa: 1, corners: 5, cornersConceded: 4, yellowCards: 1, redCards: 0, status: 'ft',

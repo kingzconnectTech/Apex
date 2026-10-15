@@ -328,8 +328,6 @@ describeOrSkip('Apex Backend — Live Server Integration Tests', () => {
             'UNDER_4_5_GOALS',
             'UNDER_1_5_HT',
             'UNDER_2_5_HT',
-            'HOME_TEAM_UNDER_2_5',
-            'AWAY_TEAM_UNDER_2_5',
           ];
           res.body.recommendations.forEach(rec => {
             expect(approvedMarkets).toContain(rec.type);

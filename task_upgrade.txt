@@ -7,10 +7,8 @@ Upgrade the existing Apex sports prediction application to calculate football ma
 
 Implement these markets:
 
-1. **Home Team Under 2.5 Goals**
-2. **Away Team Under 2.5 Goals**
-3. **Over/Under Total Match Corners**
-4. **Over/Under Total Match Bookings**
+1. **Over/Under Total Match Corners**
+2. **Over/Under Total Match Bookings**
 
 The system must analyse each team's last 10 relevant matches, historical H2H results, home/away performance, competition statistics, and available match-specific data.
 
@@ -128,8 +126,6 @@ Calculate:
 
 - Probability the home team scores 0, 1, 2, 3+ goals.
 - Probability the away team scores 0, 1, 2, 3+ goals.
-- Probability of Home Team Under 2.5 Goals.
-- Probability of Away Team Under 2.5 Goals.
 
 For an initial Poisson model:
 
@@ -137,15 +133,9 @@ For an initial Poisson model:
 
 Where `λ` is the team's expected goals.
 
-For either team:
-
-`P(Under 2.5) = P(0 goals) + P(1 goal) + P(2 goals)`
-
 Ensure the final probabilities are valid, properly normalized, and consistent with the model's assumptions.
 
-Do not calculate the home team's under probability from total match goals. Home Team Under 2.5 concerns home goals only; Away Team Under 2.5 concerns away goals only.
-
-## PHASE 5 — CALCULATE EXPECTED CORNERS
+## PHASE 4 — CALCULATE EXPECTED CORNERS
 
 Build a separate corners prediction model. Do not reuse the goals model for corners.
 
@@ -377,20 +367,17 @@ Write unit tests, integration tests, and historical backtests.
 
 Test at minimum:
 
-1. Home Team Under 2.5 wins when the home team scores 0, 1, or 2 goals and loses at 3 or more.
-2. Away Team Under 2.5 uses away goals only.
-3. A 0–0 result wins both team-under markets.
-4. Total-corners probabilities use the documented full-time corner statistic and the correct market line.
-5. Total-bookings predictions and settlement use the same documented booking convention.
-6. Missing corners or cards remain missing rather than becoming zero.
-7. Missing H2H history does not crash prediction generation.
-8. Fewer than 10 valid matches reduces data quality appropriately.
-9. Historical features never include the target match's result or future matches.
-10. Over/under probabilities are valid and internally consistent.
-11. Duplicate fixtures do not produce duplicate predictions.
-12. Predictions are not settled before the fixture is officially final.
-13. API outages and rate limits are handled gracefully.
-14. Existing Apex markets, fixtures, and settlement functionality continue working.
+1. Total-corners probabilities use the documented full-time corner statistic and the correct market line.
+2. Total-bookings predictions and settlement use the same documented booking convention.
+3. Missing corners or cards remain missing rather than becoming zero.
+4. Missing H2H history does not crash prediction generation.
+5. Fewer than 10 valid matches reduces data quality appropriately.
+6. Historical features never include the target match's result or future matches.
+7. Over/under probabilities are valid and internally consistent.
+8. Duplicate fixtures do not produce duplicate predictions.
+9. Predictions are not settled before the fixture is officially final.
+10. API outages and rate limits are handled gracefully.
+11. Existing Apex markets, fixtures, and settlement functionality continue working.
 
 ## FINAL DELIVERABLE
 

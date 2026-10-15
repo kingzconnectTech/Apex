@@ -345,8 +345,6 @@ export default function TipsScreen({ navigation }) {
     const marketDisplayTitle =
       isShots ? (item.label || item.value || item.marketLabel || 'Total Shots Over/Under') :
       isBasketball ? (item.label || item.value || item.marketLabel || 'Basketball Prediction') :
-      isUnder25Home ? `${item.homeName} Under 2.5 Goals` :
-      isUnder25Away ? `${item.awayName} Under 2.5 Goals` :
       isUnder45 ? 'Under 4.5 Match Goals' :
       isUnder25Ht ? 'Under 2.5 First Half Goals' :
       isCorners ? (item.label || item.value || item.marketLabel || 'Over/Under Corners') :
