@@ -64,47 +64,7 @@ const { rankFootballPredictions, FOOTBALL_MARKET_PRIORITY } = require('../servic
 
 describe('Apex Prediction Engine Upgrade — Acceptance Tests', () => {
 
-  // Criterion 1: Home Team Under 2.5 wins when home team scores 0, 1, or 2 goals and loses at 3 or more
-  describe('Criterion 1: Home Team Under 2.5 Settlement', () => {
-    test('Home Team Under 2.5 wins on 0, 1, 2 goals and loses on 3 or more', () => {
-      expect(settleTeamUnder25(0, 5).homeUnder25).toBe('WIN');
-      expect(settleTeamUnder25(1, 4).homeUnder25).toBe('WIN');
-      expect(settleTeamUnder25(2, 3).homeUnder25).toBe('WIN');
-      expect(settleTeamUnder25(3, 0).homeUnder25).toBe('LOSS');
-      expect(settleTeamUnder25(4, 1).homeUnder25).toBe('LOSS');
-
-      // Via settlementService settleMarket
-      expect(settleMarket('home_team_under_2_5', 'Under 2.5', 2, 5)).toBe('won');
-      expect(settleMarket('home_team_under_2_5', 'Under 2.5', 3, 0)).toBe('lost');
-    });
-  });
-
-  // Criterion 2: Away Team Under 2.5 uses away goals only
-  describe('Criterion 2: Away Team Under 2.5 Independence', () => {
-    test('Away Team Under 2.5 is completely independent of home team score', () => {
-      // Home scores 7, but away scores 2 -> Away U2.5 WINS
-      expect(settleTeamUnder25(7, 2).awayUnder25).toBe('WIN');
-      expect(settleMarket('away_team_under_2_5', 'Under 2.5', 7, 2)).toBe('won');
-
-      // Home scores 0, but away scores 3 -> Away U2.5 LOSES
-      expect(settleTeamUnder25(0, 3).awayUnder25).toBe('LOSS');
-      expect(settleMarket('away_team_under_2_5', 'Under 2.5', 0, 3)).toBe('lost');
-    });
-  });
-
-  // Criterion 3: A 0-0 result wins both team-under markets
-  describe('Criterion 3: 0-0 Result Settlement', () => {
-    test('A 0-0 result wins both Home Team Under 2.5 and Away Team Under 2.5', () => {
-      const outcome = settleTeamUnder25(0, 0);
-      expect(outcome.homeUnder25).toBe('WIN');
-      expect(outcome.awayUnder25).toBe('WIN');
-
-      expect(settleMarket('home_team_under_2_5', 'Under 2.5', 0, 0)).toBe('won');
-      expect(settleMarket('away_team_under_2_5', 'Under 2.5', 0, 0)).toBe('won');
-    });
-  });
-
-  // Criterion 4: Total-corners probabilities and market line
+  // Criterion 1: Total-corners probabilities and market line
   describe('Criterion 4: Over/Under Total Corners Model and Settlement', () => {
     test('uses documented full-time corner statistic and correct market line', () => {
       expect(settleCorners(8, 10.5, 'under')).toBe('WIN');

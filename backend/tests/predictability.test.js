@@ -178,17 +178,17 @@ describe('Candidate Admission & Strict Filtering', () => {
     const cleanAway = generateMockMatches(8, { avgPf: 0.8 });
 
     const strongPrediction = {
-      market: 'home_team_under_2_5',
-      label: 'Home Team Under 2.5 Goals',
-      value: 'Home Under 2.5 Goals',
+      market: 'under_4_5_goals',
+      label: 'Under 4.5 Goals',
+      value: 'Under 4.5',
       probability: 0.84, // 84% > 75%
       confidence: 84,
-      expectedGoals: 1.05,
-      factors: [{ label: 'Clean defensive record' }],
+      expectedGoals: 2.4,
+      factors: [{ label: 'Strong defensive record' }],
     };
 
     const candidate = evaluateMarketCandidate({
-      market: 'home_team_under_2_5',
+      market: 'under_4_5_goals',
       predictionResult: strongPrediction,
       cleanHomeMatches: cleanHome,
       cleanAwayMatches: cleanAway,
@@ -207,13 +207,13 @@ describe('Candidate Admission & Strict Filtering', () => {
     const validAway = generateMockMatches(8);
 
     const pred = {
-      market: 'home_team_under_2_5',
+      market: 'under_4_5_goals',
       probability: 0.88,
       confidence: 88,
     };
 
     const candidate = evaluateMarketCandidate({
-      market: 'home_team_under_2_5',
+      market: 'under_4_5_goals',
       predictionResult: pred,
       cleanHomeMatches: smallHome,
       cleanAwayMatches: validAway,
@@ -229,13 +229,13 @@ describe('Candidate Admission & Strict Filtering', () => {
     const cleanAway = generateMockMatches(8);
 
     const weakPrediction = {
-      market: 'home_team_under_2_5',
+      market: 'under_4_5_goals',
       probability: 0.68, // 68% < 75% threshold
       confidence: 68,
     };
 
     const candidate = evaluateMarketCandidate({
-      market: 'home_team_under_2_5',
+      market: 'under_4_5_goals',
       predictionResult: weakPrediction,
       cleanHomeMatches: cleanHome,
       cleanAwayMatches: cleanAway,
@@ -256,12 +256,12 @@ describe('Candidate Admission & Strict Filtering', () => {
     const cleanAway = generateMockMatches(8);
 
     const strongPred = {
-      market: 'home_team_under_2_5',
+      market: 'under_4_5_goals',
       probability: 0.85,
     };
 
     const candidate = evaluateMarketCandidate({
-      market: 'home_team_under_2_5',
+      market: 'under_4_5_goals',
       predictionResult: strongPred,
       cleanHomeMatches: cleanHome,
       cleanAwayMatches: cleanAway,

@@ -143,33 +143,6 @@ describe('Market Settlement Rules', () => {
     });
   });
 
-  describe('Home Team Under 2.5 Goals', () => {
-    test('settles WON when home team scores 0, 1, or 2 goals', () => {
-      expect(settleMarket('home_team_under_2_5', 'YES', 0, 0)).toBe('won');
-      expect(settleMarket('home_team_under_2_5', 'YES', 1, 4)).toBe('won');
-      expect(settleMarket('home_team_under_2_5', 'YES', 2, 5)).toBe('won');
-    });
-
-    test('settles LOST when home team scores 3 or more goals', () => {
-      expect(settleMarket('home_team_under_2_5', 'YES', 3, 0)).toBe('lost');
-      expect(settleMarket('home_team_under_2_5', 'YES', 4, 1)).toBe('lost');
-      expect(settleMarket('home_team_under_2_5', 'YES', 5, 2)).toBe('lost');
-    });
-  });
-
-  describe('Away Team Under 2.5 Goals', () => {
-    test('settles WON when away team scores 0, 1, or 2 goals', () => {
-      expect(settleMarket('away_team_under_2_5', 'YES', 0, 0)).toBe('won');
-      expect(settleMarket('away_team_under_2_5', 'YES', 3, 1)).toBe('won'); // Away scored 1 in 3-1 match
-      expect(settleMarket('away_team_under_2_5', 'YES', 4, 2)).toBe('won');
-    });
-
-    test('settles LOST when away team scores 3 or more goals', () => {
-      expect(settleMarket('away_team_under_2_5', 'YES', 0, 3)).toBe('lost');
-      expect(settleMarket('away_team_under_2_5', 'YES', 2, 4)).toBe('lost');
-    });
-  });
-
   describe('Under Corners', () => {
     test('settles against corner line correctly', () => {
       expect(settleMarket('under_corners', 'YES', 1, 0, { totalCorners: 7, cornersLine: 10.5 })).toBe('won');
@@ -332,7 +305,6 @@ describe('Status Classification & Score Validation', () => {
     expect(marketRequiresStatistic('total_shots_over_21_5')).toBe('shots');
     expect(marketRequiresStatistic('under_bookings')).toBe('bookings');
     expect(marketRequiresStatistic('under_2_5_ht')).toBe('ht');
-    expect(marketRequiresStatistic('home_team_under_2_5')).toBeNull();
   });
 
   test('validates numeric non-negative finite scores', () => {
@@ -365,7 +337,6 @@ describe('Prediction Persistence & Settlement Lifecycle', () => {
       matchDate: '2026-10-14T19:00:00Z',
       predictions: [
         { market: 'under_4_5_goals', label: 'Under 4.5 Goals', value: 'Under 4.5', confidence: 85 },
-        { market: 'home_team_under_2_5', label: 'Home Under 2.5', value: 'Home Under 2.5', confidence: 82 },
       ],
     });
 
@@ -386,7 +357,6 @@ describe('Prediction Persistence & Settlement Lifecycle', () => {
       awayName: 'Everton',
       predictions: [
         { market: 'under_4_5_goals', label: 'Under 4.5 Goals', value: 'Under 4.5', confidence: 90 },
-        { market: 'away_team_under_2_5', label: 'Away Under 2.5', value: 'Away Under 2.5', confidence: 88 },
       ],
     });
 
@@ -423,7 +393,7 @@ describe('Prediction Persistence & Settlement Lifecycle', () => {
       matchId: 'match_4003',
       sport: 'soccer',
       predictions: [
-        { market: 'home_team_under_2_5', label: 'Home Under 2.5', value: 'Home Under 2.5', confidence: 80 },
+        { market: 'under_4_5_goals', label: 'Under 4.5 Goals', value: 'Under 4.5', confidence: 80 },
       ],
     });
 
@@ -554,7 +524,7 @@ describe('autoSettleFinishedMatches Worker', () => {
       leagueSlug: 'eng.1',
       matchDate: '2020-06-01T15:00:00Z',
       predictions: [
-        { market: 'home_team_under_2_5', label: 'Home U2.5', value: 'Home Under 2.5', confidence: 80 },
+        { market: 'under_4_5_goals', label: 'Under 4.5', value: 'Under 4.5', confidence: 80 },
       ],
     });
 

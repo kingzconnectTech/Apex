@@ -16,13 +16,11 @@ const {
   validateAndFilterHistoricalMatches,
   analyzeUnder45History,
   analyzeUnder25HtHistory,
-  analyzeTeamUnder25History,
   analyzeCornersHistory,
   analyzeBookingsHistory,
   analyzeH2HHistory,
   calculateUnder45Prediction,
   calculateUnder25HtPrediction,
-  calculateTeamUnder25Prediction,
   calculateCornersPrediction,
   calculateBookingsPrediction,
 } = require('./services/footballHistoricalAnalysis');
@@ -151,8 +149,6 @@ const FOOTBALL_UNDER_CORNERS_LINE = parseFloat(process.env.FOOTBALL_UNDER_CORNER
 const FOOTBALL_MARKET_PRIORITY = [
   'under_4_5_goals',
   'under_2_5_ht',
-  'home_team_under_2_5',
-  'away_team_under_2_5',
   'under_corners',
   'over_corners',
   'under_bookings',
@@ -1780,41 +1776,7 @@ function analyzeMatchServer({
         }
       }
 
-      // 8. Calculate Home Team Under 2.5 & Away Team Under 2.5 predictions
-      const homeTeamU25Analysis = analyzeTeamUnder25History(cleanHomeMatches, { isHomeContext: true });
-      const awayTeamU25Analysis = analyzeTeamUnder25History(cleanAwayMatches, { isHomeContext: false });
-
-      const historicalHomeU25 = calculateTeamUnder25Prediction({
-        teamAnalysis: homeTeamU25Analysis,
-        oppAnalysis: awayTeamU25Analysis,
-        isHome: true,
-        teamName: homeName,
-        oppName: awayName,
-        h2hAnalysis: h2hHistoricalAnalysis,
-      });
-
-      if (historicalHomeU25) {
-        const existingIdx = footballPredictions.findIndex(p => p.market === 'home_team_under_2_5');
-        if (existingIdx !== -1) footballPredictions.splice(existingIdx, 1);
-        footballPredictions.push(historicalHomeU25);
-      }
-
-      const historicalAwayU25 = calculateTeamUnder25Prediction({
-        teamAnalysis: awayTeamU25Analysis,
-        oppAnalysis: homeTeamU25Analysis,
-        isHome: false,
-        teamName: awayName,
-        oppName: homeName,
-        h2hAnalysis: h2hHistoricalAnalysis,
-      });
-
-      if (historicalAwayU25) {
-        const existingIdx = footballPredictions.findIndex(p => p.market === 'away_team_under_2_5');
-        if (existingIdx !== -1) footballPredictions.splice(existingIdx, 1);
-        footballPredictions.push(historicalAwayU25);
-      }
-
-      // 9. Calculate Over/Under Corners prediction from dedicated corners engine
+      // 8. Calculate Over/Under Corners prediction from dedicated corners engine
       const homeCornersAnalysis = analyzeCornersHistory(cleanHomeMatches, { isHomeContext: true });
       const awayCornersAnalysis = analyzeCornersHistory(cleanAwayMatches, { isHomeContext: false });
       const statisticalCorners = calculateCornersPrediction({
@@ -1946,17 +1908,6 @@ function analyzeMatchServer({
     // rankFootballPredictions validates, deduplicates, sorts by confidence
     // (descending), and applies deterministic tie-breaking. Returns at most 2.
     const topPredictions = rankFootballPredictions(footballPredictions);
-
-    // If both Home and Away Team Under 2.5 are selected in top 2, explain that they concern different teams
-    const hasHomeU25 = topPredictions.some(p => p.market === 'home_team_under_2_5');
-    const hasAwayU25 = topPredictions.some(p => p.market === 'away_team_under_2_5');
-    if (hasHomeU25 && hasAwayU25) {
-      factors.push({
-        label: 'Both Home & Away Under 2.5 selected (distinct team defensive and attacking limits)',
-        side: 'neutral',
-        type: 'info',
-      });
-    }
 
     // Add to recommendations with proper type
     topPredictions.forEach(pred => {

@@ -335,8 +335,6 @@ export default function TipsScreen({ navigation }) {
 
   const renderRecommendedCard = ({ item }) => {
     const marketKey = item.recommendedMarket || item.market || '';
-    const isUnder25Home = marketKey === 'home_team_under_2_5';
-    const isUnder25Away = marketKey === 'away_team_under_2_5';
     const isUnder45 = marketKey === 'under_4_5_goals';
     const isUnder25Ht = marketKey === 'under_2_5_ht';
     const isCorners = marketKey.includes('corners');

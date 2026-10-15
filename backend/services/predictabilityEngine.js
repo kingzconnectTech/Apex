@@ -9,7 +9,7 @@
  *
  * Responsibilities:
  *   1. Evaluate statistical data completeness, sample size, and consistency.
- *   2. Independently assess Home Team Under 2.5, Away Team Under 2.5, Under 4.5 FT, and Under 2.5 HT.
+ *   2. Independently assess Under 4.5 FT, Under 2.5 HT, Corners, Bookings, and Shots markets.
  *   3. Calculate predictability score, data quality score, model agreement score,
  *      and calibrated probability.
  *   4. Apply strict, configurable eligibility filters (default 75% calibrated probability,
@@ -26,13 +26,11 @@ const {
   validateAndFilterHistoricalMatches,
   analyzeUnder45History,
   analyzeUnder25HtHistory,
-  analyzeTeamUnder25History,
   analyzeCornersHistory,
   analyzeBookingsHistory,
   analyzeH2HHistory,
   calculateUnder45Prediction,
   calculateUnder25HtPrediction,
-  calculateTeamUnder25Prediction,
   calculateCornersPrediction,
   calculateBookingsPrediction,
 } = require('./footballHistoricalAnalysis');
@@ -244,8 +242,8 @@ function calculatePredictabilityScore({
  * Evaluate a single market prediction against strict candidate eligibility criteria.
  *
  * @param {Object} params
- * @param {string} params.market - 'home_team_under_2_5' | 'away_team_under_2_5' | 'under_4_5_goals' | 'under_2_5_ht'
- * @param {Object} params.predictionResult - Output from calculateTeamUnder25Prediction or calculateUnder45Prediction
+ * @param {string} params.market - 'under_4_5_goals' | 'under_2_5_ht' | 'under_corners' | 'under_bookings'
+ * @param {Object} params.predictionResult - Output from calculateUnder45Prediction or calculateCornersPrediction
  * @param {Array}  params.cleanHomeMatches - Cleaned home team matches
  * @param {Array}  params.cleanAwayMatches - Cleaned away team matches
  * @param {Object} [params.fixture] - Fixture details (kickoff, status, teams)
@@ -302,11 +300,7 @@ function evaluateMarketCandidate({
   // 3. Model agreement
   // Compare prediction's empirical base rate with its expected goals / count model Poisson CDF
   let modelAgreementScore = 0.85; // default fallback
-  if (market === 'home_team_under_2_5' || market === 'away_team_under_2_5') {
-    const expGoals = predictionResult.expectedGoals || (market === 'home_team_under_2_5' ? 1.1 : 0.9);
-    const poissonProb = poissonCdf(2, expGoals);
-    modelAgreementScore = calculateModelAgreement(predictionResult.probability, poissonProb);
-  } else if (market === 'under_4_5_goals') {
+  if (market === 'under_4_5_goals') {
     const expGoals = predictionResult.expectedGoals || 2.4;
     const poissonProb = poissonCdf(4, expGoals);
     modelAgreementScore = calculateModelAgreement(predictionResult.probability, poissonProb);
@@ -418,7 +412,6 @@ function evaluateMarketCandidate({
   }
 
   const selection = predictionResult.selection || predictionResult.label || (
-    market === 'home_team_under_2_5' || market === 'away_team_under_2_5' ? 'Under 2.5' :
     market === 'under_4_5_goals' ? 'Under 4.5' :
     market === 'under_2_5_ht' ? 'Under 2.5 HT' :
     predictionResult.value || market
@@ -480,8 +473,6 @@ function evaluateFixture({
   const awayU45 = analyzeUnder45History(cleanAwayMatches);
   const homeHt = analyzeUnder25HtHistory(cleanHomeMatches);
   const awayHt = analyzeUnder25HtHistory(cleanAwayMatches);
-  const homeTeamU25 = analyzeTeamUnder25History(cleanHomeMatches, { isHomeContext: true });
-  const awayTeamU25 = analyzeTeamUnder25History(cleanAwayMatches, { isHomeContext: false });
   const homeCorners = analyzeCornersHistory(cleanHomeMatches, { isHomeContext: true });
   const awayCorners = analyzeCornersHistory(cleanAwayMatches, { isHomeContext: false });
   const homeBookings = analyzeBookingsHistory(cleanHomeMatches, { isHomeContext: true });
@@ -509,24 +500,6 @@ function evaluateFixture({
   }
 
   // 2. Generate raw model predictions
-  const predHomeU25 = calculateTeamUnder25Prediction({
-    teamAnalysis: homeTeamU25,
-    oppAnalysis: awayTeamU25,
-    isHome: true,
-    teamName: homeName,
-    oppName: awayName,
-    h2hAnalysis,
-  });
-
-  const predAwayU25 = calculateTeamUnder25Prediction({
-    teamAnalysis: awayTeamU25,
-    oppAnalysis: homeTeamU25,
-    isHome: false,
-    teamName: awayName,
-    oppName: homeName,
-    h2hAnalysis,
-  });
-
   const predUnderCorners = calculateCornersPrediction({
     homeCornersAnalysis: homeCorners,
     awayCornersAnalysis: awayCorners,
@@ -563,8 +536,6 @@ function evaluateFixture({
 
   // 3. Evaluate each market candidate with strict eligibility filters
   const candidateMarkets = [
-    { market: 'home_team_under_2_5', pred: predHomeU25 },
-    { market: 'away_team_under_2_5', pred: predAwayU25 },
     { market: 'under_corners', pred: predUnderCorners },
     { market: 'under_bookings', pred: predUnderBookings },
     { market: 'under_4_5_goals', pred: predU45 },

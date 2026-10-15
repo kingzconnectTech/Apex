@@ -3,8 +3,7 @@
  *
  * Shared utility for ranking and selecting the top-2 highest-confidence
  * football predictions from the approved markets:
- *   under_4_5_goals, under_2_5_ht, home_team_under_2_5, away_team_under_2_5,
- *   under_corners, under_1_5_ht
+ *   under_4_5_goals, under_2_5_ht, under_corners, under_1_5_ht
  *
  * Used by both server.js (production) and the test suite.
  */
@@ -16,8 +15,6 @@
 const FOOTBALL_MARKET_PRIORITY = [
   'under_4_5_goals',
   'under_2_5_ht',
-  'home_team_under_2_5',
-  'away_team_under_2_5',
   'under_corners',
   'over_corners',
   'under_bookings',

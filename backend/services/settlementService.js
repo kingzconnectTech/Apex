@@ -149,15 +149,6 @@ function settleMarket(market, selection, homeGoals, awayGoals, extra = {}) {
       return (Number(htHome) + Number(htAway)) < 2 ? 'won' : 'lost';
     }
 
-    // ── Team-specific under goals ───────────────────────
-    case 'home_team_under_2_5':
-    case 'home_team_under_2_5_goals':
-      return hg <= 2 ? 'won' : 'lost';
-
-    case 'away_team_under_2_5':
-    case 'away_team_under_2_5_goals':
-      return ag <= 2 ? 'won' : 'lost';
-
     // ── Corners ─────────────────────────────────────────
     case 'under_corners':
     case 'under_total_corners': {
