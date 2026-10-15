@@ -11,7 +11,7 @@ const { Server } = require('socket.io');
 const crypto = require('crypto');
 const fs = require('fs');
 const { SportsDataService } = require('./services/SportsDataService');
-const { rankFootballPredictions, FOOTBALL_MARKET_PRIORITY: _FOOTBALL_MARKET_PRIORITY } = require('./services/footballRanking');
+const { rankFootballPredictions, FOOTBALL_MARKET_PRIORITY: _FOOTBALL_MARKET_PRIORITY, isRetiredTeamUnder25Market } = require('./services/footballRanking');
 const {
   validateAndFilterHistoricalMatches,
   analyzeUnder45History,
@@ -1177,10 +1177,6 @@ function analyzeMatchServer({
   let awayScore = 0;
 
   // Team Totals
-  let homeTeamTotalPrediction = null;
-  let homeTeamTotalConfidence = 0;
-  let awayTeamTotalPrediction = null;
-  let awayTeamTotalConfidence = 0;
   let cornersPrediction = null;
   let cornersConfidence = 0;
 
@@ -1907,7 +1903,9 @@ function analyzeMatchServer({
     // Soccer — delegate top-2 selection to the shared ranking utility.
     // rankFootballPredictions validates, deduplicates, sorts by confidence
     // (descending), and applies deterministic tie-breaking. Returns at most 2.
-    const topPredictions = rankFootballPredictions(footballPredictions);
+    const topPredictions = rankFootballPredictions(
+      footballPredictions.filter(p => !isRetiredTeamUnder25Market(p))
+    );
 
     // Add to recommendations with proper type
     topPredictions.forEach(pred => {
