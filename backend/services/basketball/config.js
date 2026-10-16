@@ -162,6 +162,29 @@ const CONFIG = {
     },
   },
 
+  // --- Model-generated lines (used when ESPN supplies no bookmaker odds) ---
+  // Lines are expressed as half-point offsets from the model projection to avoid
+  // push outcomes on model-only lines, labelled clearly as model estimates.
+  modelLines: {
+    enabled: true,
+    // Minimum probability threshold for model lines (no edge from vig removal, so
+    // the model must produce a strong directional signal to pass the pick filter).
+    minProb: 0.65,
+    // Total-line offset: generate Over/Under line at projected total + 0.5
+    // (half-point above the mean; both sides should be ~50/50 there, so a 65%+
+    // signal is meaningful).
+    totalOffsetHalfPoint: 0.5,
+    // Spread-line offset: generate a half-point spread at the projected margin + 0.5
+    // for the home team, making the model slightly more conservative.
+    spreadOffsetHalfPoint: 0.5,
+    // Implied probability used in place of bookmaker de-vigged fair probability.
+    // 0.5 means no edge exists a priori; model must earn its probability.
+    impliedProb: 0.50,
+    // Data quality floor for model lines is higher than for bookmaker lines,
+    // because there is no market signal to validate against.
+    minDataQuality: 0.75,
+  },
+
   // --- Data quality ---
   dataQuality: {
     minGamesPerTeam: 5,

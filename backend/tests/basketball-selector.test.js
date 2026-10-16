@@ -125,4 +125,37 @@ describe('Pick selection', () => {
     expect(bestOf([{ passes: false, score: 0.99 }, { passes: true, score: 0.2 }])).toEqual({ passes: true, score: 0.2 });
     expect(bestOf([{ passes: false, score: 1 }])).toBeNull();
   });
+
+  test('model lines evaluate with null odds and require >= 0.65 probability', () => {
+    // Model projected total is 230, model line is at 218.5 (Over should be > 0.65)
+    const projection = { total: 230.0, margin: 12.0, sigmaTotal: 17.6, sigmaMargin: 11.8 };
+    const lines = {
+      total: [{ line: 218.5, aOdds: null, bOdds: null, isMain: true, isModelLine: true }],
+      spread: [{ line: -5.5, aOdds: null, bOdds: null, isMain: true, isModelLine: true }],
+    };
+    const out = selectPicks({ projection, lines, ctx: { ...ctx, dataQuality: 0.85 } });
+    expect(out.picks.length).toBe(2);
+    const totalPick = out.picks.find(p => p.market === 'Total Points');
+    expect(totalPick.isModelLine).toBe(true);
+    expect(totalPick.odds).toBeNull();
+    expect(totalPick.ev).toBeNull();
+    expect(totalPick.selection).toContain('(Model Line)');
+    expect(totalPick.probability).toBeGreaterThanOrEqual(0.65);
+
+    const spreadPick = out.picks.find(p => p.market === 'Spread');
+    expect(spreadPick.isModelLine).toBe(true);
+    expect(spreadPick.odds).toBeNull();
+    expect(spreadPick.probability).toBeGreaterThanOrEqual(0.65);
+  });
+
+  test('model lines are rejected when data quality is below modelLines.minDataQuality (0.75)', () => {
+    const projection = { total: 230.0, margin: 12.0, sigmaTotal: 17.6, sigmaMargin: 11.8 };
+    const lines = {
+      total: [{ line: 218.5, aOdds: null, bOdds: null, isMain: true, isModelLine: true }],
+    };
+    // dq = 0.72 passes general minDataQuality (0.70) but fails modelLines minDataQuality (0.75)
+    const out = selectPicks({ projection, lines, ctx: { ...ctx, dataQuality: 0.72 } });
+    expect(out.noPick).toBe(true);
+    expect(out.picks.length).toBe(0);
+  });
 });

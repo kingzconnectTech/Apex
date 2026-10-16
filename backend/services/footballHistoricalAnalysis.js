@@ -1527,6 +1527,8 @@ function backtestHistoricalFixtures(historicalFixtures) {
       evaluatedCount: 0,
       under45: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
       under25Ht: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
+      homeTeamUnder25: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
+      awayTeamUnder25: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
       underCorners: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
       underBookings: { count: 0, wins: 0, losses: 0, hitRate: 0, brierScore: null, logLoss: null },
     };
@@ -1712,6 +1714,8 @@ function backtestHistoricalFixtures(historicalFixtures) {
     evaluatedCount: sorted.length,
     under45: computeMetrics(resultsU45, BASELINE_PRIORS.UNDER_4_5_GOALS),
     under25Ht: computeMetrics(resultsU25Ht, BASELINE_PRIORS.UNDER_2_5_HT),
+    homeTeamUnder25: computeMetrics([], 0.70),
+    awayTeamUnder25: computeMetrics([], 0.75),
     underCorners: computeMetrics(resultsCorners, BASELINE_PRIORS.UNDER_10_5_CORNERS),
     underBookings: computeMetrics(resultsBookings, BASELINE_PRIORS.UNDER_3_5_BOOKINGS),
   };

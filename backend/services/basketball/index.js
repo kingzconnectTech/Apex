@@ -19,28 +19,58 @@ const { estimateSigma } = require('./probability');
 const { selectPicks } = require('./lineSelector');
 
 /**
- * Build the line lists the selector consumes from the ESPN odds object.
- * ESPN only exposes the main line, so that is what we pass; the selector is
- * written to accept alternates whenever a provider supplies them.
+ * Build the line lists the selector consumes.
+ *
+ * When ESPN supplies bookmaker odds the real lines (overUnder / spread) are
+ * used. When no odds are available but a projection exists, model-generated
+ * half-point lines are synthesised from the projected total / margin so that
+ * Total Points and Spread markets can still be evaluated.
+ *
+ * Model-generated lines carry isModelLine: true. No fabricated bookmaker prices
+ * are attached — the selector handles these lines through a dedicated path.
+ *
+ * @param {Object|null} odds        - EspnProvider.extractBasketballOdds output
+ * @param {Object|null} projection  - from projectGame / analyzeGame (optional)
+ * @param {Object}      cfg         - basketball config
  */
-function buildLines(odds) {
+function buildLines(odds, projection = null, cfg = CONFIG) {
   const out = { total: [], spread: [] };
-  if (!odds) return out;
 
-  if (odds.overUnder != null && odds.overOdds != null && odds.underOdds != null) {
-    out.total.push({ line: odds.overUnder, aOdds: odds.overOdds, bOdds: odds.underOdds, isMain: true });
-  }
-  if (odds.spread != null && odds.homeSpreadOdds != null && odds.awaySpreadOdds != null) {
-    out.spread.push({ line: odds.spread, aOdds: odds.homeSpreadOdds, bOdds: odds.awaySpreadOdds, isMain: true });
+  if (odds) {
+    if (odds.overUnder != null && odds.overOdds != null && odds.underOdds != null) {
+      out.total.push({ line: odds.overUnder, aOdds: odds.overOdds, bOdds: odds.underOdds, isMain: true, isModelLine: false });
+    }
+    if (odds.spread != null && odds.homeSpreadOdds != null && odds.awaySpreadOdds != null) {
+      out.spread.push({ line: odds.spread, aOdds: odds.homeSpreadOdds, bOdds: odds.awaySpreadOdds, isMain: true, isModelLine: false });
+    }
+
+    // Alternates, if a richer provider ever supplies them.
+    (Array.isArray(odds.totalAlternates) ? odds.totalAlternates : []).forEach(l => {
+      out.total.push({ line: l.line, aOdds: l.overOdds, bOdds: l.underOdds, isMain: false, isModelLine: false });
+    });
+    (Array.isArray(odds.spreadAlternates) ? odds.spreadAlternates : []).forEach(l => {
+      out.spread.push({ line: l.line, aOdds: l.homeOdds, bOdds: l.awayOdds, isMain: false, isModelLine: false });
+    });
   }
 
-  // Alternates, if a richer provider ever supplies them.
-  (Array.isArray(odds.totalAlternates) ? odds.totalAlternates : []).forEach(l => {
-    out.total.push({ line: l.line, aOdds: l.overOdds, bOdds: l.underOdds, isMain: false });
-  });
-  (Array.isArray(odds.spreadAlternates) ? odds.spreadAlternates : []).forEach(l => {
-    out.spread.push({ line: l.line, aOdds: l.homeOdds, bOdds: l.awayOdds, isMain: false });
-  });
+  // ── Model-generated lines (fallback when no bookmaker lines exist) ─────────
+  const ml = cfg?.modelLines;
+  if (ml?.enabled && projection) {
+    const impOdds = null; // no fabricated bookmaker prices
+    // Total: half-point above the projected total so there is no push.
+    if (out.total.length === 0 && Number.isFinite(projection.total)) {
+      const line = Math.round(projection.total * 2) / 2 + (ml.totalOffsetHalfPoint ?? 0.5);
+      out.total.push({ line, aOdds: impOdds, bOdds: impOdds, isMain: true, isModelLine: true });
+    }
+    // Spread: half-point from the projected margin so there is no push.
+    if (out.spread.length === 0 && Number.isFinite(projection.margin)) {
+      // Home handicap = -(margin + offset); positive margin means home is favoured.
+      const line = -(Math.round(Math.abs(projection.margin) * 2) / 2 + (ml.spreadOffsetHalfPoint ?? 0.5));
+      // Apply sign: if margin > 0 home is the favourite (negative handicap).
+      const signedLine = projection.margin >= 0 ? line : -line;
+      out.spread.push({ line: signedLine, aOdds: impOdds, bOdds: impOdds, isMain: true, isModelLine: true });
+    }
+  }
 
   return out;
 }
@@ -123,7 +153,7 @@ function analyzeGame({
     ? (market, p) => calibrator.apply(game.league, market, p)
     : null;
 
-  const lines = buildLines(game.odds);
+  const lines = buildLines(game.odds, projection, cfg);
   const selection = selectPicks({
     projection: projectionWithSigma,
     lines,
@@ -208,6 +238,7 @@ function formatPrediction(result) {
     line: p.line,
     side: p.side,
     isMain: p.isMain,
+    isModelLine: !!p.isModelLine,
     ev: p.ev,
   }));
 

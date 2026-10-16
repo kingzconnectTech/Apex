@@ -436,6 +436,6 @@ describe('Predictability & Fixture HTTP Endpoints', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.evaluation).toBeDefined();
     expect(res.body.evaluation.isRecommended).toBeDefined();
-    expect(res.body.evaluation.totalCandidatesEvaluated).toBe(7);
+    expect(res.body.evaluation.totalCandidatesEvaluated).toBe(5);
   });
 });

@@ -1849,7 +1849,27 @@ function analyzeMatchServer({
         color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96'),
       });
     }
-  } else if (!isBasketball) {
+  } else if (isBasketball) {
+    // Basketball — preserve baseline recommendations (WIN + GOALS)
+    if (winPrediction) {
+      recommendations.push({
+        type: 'WIN',
+        label: 'Match Winner',
+        value: winPrediction,
+        confidence: Math.round(winConfidence),
+        color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96'),
+      });
+    }
+    if (goalsPrediction) {
+      recommendations.push({
+        type: 'GOALS',
+        label: 'Total Points',
+        value: goalsPrediction,
+        confidence: Math.round(goalsConfidence),
+        color: goalsConfidence >= 70 ? '#40c057' : '#ffa94d',
+      });
+    }
+  } else {
     // Soccer — delegate top-2 selection to the shared ranking utility.
     // rankFootballPredictions validates, deduplicates, sorts by confidence
     // (descending), and applies deterministic tie-breaking. Returns at most 2.

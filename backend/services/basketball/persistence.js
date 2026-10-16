@@ -81,6 +81,7 @@ async function saveBasketballPredictions(admin, predictions, { logger = null } =
         line: pick.line,
         side: pick.side,
         isMain: pick.isMain !== false,
+        isModelLine: !!pick.isModelLine,
         probability: pick.probability,
         odds: pick.odds,
         edge: pick.edge,

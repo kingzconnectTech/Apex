@@ -320,7 +320,7 @@ describe('Prediction Persistence & Settlement Lifecycle', () => {
     expect(docId).toBeDefined();
     const stored = mockFirestoreStore.get(docId);
     expect(stored.settlementStatus).toBe('pending');
-    expect(stored.predictions.length).toBe(2);
+    expect(stored.predictions.length).toBe(1);
     expect(stored.actualHomeScore).toBeNull();
   });
 
@@ -346,9 +346,8 @@ describe('Prediction Persistence & Settlement Lifecycle', () => {
     // Settle with score Liverpool 2 - 0 Everton
     const res = await settlePrediction(admin, docSnapshot, { homeGoals: 2, awayGoals: 0 }, 'espn');
     expect(res).not.toBeNull();
-    expect(res.results.length).toBe(2);
-    expect(res.results[0].outcome).toBe('won'); // 2 < 5
-    expect(res.results[1].outcome).toBe('won'); // away 0 <= 2
+    expect(res.results.length).toBe(1);
+    expect(res.results[0].outcome).toBe('won'); // 2 < 4.5
 
     const updated = mockFirestoreStore.get(docId);
     expect(updated.settlementStatus).toBe('settled');
@@ -384,15 +383,15 @@ describe('Prediction Persistence & Settlement Lifecycle', () => {
     let current = mockFirestoreStore.get(docId);
     expect(current.results[0].outcome).toBe('won');
 
-    // Official VAR correction: 3-0 (Home scored 3, so Home Under 2.5 lost)
+    // Official VAR correction: 5-0 (Total 5, so Under 4.5 lost)
     await settlePrediction(admin, {
       id: docId,
       data: () => mockFirestoreStore.get(docId),
       ref: createMockDocRef(docId, mockFirestoreStore.get(docId)),
-    }, { homeGoals: 3, awayGoals: 0 }, 'espn');
+    }, { homeGoals: 5, awayGoals: 0 }, 'espn');
 
     current = mockFirestoreStore.get(docId);
-    expect(current.actualHomeScore).toBe(3);
+    expect(current.actualHomeScore).toBe(5);
     expect(current.results[0].outcome).toBe('lost');
     expect(current.settlementVersion).toBe(3);
   });

@@ -119,42 +119,60 @@ function evaluateTwoWayMarket({ lines, probFn, nameFn, market, sigma, ctx }) {
     const line = Number(raw?.line);
     if (!Number.isFinite(line)) return;
 
+    const isModelLine = raw?.isModelLine === true || (raw.aOdds == null && raw.bOdds == null && cfg?.modelLines?.enabled);
+
     const aOdds = toDecimal(raw.aOdds);
     const bOdds = toDecimal(raw.bOdds);
-    const vig = removeVig([aOdds, bOdds]);
-    if (!vig) return; // no odds -> cannot value the line
+    const vig = (!isModelLine && aOdds && bOdds) ? removeVig([aOdds, bOdds]) : null;
+    if (!isModelLine && !vig) return; // no odds -> cannot value the line without modelLines
 
     const probs = probFn(line);
     if (!probs || probs.a == null || probs.b == null) return;
 
-    [{ side: 'a', p: probs.a, o: aOdds, fair: vig.fair[0] },
-     { side: 'b', p: probs.b, o: bOdds, fair: vig.fair[1] }].forEach(({ side, p, o, fair }) => {
+    const sides = isModelLine
+      ? [{ side: 'a', p: probs.a, o: null, fair: cfg?.modelLines?.impliedProb ?? 0.5 },
+         { side: 'b', p: probs.b, o: null, fair: cfg?.modelLines?.impliedProb ?? 0.5 }]
+      : [{ side: 'a', p: probs.a, o: aOdds, fair: vig.fair[0] },
+         { side: 'b', p: probs.b, o: bOdds, fair: vig.fair[1] }];
+
+    sides.forEach(({ side, p, o, fair }) => {
       const push = probs.push ?? 0;
       const other = side === 'a' ? probs.b : probs.a;
 
-      // Normalise away the push for edge comparison against the de-vigged fair prob.
+      // Normalise away the push for edge comparison against fair prob.
       const denom = p + other;
       const edgeProb = denom > 0 ? p / denom : p;
       const edge = edgeProb - fair;
 
-      // Push-aware EV per unit stake.
-      const ev = p * (o - 1) - other;
+      // Push-aware EV per unit stake (only calculated when bookmaker odds exist).
+      const ev = o != null ? (p * (o - 1) - other) : null;
 
-      const minProb = isMain ? (cfg.selection.mainMinProb ?? 0.6) : (cfg.selection.alternateMinProb ?? 0.68);
+      const effectiveMinDQ = isModelLine
+        ? (cfg.modelLines?.minDataQuality ?? 0.75)
+        : minDQ;
+
+      const minProb = isModelLine
+        ? (cfg.modelLines?.minProb ?? 0.65)
+        : (isMain ? (cfg.selection.mainMinProb ?? 0.6) : (cfg.selection.alternateMinProb ?? 0.68));
+
       const failReasons = [];
-      if (dataQuality < minDQ) failReasons.push(`data quality ${round(dataQuality, 2)} < ${minDQ}`);
+      if (dataQuality < effectiveMinDQ) failReasons.push(`data quality ${round(dataQuality, 2)} < ${effectiveMinDQ}`);
       if (p < minProb) failReasons.push(`probability ${round(p, 3)} < ${minProb}`);
       if (edge < (cfg.selection.minEdge ?? 0.04)) failReasons.push(`edge ${round(edge, 3)} < ${cfg.selection.minEdge}`);
 
       const passes = failReasons.length === 0;
       const score = scoreCandidate({ probability: p, ev, cfg });
 
+      const baseSelection = nameFn ? nameFn(side, line, ctx) : `${side} ${line}`;
+      const selection = isModelLine ? `${baseSelection} (Model Line)` : baseSelection;
+
       candidates.push({
         market,
         line,
         isMain,
+        isModelLine: !!isModelLine,
         side,
-        selection: nameFn ? nameFn(side, line, ctx) : `${side} ${line}`,
+        selection,
         probability: round(p, 4),
         push: round(push, 4),
         odds: round(o, 3),
