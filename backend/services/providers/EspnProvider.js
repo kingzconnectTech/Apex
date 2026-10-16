@@ -203,6 +203,209 @@ class EspnProvider {
     };
   }
 
+  /**
+   * Parse an American odds value (number or string like "-108" / "+150").
+   * Handles ESPN wrappers such as { value } / { odds }. Returns null when absent.
+   */
+  static parseAmericanOdds(raw) {
+    if (raw === undefined || raw === null || raw === '') return null;
+    if (typeof raw === 'object') {
+      raw = raw.value ?? raw.odds ?? raw.displayValue ?? raw.current?.value;
+    }
+    if (raw === undefined || raw === null || raw === '') return null;
+    const num = parseFloat(String(raw).replace(/\s/g, ''));
+    return isNaN(num) ? null : num;
+  }
+
+  /**
+   * Parse a line value that may be a number or a string such as "-3.5" or "o228.5".
+   */
+  static _parseLineValue(raw) {
+    if (raw === undefined || raw === null || raw === '') return null;
+    if (typeof raw === 'object') {
+      raw = raw.value ?? raw.line ?? raw.displayValue ?? raw.current?.value;
+    }
+    if (raw === undefined || raw === null || raw === '') return null;
+    const num = parseFloat(String(raw).replace(/[^0-9.+-]/g, ''));
+    return isNaN(num) ? null : num;
+  }
+
+  /**
+   * Extract basketball bookmaker odds from an ESPN summary payload.
+   * Uses `pickcenter[0]` / `odds[0]`. Returns null when no odds exist (never 0).
+   */
+  static extractBasketballOdds(summary) {
+    if (!summary) return null;
+    const pickcenter = Array.isArray(summary.pickcenter) ? summary.pickcenter : [];
+    const oddsList = Array.isArray(summary.odds) ? summary.odds : [];
+    const src = pickcenter[0] || oddsList[0] || null;
+    if (!src) return null;
+
+    const homeTeamOdds = src.homeTeamOdds || {};
+    const awayTeamOdds = src.awayTeamOdds || {};
+    const line = v => EspnProvider._parseLineValue(v);
+
+    const moneyLineBlock = src.moneyline || {};
+    const lineBlock = (block) => (block ? {
+      spread: line(block.spread ?? block.line),
+      total: line(block.total ?? block.overUnder),
+      homeMoneyLine: EspnProvider.parseAmericanOdds(block.homeMoneyLine ?? block.homeTeamOdds?.moneyLine),
+      awayMoneyLine: EspnProvider.parseAmericanOdds(block.awayMoneyLine ?? block.awayTeamOdds?.moneyLine),
+    } : null);
+
+    return {
+      provider: src.provider?.name || src.provider || 'espn',
+      details: src.details ?? null,
+      // Home spread (negative = home favourite), total, and two-way prices.
+      spread: line(src.spread),
+      overUnder: line(src.overUnder),
+      overOdds: EspnProvider.parseAmericanOdds(src.overOdds),
+      underOdds: EspnProvider.parseAmericanOdds(src.underOdds),
+      homeMoneyLine: EspnProvider.parseAmericanOdds(homeTeamOdds.moneyLine ?? src.homeMoneyLine),
+      awayMoneyLine: EspnProvider.parseAmericanOdds(awayTeamOdds.moneyLine ?? src.awayMoneyLine),
+      homeSpreadOdds: EspnProvider.parseAmericanOdds(homeTeamOdds.spreadOdds ?? src.homeSpreadOdds),
+      awaySpreadOdds: EspnProvider.parseAmericanOdds(awayTeamOdds.spreadOdds ?? src.awaySpreadOdds),
+      homeIsFavorite: homeTeamOdds.favorite ?? null,
+      awayIsFavorite: awayTeamOdds.favorite ?? null,
+      open: {
+        spread: line(src.pointSpread?.open),
+        total: line(src.total?.open),
+        homeMoneyLine: EspnProvider.parseAmericanOdds(moneyLineBlock.open?.homeMoneyLine ?? moneyLineBlock.open?.home),
+        awayMoneyLine: EspnProvider.parseAmericanOdds(moneyLineBlock.open?.awayMoneyLine ?? moneyLineBlock.open?.away),
+      },
+      close: {
+        spread: line(src.pointSpread?.close ?? src.spread),
+        total: line(src.total?.close ?? src.overUnder),
+        homeMoneyLine: EspnProvider.parseAmericanOdds(moneyLineBlock.close?.homeMoneyLine ?? moneyLineBlock.close?.home),
+        awayMoneyLine: EspnProvider.parseAmericanOdds(moneyLineBlock.close?.awayMoneyLine ?? moneyLineBlock.close?.away),
+      },
+      live: {
+        spread: line(src.pointSpread?.live),
+        total: line(src.total?.live),
+      },
+    };
+  }
+
+  /**
+   * Extract basketball injuries from an ESPN summary payload.
+   * Returns [] when absent; never fabricates players.
+   */
+  static extractBasketballInjuries(summary) {
+    const groups = summary?.injuries;
+    if (!Array.isArray(groups) || groups.length === 0) return [];
+
+    const STATUS_MAP = {
+      out: 'out', o: 'out',
+      doubtful: 'doubtful', d: 'doubtful',
+      questionable: 'questionable', q: 'questionable',
+      probable: 'probable', p: 'probable',
+      'day-to-day': 'day-to-day', 'day to day': 'day-to-day', dtd: 'day-to-day',
+    };
+    const mapStatus = (raw) => {
+      if (!raw) return null;
+      const key = String(raw).toLowerCase().trim()
+        .replace(/^injury_status_/, '')
+        .replace(/_/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return STATUS_MAP[key] || STATUS_MAP[key.replace(/\s/g, '-')] || null;
+    };
+
+    const out = [];
+    groups.forEach(g => {
+      const teamId = g?.team?.id != null ? String(g.team.id) : null;
+      const teamName = g?.team?.displayName ?? null;
+      const injuries = Array.isArray(g?.injuries) ? g.injuries : [];
+      injuries.forEach(inj => {
+        const rawStatus = inj?.status || inj?.type?.name || null;
+        out.push({
+          teamId,
+          teamName,
+          playerId: inj?.athlete?.id != null ? String(inj.athlete.id) : null,
+          playerName: inj?.athlete?.fullName || inj?.athlete?.displayName || null,
+          position: inj?.athlete?.position?.abbreviation || inj?.athlete?.position?.name || null,
+          status: mapStatus(rawStatus) || (rawStatus ? String(rawStatus).toLowerCase() : null),
+          rawStatus,
+          detail: inj?.details?.detail ?? null,
+          injuryType: inj?.details?.type ?? null,
+          location: inj?.details?.location ?? null,
+          side: inj?.details?.side ?? null,
+          returnDate: inj?.details?.returnDate ?? null,
+        });
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Process a basketball team's completed games into a chronological log with
+   * rest, back-to-back, 3-in-4 and road-trip context.
+   * Returns entries newest-first. Missing stats stay null.
+   */
+  processBasketballScheduleForTeam(events, teamId) {
+    if (!Array.isArray(events)) return [];
+    const DAY = 24 * 60 * 60 * 1000;
+
+    const completed = events
+      .filter(e => e?.competitions?.[0]?.status?.type?.state === 'post')
+      .map(e => ({ event: e, ts: new Date(e.date).getTime() }))
+      .filter(x => !isNaN(x.ts))
+      .sort((a, b) => b.ts - a.ts);
+
+    const games = completed.map(({ event, ts }) => {
+      const comp = event.competitions?.[0];
+      if (!comp) return null;
+      const teamComp = comp.competitors?.find(c => String(c?.team?.id) === String(teamId));
+      const oppComp = comp.competitors?.find(c => String(c?.team?.id) !== String(teamId));
+      if (!teamComp || !oppComp) return null;
+
+      const scoreOf = (c) => {
+        const v = c?.score?.value ?? c?.score?.displayValue;
+        if (v === undefined || v === null || v === '') return null;
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+      };
+      const pf = scoreOf(teamComp);
+      const pa = scoreOf(oppComp);
+      if (pf === null || pa === null) return null;
+
+      return {
+        date: event.date,
+        timestamp: ts,
+        eventId: String(event.id || ''),
+        pf,
+        pa,
+        total: pf + pa,
+        margin: pf - pa,
+        isHome: teamComp?.homeAway === 'home',
+        result: pf > pa ? 'W' : pf < pa ? 'L' : 'D',
+        opponentId: oppComp?.team?.id != null ? String(oppComp.team.id) : null,
+        opponentName: oppComp?.team?.displayName || null,
+        boxScore: EspnProvider.extractBasketballBoxScore(teamComp, oppComp),
+      };
+    }).filter(Boolean);
+
+    // Rest days + congestion (games are newest-first, so index+1 is the older game).
+    games.forEach((g, i) => {
+      const older = games[i + 1];
+      g.restDays = older ? Math.round((g.timestamp - older.timestamp) / DAY) : null;
+      g.backToBack = g.restDays != null && g.restDays <= 1;
+
+      const windowStart = g.timestamp - 3 * DAY;
+      const inWindow = games.filter(x => x.timestamp <= g.timestamp && x.timestamp >= windowStart);
+      g.threeInFour = inWindow.length >= 3;
+
+      let trip = 0;
+      for (let j = i; j < games.length; j++) {
+        if (games[j].isHome) break;
+        trip++;
+      }
+      g.roadTripLength = g.isHome ? 0 : trip;
+    });
+
+    return games;
+  }
+
   processScheduleForTeam(events, teamId) {
     if (!events) return [];
     const valid = events.filter(e => {

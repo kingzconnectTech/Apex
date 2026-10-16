@@ -14,12 +14,26 @@
  *   - Player availability is reflected in data quality only when reliably available.
  */
 
-const LEAGUE_MEAN = {
-  possessions: 98,
-  ortg: 110,
-  drtg: 110,
-  homeCourtAdvantage: 3.5, // points
-};
+const { getLeagueConfig } = require('./basketball/leagues');
+
+/**
+ * Legacy default league constants, now sourced from the NBA league config so the
+ * values live in one place (basketball/leagues.js). Kept as an export for
+ * backward compatibility with callers/tests that import LEAGUE_MEAN.
+ */
+const DEFAULT_LEAGUE_KEY = 'nba';
+
+function leagueMeanFor(league) {
+  const cfg = getLeagueConfig(league || DEFAULT_LEAGUE_KEY);
+  return {
+    possessions: cfg.leagueMean.possessions,
+    ortg: cfg.leagueMean.ortg,
+    drtg: cfg.leagueMean.drtg,
+    homeCourtAdvantage: cfg.homeCourtPoints,
+  };
+}
+
+const LEAGUE_MEAN = leagueMeanFor(DEFAULT_LEAGUE_KEY);
 
 const DEFAULT_BASKETBALL_TOTAL_LINES = [195.5, 200.5, 205.5, 210.5, 215.5, 220.5];
 
@@ -89,9 +103,11 @@ function shrinkRating(value, sampleSize, leagueMean, m = 5) {
  * @param {Array} matches - each match has pf (team points), pa (opp points), boxScore, isHome, date
  * @param {Object} [opts]
  * @param {boolean} [opts.isHomeContext]
+ * @param {string} [opts.league] - league key/alias; drives the per-league mean
  * @returns {Object}
  */
-function analyzeBasketballHistory(matches, { isHomeContext = null } = {}) {
+function analyzeBasketballHistory(matches, { isHomeContext = null, league = DEFAULT_LEAGUE_KEY } = {}) {
+  const mean = leagueMeanFor(league);
   const list = Array.isArray(matches) ? matches : [];
   const validMatches = list.filter(m => m && typeof m.pf === 'number' && typeof m.pa === 'number');
 
@@ -142,10 +158,10 @@ function analyzeBasketballHistory(matches, { isHomeContext = null } = {}) {
   const rawDrtg = drtgArr.length > 0 ? drtgArr.reduce((s, v) => s + v, 0) / drtgArr.length : null;
 
   // Shrink small-sample ratings toward league mean
-  const ortg = shrinkRating(rawOrtg, sampleSize, LEAGUE_MEAN.ortg);
-  const drtg = shrinkRating(rawDrtg, sampleSize, LEAGUE_MEAN.drtg);
+  const ortg = shrinkRating(rawOrtg, sampleSize, mean.ortg);
+  const drtg = shrinkRating(rawDrtg, sampleSize, mean.drtg);
   const netRtg = ortg - drtg;
-  const pace = avgPossessions != null ? shrinkRating(avgPossessions, sampleSize, LEAGUE_MEAN.possessions) : LEAGUE_MEAN.possessions;
+  const pace = avgPossessions != null ? shrinkRating(avgPossessions, sampleSize, mean.possessions) : mean.possessions;
 
   // Home/away split
   const homeMatches = validMatches.filter(m => m.isHome === true);
@@ -218,6 +234,7 @@ function analyzeBasketballHistory(matches, { isHomeContext = null } = {}) {
  * @param {Object} params.awayAnalysis
  * @param {Object} [params.h2h]
  * @param {Array<number>} [params.totalLines]
+ * @param {string} [params.league] - league key/alias; drives home-court + score variance
  * @returns {Object|null}
  */
 function calculateBasketballPrediction({
@@ -225,7 +242,10 @@ function calculateBasketballPrediction({
   awayAnalysis,
   h2h = null,
   totalLines = DEFAULT_BASKETBALL_TOTAL_LINES,
+  league = DEFAULT_LEAGUE_KEY,
 }) {
+  const mean = leagueMeanFor(league);
+  const scoreStd = getLeagueConfig(league).scoreStd;
   const homeValid = homeAnalysis?.valid && homeAnalysis.sampleSize >= 2;
   const awayValid = awayAnalysis?.valid && awayAnalysis.sampleSize >= 2;
   if (!homeValid && !awayValid) return null;
@@ -233,16 +253,16 @@ function calculateBasketballPrediction({
   const factors = [];
 
   // --- Expected possessions (blend both teams' pace) ---
-  const homePace = homeAnalysis?.pace ?? LEAGUE_MEAN.possessions;
-  const awayPace = awayAnalysis?.pace ?? LEAGUE_MEAN.possessions;
+  const homePace = homeAnalysis?.pace ?? mean.possessions;
+  const awayPace = awayAnalysis?.pace ?? mean.possessions;
   const expPossessions = (homePace + awayPace) / 2;
 
   // --- Expected points per possession (attack vs defence) ---
   // Home PPP = home ORtg vs away DRtg; Away PPP = away ORtg vs home DRtg
-  const homeOrtg = homeAnalysis?.ortg ?? LEAGUE_MEAN.ortg;
-  const homeDrtg = homeAnalysis?.drtg ?? LEAGUE_MEAN.drtg;
-  const awayOrtg = awayAnalysis?.ortg ?? LEAGUE_MEAN.ortg;
-  const awayDrtg = awayAnalysis?.drtg ?? LEAGUE_MEAN.drtg;
+  const homeOrtg = homeAnalysis?.ortg ?? mean.ortg;
+  const homeDrtg = homeAnalysis?.drtg ?? mean.drtg;
+  const awayOrtg = awayAnalysis?.ortg ?? mean.ortg;
+  const awayDrtg = awayAnalysis?.drtg ?? mean.drtg;
 
   const homePpp = ((homeOrtg + awayDrtg) / 2) / 100;
   const awayPpp = ((awayOrtg + homeDrtg) / 2) / 100;
@@ -251,8 +271,8 @@ function calculateBasketballPrediction({
   let expAwayPoints = expPossessions * awayPpp;
 
   // --- Home-court advantage ---
-  expHomePoints += LEAGUE_MEAN.homeCourtAdvantage / 2;
-  expAwayPoints -= LEAGUE_MEAN.homeCourtAdvantage / 2;
+  expHomePoints += mean.homeCourtAdvantage / 2;
+  expAwayPoints -= mean.homeCourtAdvantage / 2;
 
   // --- Rest / back-to-back adjustment (small) ---
   if (homeAnalysis?.backToBack) { expHomePoints -= 2; factors.push({ label: 'Home on back-to-back', side: 'home', type: 'warning' }); }
@@ -272,8 +292,7 @@ function calculateBasketballPrediction({
   const expTotal = expHomePoints + expAwayPoints;
 
   // --- Score variance for distribution modeling ---
-  // Basketball team scores have std ~ 10-12 points around expectation.
-  const scoreStd = 11;
+  // Per-team score std comes from the league config (no hardcoded constant).
   const homeVariance = scoreStd * scoreStd;
   const awayVariance = scoreStd * scoreStd;
 

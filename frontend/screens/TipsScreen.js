@@ -5,10 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { fetchMatches, fetchLeagueMatches } from '../services/espn';
-import { fetchSportsDataLeagues, fetchRecommendedPredictions } from '../services/api';
+import { fetchSportsDataLeagues, fetchRecommendedPredictions, fetchBasketballPredictions } from '../services/api';
 import { PITCHAPI_77_LEAGUES, PITCHAPI_LEAGUE_NAMES } from '../constants/pitchapiLeagues';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
+import BasketballGameCard from '../components/BasketballGameCard';
 import { useTheme } from '../context/ThemeContext';
 
 const CATEGORIES = ['Football', 'Basketball', 'Tennis'];
@@ -32,6 +33,19 @@ const LEAGUES_FILTER = {
   Tennis: ['Live', 'All', 'Grand Slams', 'ATP Tour', 'ATP Masters 1000', 'ATP 500', 'ATP 250', 'ATP Challenger Tour', 'ATP Finals', 'WTA Tour', 'WTA Premier', 'WTA 1000', 'WTA 500', 'WTA 250', 'WTA Finals']
 };
 
+// UI league labels -> backend league keys. Labels with no configured engine
+// fall through to null, which lets the API return all configured leagues.
+const BASKETBALL_LEAGUE_KEYS = {
+  NBA: 'nba',
+  WNBA: 'wnba',
+  'NCAA Men': 'ncaa',
+  'NCAA Women': 'ncaa',
+  EuroLeague: 'euroleague',
+};
+
+const CONFIDENCE_FILTERS = ['All', 'High', 'Medium', 'Low'];
+const MARKET_FILTERS = ['All', 'Total Points', 'Spread'];
+
 export default function TipsScreen({ navigation }) {
   const { theme, isDarkMode } = useTheme();
   const styles = createStyles(theme, isDarkMode);
@@ -54,6 +68,13 @@ export default function TipsScreen({ navigation }) {
     acceptanceRate: 0,
   });
   const [loadingRecommended, setLoadingRecommended] = useState(false);
+
+  // Basketball prediction engine state
+  const [basketballPredictions, setBasketballPredictions] = useState([]);
+  const [loadingBasketball, setLoadingBasketball] = useState(false);
+  const [basketballDisclaimer, setBasketballDisclaimer] = useState(null);
+  const [basketballConfidence, setBasketballConfidence] = useState('All');
+  const [basketballMarket, setBasketballMarket] = useState('All');
 
   // 77 Leagues Directory State
   const [leaguesCatalog, setLeaguesCatalog] = useState(PITCHAPI_77_LEAGUES);
@@ -134,15 +155,48 @@ export default function TipsScreen({ navigation }) {
     }
   };
 
+  const loadBasketballPredictions = async (date) => {
+    setLoadingBasketball(true);
+    try {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
+      const leagueKey = BASKETBALL_LEAGUE_KEYS[selectedLeague] || null;
+      const res = await fetchBasketballPredictions({
+        date: dateStr,
+        league: leagueKey,
+        confidence: basketballConfidence,
+        market: basketballMarket,
+      });
+      setBasketballPredictions(res.predictions || []);
+      setBasketballDisclaimer(res.disclaimer || null);
+    } catch (e) {
+      console.warn('Error loading basketball predictions:', e);
+      setBasketballPredictions([]);
+    } finally {
+      setLoadingBasketball(false);
+    }
+  };
+
   useEffect(() => {
     loadMatches(dateFilter);
     loadRecommended(dateFilter);
   }, [dateFilter, selectedCategory, selectedLeague]);
 
+  useEffect(() => {
+    if (selectedCategory !== 'Basketball') return;
+    if (activeView !== 'recommended') return;
+    loadBasketballPredictions(dateFilter);
+  }, [dateFilter, selectedCategory, selectedLeague, activeView, basketballConfidence, basketballMarket]);
+
   const onRefresh = () => {
     setRefreshing(true);
     loadMatches(dateFilter, true);
     loadRecommended(dateFilter);
+    if (selectedCategory === 'Basketball' && activeView === 'recommended') {
+      loadBasketballPredictions(dateFilter);
+    }
   };
 
   const [visibleMatchesCount, setVisibleMatchesCount] = useState(10);
@@ -228,7 +282,8 @@ export default function TipsScreen({ navigation }) {
     setLeagueModalVisible(false);
 
     // If matches for this league aren't in allMatches yet, fetch on-demand!
-    if (leagueName !== 'All' && leagueName !== 'Live') {
+    // (Football only — basketball leagues run through the prediction engine.)
+    if (selectedCategory === 'Football' && leagueName !== 'All' && leagueName !== 'Live') {
       const alreadyHas = allMatches.some(m => m.league === leagueName);
       if (!alreadyHas && leagueObj) {
         setFetchingLeagueOnDemand(true);
@@ -523,6 +578,46 @@ export default function TipsScreen({ navigation }) {
     );
   };
 
+  const renderBasketballCard = ({ item }) => (
+    <BasketballGameCard
+      prediction={item}
+      onPress={(matchPayload) => navigation.navigate('MatchDetails', { match: matchPayload })}
+    />
+  );
+
+  const renderBasketballEmptyState = () => (
+    <View style={styles.strictEmptyContainer}>
+      <View style={styles.strictEmptyIconCircle}>
+        <Ionicons name="basketball-outline" size={48} color="#00F2FE" />
+      </View>
+      <Text style={styles.strictEmptyTitle}>No Confident Basketball Picks</Text>
+      <Text style={styles.strictEmptyDesc}>
+        We analysed the scheduled games and none cleared the calibrated probability, edge and data-quality thresholds for the current filters.
+      </Text>
+      <Text style={styles.strictEmptySubtext}>
+        Apex abstains rather than force a pick. Try another date, league, confidence or market filter.
+      </Text>
+    </View>
+  );
+
+  const renderBasketballHeader = () => (
+    <View>
+      <View style={styles.transparencyBar}>
+        <Ionicons name="analytics-outline" size={14} color={theme.textSecondary} style={{ marginRight: 6 }} />
+        <Text style={styles.transparencyBarText}>
+          {basketballPredictions.length} game{basketballPredictions.length === 1 ? '' : 's'} with model probabilities
+          {selectedLeague !== 'All' && selectedLeague !== 'Live' ? ` • ${selectedLeague}` : ''}
+        </Text>
+      </View>
+      {basketballDisclaimer ? (
+        <View style={styles.transparencyBar}>
+          <Ionicons name="information-circle-outline" size={14} color={theme.textSecondary} style={{ marginRight: 6 }} />
+          <Text style={styles.transparencyBarText}>{basketballDisclaimer}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
   const filteredTips = getFilteredMatches();
 
   return (
@@ -564,16 +659,23 @@ export default function TipsScreen({ navigation }) {
             </ScrollView>
         </View>
 
-        {/* Recommended / All Fixtures Segmented Control — Football only */}
-        {selectedCategory === 'Football' && (
+        {/* Predictions / All Fixtures Segmented Control — Football & Basketball */}
+        {(selectedCategory === 'Football' || selectedCategory === 'Basketball') && (
           <View style={styles.segmentedControlContainer}>
             <TouchableOpacity
               style={[styles.segTab, activeView === 'recommended' && styles.segTabActive]}
               onPress={() => setActiveView('recommended')}
               activeOpacity={0.8}
             >
-              <Ionicons name="shield-checkmark-outline" size={14} color={activeView === 'recommended' ? '#FFF' : '#10B981'} style={{ marginRight: 6 }} />
-              <Text style={[styles.segTabText, activeView === 'recommended' && styles.segTabTextActive]}>⭐ Recommended</Text>
+              <Ionicons
+                name={selectedCategory === 'Basketball' ? 'basketball-outline' : 'shield-checkmark-outline'}
+                size={14}
+                color={activeView === 'recommended' ? '#FFF' : '#10B981'}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={[styles.segTabText, activeView === 'recommended' && styles.segTabTextActive]}>
+                {selectedCategory === 'Basketball' ? '🏀 Predictions' : '⭐ Recommended'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.segTab, activeView === 'all_fixtures' && styles.segTabActive]}
@@ -618,6 +720,34 @@ export default function TipsScreen({ navigation }) {
                     </TouchableOpacity>
                 ))}
             </ScrollView>
+
+            {selectedCategory === 'Basketball' && activeView === 'recommended' && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subFiltersContent}>
+                {CONFIDENCE_FILTERS.map(c => (
+                  <TouchableOpacity
+                    key={`conf_${c}`}
+                    style={[styles.subFilterPill, basketballConfidence === c && styles.subFilterPillActive]}
+                    onPress={() => setBasketballConfidence(c)}
+                  >
+                    <Text style={[styles.subFilterText, basketballConfidence === c && styles.subFilterTextActive]}>
+                      {c === 'All' ? 'All Confidence' : c}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                <View style={styles.verticalDivider} />
+                {MARKET_FILTERS.map(m => (
+                  <TouchableOpacity
+                    key={`mkt_${m}`}
+                    style={[styles.subFilterPill, basketballMarket === m && styles.subFilterPillActive]}
+                    onPress={() => setBasketballMarket(m)}
+                  >
+                    <Text style={[styles.subFilterText, basketballMarket === m && styles.subFilterTextActive]}>
+                      {m === 'All' ? 'All Markets' : m}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
         </View>
       </SafeAreaView>
 
@@ -655,6 +785,27 @@ export default function TipsScreen({ navigation }) {
               ) : null
             }
             ListEmptyComponent={renderRecommendedEmptyState()}
+          />
+        )
+      ) : selectedCategory === 'Basketball' && activeView === 'recommended' ? (
+        loadingBasketball ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#10B981" />
+            <Text style={styles.loadingText}>Running the basketball engine on today's games...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={basketballPredictions}
+            renderItem={renderBasketballCard}
+            keyExtractor={(item, idx) => `bb_${item.gameId || idx}`}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={5}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" colors={['#10B981']} />
+            }
+            ListHeaderComponent={renderBasketballHeader()}
+            ListEmptyComponent={renderBasketballEmptyState()}
           />
         )
       ) : (
@@ -930,6 +1081,33 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     height: verticalScale(16),
     backgroundColor: theme.border,
     marginHorizontal: horizontalScale(10),
+  },
+  subFiltersContent: {
+    paddingHorizontal: moderateScale(20),
+    paddingTop: verticalScale(8),
+    alignItems: 'center',
+  },
+  subFilterPill: {
+    paddingHorizontal: horizontalScale(12),
+    paddingVertical: verticalScale(5),
+    borderRadius: moderateScale(12),
+    marginRight: horizontalScale(6),
+    backgroundColor: theme.cardBg,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  subFilterPillActive: {
+    borderColor: '#10B981',
+    backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)',
+  },
+  subFilterText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(11),
+    fontWeight: '600',
+  },
+  subFilterTextActive: {
+    color: '#10B981',
+    fontWeight: '700',
   },
   leaguePill: {
     paddingHorizontal: horizontalScale(12),

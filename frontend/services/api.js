@@ -197,6 +197,49 @@ export const fetchAllFixtures = async ({ sport = 'soccer', league = null, date =
 };
 
 /**
+ * Fetch calibrated basketball predictions (Total Points + Spread) for a date.
+ *
+ * Backed by GET /api/basketball/predictions. Every prediction carries both
+ * picks (or an explicit "no confident pick"), a projection and a data-quality
+ * score — the UI never invents values.
+ *
+ * @param {Object} options
+ * @param {string} [options.date]        - ISO date (YYYY-MM-DD)
+ * @param {string} [options.league]      - backend league key (nba|wnba|ncaa|euroleague)
+ * @param {string} [options.confidence]  - High | Medium | Low
+ * @param {string} [options.market]      - 'Total Points' | 'Spread'
+ * @returns {Promise<Object>} { success, predictions, count, disclaimer, modelVersion }
+ */
+export const fetchBasketballPredictions = async ({ date = null, league = null, confidence = null, market = null } = {}) => {
+  try {
+    const params = new URLSearchParams();
+    if (date) params.append('date', date);
+    if (league && league !== 'All' && league !== 'Live') params.append('league', league);
+    if (confidence && confidence !== 'All') params.append('confidence', confidence);
+    if (market && market !== 'All') params.append('market', market);
+
+    const query = params.toString();
+    const response = await fetch(`${API_URL}/api/basketball/predictions${query ? `?${query}` : ''}`);
+    if (!response.ok) {
+      return { success: false, predictions: [], count: 0, disclaimer: null };
+    }
+    const data = await response.json();
+    return {
+      success: true,
+      predictions: Array.isArray(data.predictions) ? data.predictions : [],
+      count: data.count || 0,
+      date: data.date || date,
+      league: data.league || 'all',
+      modelVersion: data.modelVersion || null,
+      disclaimer: data.disclaimer || null,
+    };
+  } catch (error) {
+    console.warn('[fetchBasketballPredictions] Network error:', error.message);
+    return { success: false, predictions: [], count: 0, disclaimer: null };
+  }
+};
+
+/**
  * Run comprehensive transparent evaluation on a single fixture.
  */
 export const evaluateFixtureBackend = async ({ fixture, homeMatches, awayMatches, homeName, awayName, h2h }) => {

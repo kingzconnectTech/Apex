@@ -1,8 +1,8 @@
 # Apex Sports Prediction Engine Expansion - Product Requirements Document
 
 ## Overview
-- **Summary**: Extend the existing Apex prediction engine with (1) football shots markets (total/home/away over/under) and (2) an advanced basketball prediction pipeline (pace, efficiency, expected points, win probability, totals). Connect both to the existing recommendation, settlement, and performance-tracking systems.
-- **Purpose**: Add statistically sound, distribution-based shot and basketball markets backed by verified historical data, probability calibration, and chronological backtesting — without duplicating or removing existing working markets.
+- **Summary**: Extend the existing Apex prediction engine with (1) football shots markets (total/home/away over/under) and (2) a **calibrated basketball prediction engine** (pace, efficiency, expected points, win probability, **total points and point-spread/handicap**) with alternate-line selection, probability calibration and walk-forward backtesting. Connect both to the existing recommendation, settlement, performance-tracking, API, scheduler and UI systems.
+- **Purpose**: Add statistically sound, distribution-based shot and basketball markets backed by verified historical data, probability calibration, and chronological backtesting — without duplicating or removing existing working markets. Prioritise calibration and honest probabilities over bold claims: main-line hit rates near 55–58% are realistic; higher hit rates come only from alternate lines at shorter odds, and this trade-off must be explicit.
 - **Target Users**: Apex app users viewing recommended predictions, and operators reviewing performance/settlement.
 
 ## Goals
@@ -13,6 +13,12 @@
 - Chronological backtesting with Brier/log-loss/MAE/RMSE and calibration bands for every new market.
 - Extend settlement to shots and basketball markets using the exact same statistic definitions used for prediction.
 - Surface new markets in the existing frontend with real model outputs.
+- Produce **calibrated** basketball probabilities for two headline markets — **TOTAL POINTS (Over/Under)** and **POINT SPREAD (Handicap)** — with best-line selection, a confidence tier and short reasoning per pick.
+- Estimate σ (residual standard deviation) for total and margin from historical residuals per league; never hardcode a single league-wide constant.
+- Calibrate final probabilities (isotonic regression or Platt scaling) on walk-forward out-of-sample predictions with separate calibrators per market and per league, so a stated 65% wins ~65% of the time.
+- Make the main-line vs alternate-line trade-off explicit: main lines realistically hit 55–58%; higher hit rates come only from alternates paid for with shorter odds.
+- Report backtest results honestly, including where the model **loses** to the bookmaker's implied probabilities on log loss.
+- Support multiple leagues (NBA, WNBA, NCAA, EuroLeague, …) through per-league parameters; never hardcode NBA constants.
 
 ## Non-Goals
 - Do not rebuild the application from scratch or create duplicate prediction systems.
@@ -20,6 +26,11 @@
 - Do not invent player props or player-level basketball markets unless reliable player data is already available.
 - Do not deploy unvalidated models automatically.
 - Do not use future information in historical predictions.
+- Do not present certainties: no "sure win", "banker" or accumulator language, and no probability of exactly 0 or 1.
+- Do not rebuild the ESPN/Pitch data layer; extend the existing providers, normalizer and cache.
+- Do not add bookmaker data beyond what ESPN already embeds (no third-party odds feed).
+- Do not introduce player-level basketball markets (props) or on/off player data; the stack has no such source.
+- Do not force a pick: if no line clears its thresholds, return "No confident pick".
 
 ## Background & Context
 - Existing football engine ([footballHistoricalAnalysis.js](file:///c:/Users/prosp/Desktop/Apex/backend/services/footballHistoricalAnalysis.js)) implements Poisson + empirical-Bayesian models for goals, corners, and bookings with historical last-N analysis, H2H, and configurable lines. This is the model pattern to extend.
@@ -29,6 +40,15 @@
 - Basketball currently uses only a heuristic weighted-scoring approach in [server.js](file:///c:/Users/prosp/Desktop/Apex/backend/server.js) `analyzeMatchServer`; there is no pace/efficiency pipeline.
 - Data is stored in Firestore `predictions` collection; historical stats are fetched live and cached in-memory (`sharedCache`). No persistent historical-stats collection exists yet.
 - Tests use Jest + Supertest; live integration tests are gated behind `LIVE_SERVER=1`.
+
+### Verified provider findings (Task 0 live probes)
+- ESPN **scoreboard** (`/basketball/{league}/scoreboard`) contains **no odds** on `competitions[0]` and no injuries; it does expose `playByPlayAvailable`.
+- ESPN **summary** (`/basketball/{league}/summary?event={id}`) contains everything the calibrated engine needs:
+  - Odds: top-level `odds` and `pickcenter[0]` with `details` ("NY -3.5"), `overUnder` (228.5), `spread`, `overOdds`, `underOdds`, plus `awayTeamOdds`/`homeTeamOdds` (`moneyLine`, `spreadOdds`, `favorite`, `underdog`) and `pointSpread`/`total`/`moneyline` blocks each carrying `open`/`close`/`live` prices → enables veg removal, edge, EV and CLV.
+  - Injuries: `injury[]` → `{ team:{id,displayName}, injuries:[{ status:"Day-To-Day", type:{abbreviation}, athlete:{id,fullName,position}, details:{type,location,detail,side,returnDate} }] }`.
+- The summary payload has **no `rosters`** array on this feed → projected starters and on/off net rating are not available; injury impact must therefore be a bounded heuristic, not a computed on/off figure.
+- Provider IDs: ESPN numeric. PitchAPI is football-only (`pa-` prefixed IDs) and exposes no basketball path, no odds, no play-by-play and no on/off data.
+- Because closing lines are needed for CLV/backtest and there is no persistent historical collection, historical games and closing lines are reconstructed **on the fly from ESPN** (per user decision).
 
 ## Functional Requirements
 
@@ -68,22 +88,84 @@
 - **FR-25**: Basketball cards show fixture, competition, expected home/away/total points, win probability, selected market/line, estimated probability, pace/efficiency indicators, data-quality status, and a concise explanation.
 - **FR-26**: All displayed figures come from the actual model pipeline; no illustrative sample values. Fixtures without a qualifying recommendation remain visible in the fixtures section.
 
+### Basketball — Calibrated Totals & Spread Engine
+
+#### Data & normalisation
+- **FR-27**: Normalise basketball data into one internal schema: `Game`, `Team`, `Player`, `BoxScore`, `TeamForm`, `Lineup`, `Injury`, `Odds`. Reuse the existing EspnProvider `_request` (retry/backoff/inflight dedup) and TTLCache; do not add a second HTTP client.
+- **FR-28**: Per team collect, for the last 5, last 10 and full season and split home/away: points for/against, FGA, FTA, OREB, DREB, TOV, 3PA, 3P%, FT%, eFG%, pace, offensive rating and defensive rating. Compute ratings when the provider does not supply them.
+- **FR-29**: Collect schedule context: rest days, back-to-backs, 3-games-in-4-nights, and road-trip length. Travel distance and altitude are used only when known; otherwise they are omitted (never fabricated) and lower the data-quality score.
+- **FR-30**: Collect the ESPN summary injury report with mapped status (`out`/`doubtful`/`questionable`/`probable`/`day-to-day`). Projected starters and player minutes/usage are used only when present; on-court/off-court net rating is unavailable and must not be assumed.
+- **FR-31**: Collect bookmaker lines and odds from ESPN-embedded odds only (`odds`/`pickcenter`, including `open`/`close`/`live`), normalised to the internal `Odds` schema. No third-party odds feed.
+- **FR-32**: Cache all provider responses and respect the existing rate limits; retry with backoff (already in `_request`). Missing fields never crash the pipeline: fall back to league averages and lower the data-quality score.
+- **FR-33**: Support multiple leagues with per-league parameters (`basketball/leagues.js`): possession formula constants, game length, home-court term, σ priors, prior-season ratings, rotation size. No NBA constants in shared code paths.
+
+#### Team ratings
+- **FR-34**: `Possessions = FGA − OREB + TOV + 0.44 × FTA`; `Pace = possessions per game-length` (48 min, or the league's length). `ORtg = points per 100 possessions`; `DRtg = points allowed per 100 possessions`.
+- **FR-35**: Recency weight with exponential decay and a configurable half-life (default 8–10 games). Keep home/away splits but shrink small splits toward the overall rating (empirical-Bayes).
+- **FR-36**: Opponent-adjust ratings by iterating (iterative-SRS or ridge regression) so ratings reflect schedule strength.
+- **FR-37**: Early season, blend prior-season ratings with current ratings, shifting weight to current as games played grows (full current weight at ~20 games); adjust priors for roster turnover where data exists.
+- **FR-38**: Optionally maintain an Elo-style rating (margin-of-victory adjusted, with a league home-court term) and blend it with the ratings-based projection for the margin.
+
+#### Projection & bounded adjustments
+- **FR-39**: `expected_possessions` = blended pace of both teams, weighted toward the stronger pace identity and **calibrated from backtests** (not a plain average). `home_pts = expected_possessions × (home_ORtg adj for away_DRtg) / 100`; away analog. `proj_total = home_pts + away_pts`; `proj_margin = home_pts − away_pts + home_court_adj` (league-specific, learned, ~2–3 in the NBA).
+- **FR-40**: Apply bounded adjustments, all defined in a config file and each capped: rest/fatigue (B2B, 3-in-4, long travel, altitude) applied mainly to margin with a smaller total effect; injuries; questionable/doubtful probability-weighted; blowout/garbage-time down-weighting; pace interaction; motivation/schedule spots (small and bounded).
+- **FR-41**: Injury adjustments use a replacement-level assumption with a cap of ±5 points on margin and ±4 on total per player, and ±8 combined; questionable/doubtful availability is probability-weighted (e.g. 50% availability ⇒ half impact) and lowers the data-quality score. No fabricated on/off figures.
+
+#### Probability & calibration
+- **FR-42**: Model the final total and margin as distributions around the projection. Start normal: `P(Over L) = 1 − Φ((L − proj_total)/σ_total)`; `P(Home covers S) = 1 − Φ((−S − proj_margin)/σ_margin)`.
+- **FR-43**: Estimate `σ_total` and `σ_margin` per league from historical residuals (actual − projected), varying with pace, total size and data quality. Test heavier-tailed/skewed fits and adopt them if they fit better out-of-sample.
+- **FR-44**: Handle pushes on whole-number lines and half-point lines correctly (push ⇒ stake returned / excluded from win-rate denominators).
+- **FR-45**: Calibrate final probabilities with isotonic regression or Platt scaling trained on walk-forward out-of-sample predictions; keep **separate calibrators per market and per league**.
+
+#### Line & pick selection
+- **FR-46**: Pull the main line and all available alternate lines for both markets. For each line compute the model probability, the vig-removed fair implied probability, `edge = model prob − fair implied prob`, and expected value. Vig removal must be proper (no-vig method), not a naive `1/odds` inversion.
+- **FR-47**: Keep only picks passing configurable thresholds: probability ≥ 60% for main lines (≥ 68% for alternates), edge ≥ 4%, data-quality ≥ 0.7. Rank by `0.5 × probability + 0.5 × edge-scaled EV`; return the best pick per market.
+- **FR-48**: Consistency check: reject (and flag, not silently drop) pairings that contradict the projection — e.g. a large favourite spread paired with a very low total implies a game that cannot be both a blowout and slow unless pace explains it.
+- **FR-49**: If nothing clears thresholds, return "No confident pick". Never force a selection. Confidence tiers: **High** (thresholds cleared, data-quality ≥ 0.85, lineups confirmed), **Medium** (thresholds cleared with minor data gaps), **Low** (borderline or lineups unconfirmed).
+
+#### Output, API, scheduler, UI
+- **FR-50**: Emit the documented JSON shape per game: `game`, `tipoff`, `league`, `projection{total,margin,sigma_total,sigma_margin}`, `picks[{market,selection,probability,odds,edge,confidence,reasoning}]`, `key_factors`, `risk_flags`, `data_quality`.
+- **FR-51**: Endpoints: `GET /basketball/predictions?date=&league=`, `GET /basketball/predictions/:gameId`, `GET /basketball/performance`.
+- **FR-52**: Scheduler: initial run the morning of the game; refresh 60–90 minutes before tip-off when the injury report and starters are confirmed; one more at ~15 minutes if a star's status changes. Recompute and downgrade or remove the pick when a key player's status changes.
+- **FR-53**: UI game card with both picks, probability bar, confidence badge, value tag, projected score and an expandable "Why this pick" showing the adjustments applied; filters for league, date, confidence and market; a "line moved" indicator when the line differs from the line at prediction time.
+
+#### Backtesting, validation & live tracking
+- **FR-54**: Walk-forward validation across ≥ 3 seasons: for each game, train and calibrate only on data available before tip-off. No leakage. Closing lines are not inputs unless the model has them at prediction time.
+- **FR-55**: Report per market and per league: hit rate, Brier score, log loss, calibration curve, ROI at historical odds, closing-line value, and performance by probability bucket (55–60, 60–65, 65–70, 70+).
+- **FR-56**: Compare against baselines — always-pick-the-favourite, the bookmaker's own implied probabilities, and a naive league-average model. If the model does not beat the bookmaker's implied probabilities in log loss, state so clearly in the report.
+- **FR-57**: Tune hyperparameters (decay half-life, shrinkage strength, home-court term, adjustment caps, σ model) on a separate validation window, then freeze for the test window.
+- **FR-58**: Live tracking: store every pre-tip prediction and its result; expose rolling accuracy and calibration by market and league; auto-downgrade or disable a market if its last-100 performance falls outside the expected range.
+
+#### Responsible design & testing
+- **FR-59**: Show probabilities, never certainties (a 68% pick loses ~1 in 3); include a disclaimer that predictions are statistical estimates, not betting advice; no "sure win" or accumulator language.
+- **FR-60**: Unit tests for the possession formula, projection math, probability conversion (including push handling), vig removal and the selector logic.
+
 ## Non-Functional Requirements
 - **NFR-1**: Probabilities are always within [0,1]; expected counts are non-negative.
 - **NFR-2**: Provider failures do not crash prediction generation; graceful degradation with explicit "insufficient data".
 - **NFR-3**: Caching reduces redundant API requests; team histories reused across markets.
 - **NFR-4**: Existing frontend routes and builds remain functional.
 - **NFR-5**: Changes are compatible with the existing architecture (extend services, do not duplicate pipelines).
+- **NFR-6**: Every calibrated basketball probability is in (0,1) and finite; σ values are positive and per-league.
+- **NFR-7**: All thresholds, caps, half-lives and σ priors live in a config file, not scattered through code.
+- **NFR-8**: Calibration is measured, not asserted: a stated 65% must win ≈65% on walk-forward out-of-sample data or the calibrator is rejected.
+- **NFR-9**: No NBA constants in shared code paths; every league-specific value is a per-league parameter.
 
 ## Constraints
 - **Technical**: Node.js/Express backend, Firestore, ESPN primary + PitchAPI football secondary, React Native/Expo frontend, Jest+Supertest tests.
 - **Business**: ESPN is preferred for fixtures available from both sources; PitchAPI limited to soccer.
 - **Dependencies**: ESPN boxscore must supply shot and basketball box-score stats; if a stat is absent it stays null.
+- **Odds**: Bookmaker lines and odds come only from ESPN-embedded odds in `summary?event=` (`odds`/`pickcenter`). If a game has no embedded odds, edge/EV/CLV cannot be computed and the pick is withheld.
+- **Player data**: No rosters/on-off feed is available; injuries are the only player-level signal and are applied as bounded heuristics.
 
 ## Assumptions
 - ESPN boxscore `statistics[]` entries include shot-related stats for football (e.g. `totalShots`, `shotsOnTarget`) and standard box-score stats for basketball (FGM, FGA, 3PM, 3PA, FTM, FTA, ORB, DRB, AST, TOV, etc.). Actual stat names will be verified from live responses.
 - PitchAPI stats endpoint supplies `shots`, `shots_on_target`, `expected_goals` for football.
 - Negative-Binomial will be evaluated but Poisson may be selected if overdispersion is not material out-of-sample.
+- Basketball odds and injuries are only available from the ESPN **summary** endpoint, so one extra `summary?event=` call per game is required on top of the scoreboard.
+- The residual distribution of total and margin is assumed roughly symmetric; heavier-tailed/skewed fits will be tested and adopted only if they improve out-of-sample fit.
+- ESPN box-score stats give assists but not player minutes/usage; player minutes/usage are used only when the summary exposes them. Rotations are assumed league-typical when absent.
+- σ priors are seeded from literature/league averages and then re-estimated per league from walk-forward residuals (never hardcoded as the final value).
 
 ## Acceptance Criteria
 
@@ -183,7 +265,90 @@
 - **Pass Condition**: Unit test mocks provider failure and asserts graceful return with bounded probabilities
 - **Evidence**: Jest test with mocked provider
 
+### AC-13: Per-league parameters — no hardcoded NBA constants
+- **Type**: `rule`
+- **Given**: two leagues configured with different game lengths, home-court terms and σ priors
+- **When**: the engine projects a game in each league
+- **Then**: the projections use each league's parameters; no NBA-specific value is applied outside NBA config
+- **Pass Condition**: Unit test projects the same inputs under two league configs and asserts different outputs consistent with the config
+- **Evidence**: Jest test in `tests/basketball/config.test.js`
+
+### AC-14: Recency decay and split shrinkage behave correctly
+- **Type**: `rule`
+- **Given**: a team's game log with a configurable half-life
+- **When**: the recency-weighted rating is computed
+- **Then**: recent games weigh more than older games by the configured decay, and a small home/away split is shrunk toward the overall rating
+- **Pass Condition**: Unit test asserts monotonic decay and that a 3-game split is shrunk closer to overall than an 80-game split
+- **Evidence**: Jest test in `tests/basketball-ratings.test.js`
+
+### AC-15: Opponent adjustment changes ratings vs raw averages
+- **Type**: `rule`
+- **Given**: two teams with identical raw scoring but very different opponent strength
+- **When**: opponent-adjusted ratings are computed
+- **Then**: the team that faced stronger opponents receives a higher adjusted rating than the team that faced weaker opponents
+- **Pass Condition**: Unit test with constructed schedules asserts adjusted ordering differs from raw ordering
+- **Evidence**: Jest test in `tests/basketball-ratings.test.js`
+
+### AC-16: Early-season prior blend converges to current form
+- **Type**: `rule`
+- **Given**: a prior-season rating and a current-season record
+- **When**: the blended rating is computed at 0, 10 and ≥20 games played
+- **Then**: prior weight is highest at 0 games and current weight reaches full at ~20 games
+- **Pass Condition**: Unit test asserts weight monotonically shifts to current and equals 1.0 at ≥20 games
+- **Evidence**: Jest test in `tests/basketball-ratings.test.js`
+
+### AC-17: Probability conversion matches the normal model and handles pushes
+- **Type**: `rule`
+- **Given**: a projection, a σ and a line
+- **When**: P(Over L) and P(Home covers S) are computed
+- **Then**: they equal `1 − Φ((L − proj_total)/σ_total)` and `1 − Φ((−S − proj_margin)/σ_margin)` respectively; a whole-number line returns a non-zero push probability, and a half-point line returns push = 0
+- **Pass Condition**: Unit test asserts exact CDF values against a reference Φ and correct push handling for integer vs half lines
+- **Evidence**: Jest test in `tests/basketball-probability.test.js`
+
+### AC-18: Vig removal is proper, not naive inversion
+- **Type**: `rule`
+- **Given**: a two-way market with prices implying >100% total probability (e.g. −110/−110)
+- **When**: fair implied probabilities are computed
+- **Then**: they sum to 1.0 (no-vig method) and are each less than the naive `1/odds` value
+- **Pass Condition**: Unit test asserts the fair implied probabilities sum to 1.0 within tolerance
+- **Evidence**: Jest test in `tests/basketball-odds.test.js`
+
+### AC-19: Calibration is trained out-of-sample and per market/league
+- **Type**: `rule`
+- **Given**: walk-forward out-of-sample predictions split by market and league
+- **When**: calibrators are trained
+- **Then**: a separate calibrator is produced per market and per league; probabilities are monotonic in predicted probability and within (0,1)
+- **Pass Condition**: Unit test asserts separate calibrators exist and are monotonic non-decreasing
+- **Evidence**: Jest test in `tests/basketball-calibration.test.js`
+
+### AC-20: Line selector honours thresholds and never forces a pick
+- **Type**: `rule`
+- **Given**: candidate lines with model probabilities, fair implied probabilities and a data-quality score
+- **When**: the selector runs
+- **Then**: it keeps only lines with prob ≥ 60% (main) / ≥ 68% (alternate), edge ≥ 4% and data-quality ≥ 0.7; it ranks by `0.5 × prob + 0.5 × edge-scaled EV`; it returns at most one pick per market; and it returns "No confident pick" when nothing qualifies
+- **Pass Condition**: Unit test with a below-threshold set returns no pick, and an above-threshold set returns the single highest-ranked pick per market
+- **Evidence**: Jest test in `tests/basketball-selector.test.js`
+
+### AC-21: Contradictory projections are flagged, not silently dropped
+- **Type**: `rule`
+- **Given**: a projection with a large favourite margin paired with a very low total and normal pace
+- **When**: the consistency check runs
+- **Then**: the pairing is flagged in `risk_flags` and not returned as a silent confident pick
+- **Pass Condition**: Unit test asserts a flag is emitted for the contradictory pairing
+- **Evidence**: Jest test in `tests/basketball-selector.test.js`
+
+### AC-22: Backtest reports honest metrics and beats/does-not-beat the bookmaker explicitly
+- **Type**: `rule`
+- **Given**: a ≥3-season walk-forward run with no leakage
+- **When**: the backtest completes
+- **Then**: it reports per market/league hit rate, Brier, log loss, calibration curve, ROI, CLV and probability buckets, and compares against always-favourite, bookmaker implied and league-average baselines, explicitly stating whether the model beats the bookmaker's implied probabilities in log loss
+- **Pass Condition**: Backtest output contains all metrics per market/league and an explicit beat/lose statement; a unit test asserts no post-tipoff game enters the training fold
+- **Evidence**: Backtest script output + leakage unit test
+
 ## Open Questions
-- [ ] Confirm the exact ESPN boxscore stat names for football shots (total shots, shots on target) and basketball (FGM/FGA/etc.) from a live response before finalizing extraction keys.
-- [ ] Confirm whether PitchAPI free tier supplies shots for the 77 configured leagues (coverage may be partial).
-- [ ] Confirm whether a persistent Firestore collection for historical stats is desired (currently in-memory cache only) or if live-fetch + cache suffices.
+- [x] ESPN boxscore stat names verified via live probe. Basketball extraction keys are known; the summary (`boxscore`, `pickcenter`/`odds`, `injury`, `plays`, `winprobability`) is the source for stats, odds and injuries. Remaining nuance: exact per-league summary coverage.
+- [ ] Confirm whether PitchAPI free tier supplies shots for the 77 configured leagues (coverage may be partial). **Not blocking** — basketball uses ESPN only; PitchAPI has no basketball path.
+- [x] Resolved: no persistent Firestore collection for historical stats — historical games and closing lines are reconstructed **on the fly from ESPN** for backtesting (per user decision), with in-memory TTLCache for hot data.
+- [ ] Confirm the initial set of basketball leagues to enable (NBA only, or NBA + WNBA + NCAA + EuroLeague) and each league's game length and observation window.
+- [ ] Confirm whether ESPN embedded odds are present for all target leagues, or only NBA — if absent for a league, edge/EV/CLV are withheld there.
+- [ ] Confirm the acceptable minimum history for showing a pick (e.g. require ≥5 games per team and ≥1 full prior season for the prior blend).

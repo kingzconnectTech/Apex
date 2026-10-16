@@ -133,3 +133,208 @@
 - **Test Requirements**:
   - `rule` TR-9.1: Saved prediction doc includes market line, expected statistic, probability, model version, data source, sample sizes per market.
   - `rule` TR-9.2: Team schedule fetch is cached so repeated market calls do not re-request the same schedule.
+
+---
+
+## Calibrated Basketball Engine (Totals & Spread)
+
+> Extends Task 4's `basketballEngine.js` base pipeline. Task 4 stays as the base possessions/ratings/win-prob layer; the tasks below add per-league config, odds/injuries, σ modelling, calibration, spread market, selector, API, scheduler, UI and backtesting. Nothing in Tasks 1–9 is removed.
+
+## Task 10: Basketball module scaffolding + per-league config
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 4
+- **Description**:
+  - Create `backend/services/basketball/` with `index.js`, `config.js`, `leagues.js`, `normalize.js`, `ratings.js`, `projection.js`, `adjustments.js`, `probability.js`, `calibration.js`, `lineSelector.js`, `persistence.js`, `backtester.js`.
+  - Create `backend/services/basketball/config.js` holding every tunable: decay half-life, shrinkage strength, home-court term per league, adjustment caps, σ model params, selection thresholds, confidence-tier rules.
+  - Create `backend/services/basketball/leagues.js` with per-league params for NBA/WNBA/NCAA/EuroLeague: game length (minutes), possessions constants, home-court term, prior-season rating priors, rotation size, enable/disable flag.
+  - Move the hardcoded `LEAGUE_MEAN`/`scoreStd = 11` out of `basketballEngine.js` into per-league config; keep backward-compatible exports.
+- **Acceptance Criteria Addressed**: FR-33, NFR-7, NFR-9, AC-13
+- **Test Requirements**:
+  - `rule` TR-10.1: Projecting identical inputs under two league configs yields outputs consistent with each config's game length and home-court term.
+  - `rule` TR-10.2: A missing league config throws a clear error rather than silently using NBA defaults.
+
+## Task 11: Basketball data normalisation + odds/injuries extraction
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 10
+- **Description**:
+  - Add `extractBasketballOdds(summary)` and `extractBasketballInjuries(summary)` to [EspnProvider.js](file:///c:/Users/prosp/Desktop/Apex/backend/services/providers/EspnProvider.js) using the verified `odds`/`pickcenter` and `injury[]` fields; return `null` for missing values (never 0).
+  - Add a basketball schedule processor (`processBasketballScheduleForTeam`) reusing the existing `_request` retry/backoff and TTLCache; attach `boxScore`, `isHome`, `scores`, `result`, `restDays`, `backToBack`, `threeInFour`, `roadTripLength`.
+  - Extend `backend/services/providers/normalizer.js` with `Odds`, `Injury` and basketball `BoxScore`/`TeamForm` normalisers into the shared Apex shape.
+  - Add `backend/services/basketball/normalize.js` producing `Game`, `Team`, `BoxScore`, `TeamForm`, `Lineup`, `Injury`, `Odds`; missing fields stay `null` and lower the data-quality score.
+- **Acceptance Criteria Addressed**: FR-27, FR-28, FR-29, FR-30, FR-31, FR-32
+- **Test Requirements**:
+  - `rule` TR-11.1: A mocked summary with `pickcenter` yields spread/total and open/close/live odds; a summary without odds yields `null` odds and no crash.
+  - `rule` TR-11.2: A mocked `injury[]` yields mapped statuses (out/doubtful/questionable/probable/day-to-day); absent injuries yield an empty list.
+  - `rule` TR-11.3: Rest-days/B2B/3-in-4 flags are computed correctly from a fixed game log.
+
+## Task 12: Team ratings (recency, shrinkage, opponent adjustment, prior blend, Elo)
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 11
+- **Description**:
+  - Implement exponential-decay recency weighting with configurable half-life (default 8–10 games).
+  - Keep home/away splits but shrink small splits toward the overall rating (empirical-Bayes).
+  - Implement opponent adjustment via iterative-SRS/ridge regression.
+  - Implement prior-season blend: prior weight at 0 games → full current weight at ~20 games; adjust for roster turnover where data exists.
+  - Implement optional Elo (margin-of-victory adjusted, league home-court term) and a blend function with the ratings-based margin.
+- **Acceptance Criteria Addressed**: FR-34, FR-35, FR-36, FR-37, FR-38
+- **Test Requirements**:
+  - `rule` TR-12.1: Recency weights decay monotonically with age; a 3-game split is shrunk closer to overall than an 80-game split.
+  - `rule` TR-12.2: Opponent adjustment reverses the ordering of two teams with equal raw scoring but different schedule strength.
+  - `rule` TR-12.3: Prior blend weight is highest at 0 games and reaches 1.0 current weight at ≥20 games.
+  - `rule` TR-12.4: Elo is margin-of-victory adjusted and includes a home-court term.
+
+## Task 13: Game projection engine
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 12
+- **Description**:
+  - `expected_possessions` = blended pace weighted toward the stronger pace identity, calibrated by a configurable weight.
+  - `home_pts = expected_possessions × (home_ORtg adj for away_DRtg) / 100`; away analog.
+  - `proj_total = home_pts + away_pts`; `proj_margin = home_pts − away_pts + home_court_adj` (league-specific).
+  - Blend the Elo margin signal with the ratings-based margin per config.
+- **Acceptance Criteria Addressed**: FR-39
+- **Test Requirements**:
+  - `rule` TR-13.1: Projection math reproduces the documented formulas for fixed inputs.
+  - `rule` TR-13.2: The pace blend is configurable and not a plain average (a weight ≠ 0.5 changes the result).
+
+## Task 14: Bounded adjustments + data-quality scoring
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 13
+- **Description**:
+  - Implement all adjustments in `adjustments.js`, each capped in config: rest/fatigue (B2B, 3-in-4, long travel, altitude) applied mainly to margin with a smaller total effect; injuries; questionable/doubtful probability-weighting; blowout/garbage-time down-weighting; pace interaction; motivation/schedule spots.
+  - Injury caps: ±5 margin / ±4 total per player, ±8 combined; availability is probability-weighted and lowers data-quality.
+  - Implement a data-quality score (0–1) from missing-field coverage, sample size and line/lineup confirmation status.
+- **Acceptance Criteria Addressed**: FR-40, FR-41
+- **Test Requirements**:
+  - `rule` TR-14.1: A single player's injury adjustment never exceeds ±5 margin / ±4 total, and the combined adjustment never exceeds ±8.
+  - `rule` TR-14.2: A `questionable` player applies a probability-weighted (≈half) adjustment and lowers data-quality.
+  - `rule` TR-14.3: Data-quality decreases as fields go missing and when lineups are unconfirmed.
+
+## Task 15: Probability model + σ estimation + push handling
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 14
+- **Description**:
+  - Implement `P(Over L) = 1 − Φ((L − proj_total)/σ_total)` and `P(Home covers S) = 1 − Φ((−S − proj_margin)/σ_margin)`; reuse/extend the existing `normalCdf`.
+  - Replace the hardcoded `scoreStd = 11` with per-league σ estimated from historical residuals; let σ vary with pace, total size and data quality.
+  - Evaluate a heavier-tailed/skewed fit against the normal on residuals and adopt it if it fits better out-of-sample.
+  - Handle push probability on whole-number lines; half-point lines return push = 0.
+- **Acceptance Criteria Addressed**: FR-42, FR-43, FR-44
+- **Test Requirements**:
+  - `rule` TR-15.1: Probabilities match the reference normal CDF for fixed inputs.
+  - `rule` TR-15.2: Integer lines return a non-zero push probability; half-point lines return push = 0.
+  - `rule` TR-15.3: σ is positive, per-league, and varies with the configured pace/total/data-quality inputs.
+
+## Task 16: Probability calibration (isotonic / Platt, per market + league)
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 15
+- **Description**:
+  - Implement isotonic regression and Platt scaling in `calibration.js`; fit on walk-forward out-of-sample predictions only.
+  - Store and apply a **separate calibrator per market (Total, Spread) and per league**.
+  - Guard against non-monotonic/underfit calibration; fall back to identity (uncalibrated) if the calibrator fails out-of-sample validation.
+- **Acceptance Criteria Addressed**: FR-45, NFR-8
+- **Test Requirements**:
+  - `rule` TR-16.1: Separate calibrators are produced per market and league.
+  - `rule` TR-16.2: Calibrated probabilities are monotonic non-decreasing in the raw probability and within (0,1).
+  - `rule` TR-16.3: A failing calibrator falls back to identity rather than producing out-of-range values.
+
+## Task 17: Line selector (vig removal, edge, EV, thresholds, consistency flags)
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 16
+- **Description**:
+  - Implement proper no-vig fair implied probability (not `1/odds`).
+  - For every main + alternate line compute model probability (post-calibration), fair implied probability, `edge`, and EV.
+  - Apply thresholds from config (prob ≥ 60% main / ≥ 68% alternate, edge ≥ 4%, data-quality ≥ 0.7); rank by `0.5 × prob + 0.5 × edge-scaled EV`; return at most one pick per market.
+  - Implement the consistency check and emit `risk_flags` for contradictory margin/total pairings; return "No confident pick" when nothing qualifies; assign High/Medium/Low confidence tiers.
+- **Acceptance Criteria Addressed**: FR-46, FR-47, FR-48, FR-49
+- **Test Requirements**:
+  - `rule` TR-17.1: No-vig implied probabilities from −110/−110 sum to 1.0 within tolerance and are each below the naive value.
+  - `rule` TR-17.2: Below-threshold candidate sets return "No confident pick"; above-threshold sets return the single highest-ranked pick per market.
+  - `rule` TR-17.3: A contradicting margin/total pairing is flagged, not silently returned.
+  - `rule` TR-17.4: Confidence tiers follow the data-quality/lineup rules.
+
+## Task 18: Basketball API endpoints
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 17
+- **Description**:
+  - Create `backend/routes/basketball.js` and mount it in [server.js](file:///c:/Users/prosp/Desktop/Apex/backend/server.js).
+  - `GET /basketball/predictions?date=&league=` — list of games with the documented JSON shape.
+  - `GET /basketball/predictions/:gameId` — single game; returns 404 with a clear body when unknown.
+  - `GET /basketball/performance` — rolling accuracy/calibration by market and league.
+- **Acceptance Criteria Addressed**: FR-50, FR-51
+- **Test Requirements**:
+  - `rule` TR-18.1: Supertest returns the documented JSON keys for a mocked game.
+  - `rule` TR-18.2: An unknown gameId returns 404 without throwing.
+  - `rule` TR-18.3: `date`/`league` filters narrow the result set correctly.
+
+## Task 19: Basketball scheduler (morning + pre-tip refreshes)
+- **Status**: `pending`
+- **Priority**: medium
+- **Depends On**: Task 18
+- **Description**:
+  - Add a scheduler (node-cron pattern already used in `server.js`, guarded by `IS_ENTRY_POINT`) that runs an initial prediction pass the morning of the game, a refresh 60–90 minutes before tip-off, and a final refresh at ~15 minutes when a star's status changes.
+  - On a key-player status change, recompute and downgrade or remove the affected pick.
+- **Acceptance Criteria Addressed**: FR-52
+- **Test Requirements**:
+  - `rule` TR-19.1: A simulated star-status change triggers recompute and downgrades/removes the pick.
+  - `rule` TR-19.2: Scheduler registration is skipped when not the entry point (no duplicate crons in tests).
+
+## Task 20: Basketball UI components
+- **Status**: `pending`
+- **Priority**: medium
+- **Depends On**: Task 18
+- **Description**:
+  - Build `frontend/components/` pieces: `BasketballGameCard`, `ProbabilityBar`, `ConfidenceBadge`, `ValueTag`, `WhyThisPick` (expandable adjustments), `LineMovedIndicator`.
+  - Wire into [TipsScreen.js](file:///c:/Users/prosp/Desktop/Apex/frontend/screens/TipsScreen.js): both picks, probability bar, confidence badge, value tag, projected score, expandable "Why this pick" (adjustments applied), filters for league/date/confidence/market, and the "line moved" indicator.
+  - GPU-composited animations only (opacity/transform); respect `prefers-reduced-motion`; no placeholder values.
+- **Acceptance Criteria Addressed**: FR-53, AC-10
+- **Test Requirements**:
+  - `rubric` TR-20.1: Rendered card shows both picks, projected score and "why this pick"; scale 1-5; threshold ≥ 4; evidence from rendered API-driven card (no hardcoded sample values).
+
+## Task 21: Basketball backtester (walk-forward, baselines, CLV, ROI)
+- **Status**: `pending`
+- **Priority**: medium
+- **Depends On**: Task 16, Task 17
+- **Description**:
+  - Extend [backtestingService.js](file:///c:/Users/prosp/Desktop/Apex/backend/services/backtestingService.js) (or `basketball/backtester.js`) with a walk-forward loop over ≥3 seasons: for each game, train + calibrate only on prior data; use closing lines only as a benchmark, never as an input.
+  - Report per market + league: hit rate, Brier, log loss, calibration curve, ROI at historical odds, CLV, and performance by probability bucket (55–60/60–65/65–70/70+).
+  - Add baselines: always-favourite, bookmaker implied, naive league-average; emit an explicit beat/lose-vs-bookmaker statement.
+  - Tune hyperparameters on a validation window, freeze for test; add runnable `backend/scripts/run-basketball-backtest.js`.
+- **Acceptance Criteria Addressed**: FR-54, FR-55, FR-56, FR-57, AC-22
+- **Test Requirements**:
+  - `rule` TR-21.1: No game with tip-off after the training cutoff enters the training fold.
+  - `rule` TR-21.2: Output includes all metrics per market/league and the explicit beat/lose statement.
+  - `rule` TR-21.3: Bucket metrics (55–60 … 70+) are computed with non-empty sample sizes when data allows.
+
+## Task 22: Live tracking + performance dashboard + auto-downgrade
+- **Status**: `pending`
+- **Priority**: medium
+- **Depends On**: Task 21
+- **Description**:
+  - Store every pre-tip prediction and its result using the existing Firestore `predictions` schema (market, line, selection, probability, odds, edge, model version, data-quality).
+  - Expose rolling accuracy and calibration by market/league via `GET /basketball/performance`.
+  - Auto-downgrade or disable a market if its last-100 performance falls outside the expected range.
+- **Acceptance Criteria Addressed**: FR-58
+- **Test Requirements**:
+  - `rule` TR-22.1: A predicted record is stored with its confidence and result and appears in the performance payload.
+  - `rule` TR-22.2: A market whose last-100 hit rate falls below the expected band is auto-downgraded/disabled.
+
+## Task 23: Calibrated basketball tests + build verification
+- **Status**: `pending`
+- **Priority**: high
+- **Depends On**: Task 10–22
+- **Description**:
+  - Add Jest tests: `tests/basketball/config.test.js`, `tests/basketball-ratings.test.js`, `tests/basketball-probability.test.js`, `tests/basketball-odds.test.js`, `tests/basketball-calibration.test.js`, `tests/basketball-selector.test.js`, `tests/basketball-api.test.js`, `tests/basketball-backtest.test.js`.
+  - Verify existing tests (`basketball-engine.test.js`, `settlement.test.js`, `football-ranking.test.js`, `providers.test.js`) still pass.
+  - Run `npm test`; fix regressions.
+- **Acceptance Criteria Addressed**: AC-13–AC-22, NFR-6, NFR-8
+- **Test Requirements**:
+  - `rule` TR-23.1: Full `npm test` exits 0 with all new and existing tests passing.
+  - `rule` TR-23.2: Unit tests cover the possession formula, projection math, probability conversion (incl. push), vig removal and the selector logic.

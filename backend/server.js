@@ -58,6 +58,9 @@ const {
   evaluateFixture,
   filterAndRankFixtures,
 } = require('./services/predictabilityEngine');
+const { createBasketballRouter } = require('./routes/basketball');
+const basketballPersistence = require('./services/basketball/persistence');
+const { startBasketballScheduler } = require('./services/basketball/scheduler');
 
 const IS_ENTRY_POINT = require.main === module;
 
@@ -116,6 +119,9 @@ app.use((req, res, next) => {
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Basketball prediction engine (calibrated totals & spread)
+app.use('/api', createBasketballRouter({ sportsData, admin, logger }));
 
 // Initialize Firebase Admin SDK
 try {
@@ -2832,6 +2838,15 @@ if (IS_ENTRY_POINT) cron.schedule('0 2 * * *', () => {
     logger.error('Retraining error', { traceId, error: data.toString() });
   });
 });
+
+// Basketball prediction engine scheduler (morning run, pre-tip refresh, settlement)
+if (IS_ENTRY_POINT && sportsData) {
+  try {
+    startBasketballScheduler({ sportsData, admin, logger });
+  } catch (err) {
+    logger.error('Failed to start basketball scheduler', { error: err.message });
+  }
+}
 
 // WebSocket connection
 io.on('connection', (socket) => {

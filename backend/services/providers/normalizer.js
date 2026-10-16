@@ -455,6 +455,62 @@ function normalizeTeamStatsPitchAPI(rawStats, teamId = null) {
   };
 }
 
+/**
+ * Normalise ESPN bookmaker odds (already extracted into the internal Odds shape
+ * by EspnProvider.extractBasketballOdds) into the shared Apex schema.
+ */
+function normalizeOddsESPN(rawOdds) {
+  if (!rawOdds) return null;
+  return {
+    source: PROVIDERS.ESPN,
+    provider: rawOdds.provider || 'espn',
+    details: rawOdds.details ?? null,
+    spread: rawOdds.spread ?? null,
+    overUnder: rawOdds.overUnder ?? null,
+    overOdds: rawOdds.overOdds ?? null,
+    underOdds: rawOdds.underOdds ?? null,
+    homeMoneyLine: rawOdds.homeMoneyLine ?? null,
+    awayMoneyLine: rawOdds.awayMoneyLine ?? null,
+    homeSpreadOdds: rawOdds.homeSpreadOdds ?? null,
+    awaySpreadOdds: rawOdds.awaySpreadOdds ?? null,
+    open: rawOdds.open || null,
+    close: rawOdds.close || null,
+    live: rawOdds.live || null,
+  };
+}
+
+/**
+ * Normalise an ESPN injury list into the shared Apex schema.
+ * Absent injuries yield an empty array; nothing is fabricated.
+ */
+function normalizeInjuriesESPN(injuries) {
+  if (!Array.isArray(injuries)) return [];
+  return injuries.map(i => ({
+    source: PROVIDERS.ESPN,
+    teamId: i.teamId ?? null,
+    teamName: i.teamName ?? null,
+    playerId: i.playerId ?? null,
+    playerName: i.playerName ?? null,
+    position: i.position ?? null,
+    status: i.status ?? null,
+    rawStatus: i.rawStatus ?? null,
+    detail: i.detail ?? null,
+    injuryType: i.injuryType ?? null,
+    location: i.location ?? null,
+    side: i.side ?? null,
+    returnDate: i.returnDate ?? null,
+  }));
+}
+
+/**
+ * Normalise an ESPN basketball box score into the shared Apex schema.
+ * Missing stats stay null.
+ */
+function normalizeBasketballBoxScoreESPN(boxScore) {
+  if (!boxScore) return null;
+  return { source: PROVIDERS.ESPN, ...boxScore };
+}
+
 function buildDedupKey(sig) {
   if (!sig || typeof sig !== 'object') return null;
   const h = _normalizeTeamName(sig.home || '');
@@ -505,6 +561,9 @@ module.exports = {
   normalizeTeamStatsESPN,
   normalizeTeamStatsPitchAPI,
   normalizeH2HPitchAPI,
+  normalizeOddsESPN,
+  normalizeInjuriesESPN,
+  normalizeBasketballBoxScoreESPN,
   buildDedupKey,
   fixturesMatch,
 };
