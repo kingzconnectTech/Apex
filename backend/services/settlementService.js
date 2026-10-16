@@ -71,20 +71,7 @@ function settleMarket(market, selection, homeGoals, awayGoals, extra = {}) {
       : Number(awayShots) < line ? 'won' : 'lost';
   }
 
-  // Basketball (homeGoals/awayGoals carry final points for basketball)
-  if (m === 'basketball_match_winner' || m === 'basketball_match_winner_home') {
-    return hg > ag ? 'won' : 'lost';
-  }
-  if (m === 'basketball_match_winner_away') {
-    return ag > hg ? 'won' : 'lost';
-  }
-  if (m.startsWith('basketball_total_points_')) {
-    const side = m.includes('_over_') ? 'over' : 'under';
-    const line = parsedLine ?? extra.line ?? 215.5;
-    return side === 'over'
-      ? total > line ? 'won' : 'lost'
-      : total < line ? 'won' : 'lost';
-  }
+  // Basketball team points (homeGoals/awayGoals carry final points for basketball)
   if (m.startsWith('basketball_home_points_')) {
     const side = m.includes('_over_') ? 'over' : 'under';
     const line = parsedLine ?? extra.line ?? 105.5;

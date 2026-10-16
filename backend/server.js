@@ -29,10 +29,6 @@ const {
   calculateShotsPrediction,
 } = require('./services/footballShotsAnalysis');
 const {
-  analyzeBasketballHistory,
-  calculateBasketballPrediction,
-} = require('./services/basketballEngine');
-const {
   settleMarket,
   classifyMatchStatus,
   normaliseMarketKey,
@@ -1837,38 +1833,13 @@ function analyzeMatchServer({
   // --- Recommendations ---
   // Soccer: Top 2 highest-confidence predictions from the 4 approved markets
   //         (under_corners, under_4_5_goals, under_1_5_ht, under_2_5_ht)
-  // Basketball: WIN + GOALS/Totals retained as before.
+  // Tennis: Match Winner.
+  // Basketball markets (Match Winner / Total Points) were retired in favour of the
+  // calibrated engine served from /api/basketball/predictions.
   const recommendations = [];
 
-  if (isBasketball) {
-    // Basketball — use advanced pace/efficiency engine when team histories are available
-    let bballEngine = null;
-    try {
-      const homeBball = analyzeBasketballHistory(homeStats?.lastMatches || [], { isHomeContext: true });
-      const awayBball = analyzeBasketballHistory(awayStats?.lastMatches || [], { isHomeContext: false });
-      bballEngine = calculateBasketballPrediction({
-        homeAnalysis: homeBball,
-        awayAnalysis: awayBball,
-        h2h: h2h,
-      });
-    } catch (bErr) {
-      logger.warn('[BasketballEngine] Non-fatal error', { error: bErr.message });
-    }
-
-    // Match Winner
-    if (bballEngine) {
-      const winnerSide = bballEngine.market.endsWith('_home') ? 'home' : 'away';
-      winPrediction = `${winnerSide === 'home' ? homeName : awayName} Win`;
-      winConfidence = bballEngine.confidence;
-      projectedMargin = winnerSide === 'home'
-        ? bballEngine.expectedHomePoints - bballEngine.expectedAwayPoints
-        : bballEngine.expectedAwayPoints - bballEngine.expectedHomePoints;
-      factors.push({
-        label: `Model expects ${bballEngine.expectedHomePoints.toFixed(0)}-${bballEngine.expectedAwayPoints.toFixed(0)}, pace ${bballEngine.pace.toFixed(0)}`,
-        side: 'neutral',
-        type: 'success',
-      });
-    }
+  if (sport === 'tennis') {
+    // Tennis — Match Winner
     if (winPrediction) {
       recommendations.push({
         type: 'WIN',
@@ -1878,34 +1849,7 @@ function analyzeMatchServer({
         color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96'),
       });
     }
-
-    // Total Points
-    if (bballEngine?.bestTotalLine) {
-      const bt = bballEngine.bestTotalLine;
-      goalsPrediction = `${bt.side === 'over' ? 'Over' : 'Under'} ${bt.line}`;
-      goalsConfidence = Math.round(bt.probability * 100);
-    }
-    if (goalsPrediction) {
-      recommendations.push({
-        type: 'GOALS',
-        label: 'Total Points',
-        value: goalsPrediction,
-        confidence: Math.round(goalsConfidence),
-        color: '#ffd43b',
-      });
-    }
-  } else if (sport === 'tennis') {
-    // Tennis — keep Match Winner
-    if (winPrediction) {
-      recommendations.push({
-        type: 'WIN',
-        label: 'Match Winner',
-        value: winPrediction,
-        confidence: Math.round(winConfidence),
-        color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96'),
-      });
-    }
-  } else {
+  } else if (!isBasketball) {
     // Soccer — delegate top-2 selection to the shared ranking utility.
     // rankFootballPredictions validates, deduplicates, sorts by confidence
     // (descending), and applies deterministic tie-breaking. Returns at most 2.

@@ -223,29 +223,6 @@ describe('Market Settlement Rules', () => {
   });
 
   describe('AC-8: Basketball Markets', () => {
-    test('settles basketball match winner correctly', () => {
-      expect(settleMarket('basketball_match_winner_home', null, 110, 105)).toBe('won');
-      expect(settleMarket('basketball_match_winner_away', null, 110, 105)).toBe('lost');
-      expect(settleMarket('basketball_match_winner', null, 110, 105)).toBe('won');
-
-      expect(settleMarket('basketball_match_winner_home', null, 100, 115)).toBe('lost');
-      expect(settleMarket('basketball_match_winner_away', null, 100, 115)).toBe('won');
-    });
-
-    test('settles basketball total points over/under correctly', () => {
-      const extra = { line: 215.5 };
-      const homeGoals = 110;
-      const awayGoals = 108; // total = 218
-
-      expect(settleMarket('basketball_total_points_over_215_5', null, homeGoals, awayGoals, extra)).toBe('won');
-      expect(settleMarket('basketball_total_points_under_215_5', null, homeGoals, awayGoals, extra)).toBe('lost');
-
-      const homeGoals2 = 105;
-      const awayGoals2 = 100; // total = 205
-      expect(settleMarket('basketball_total_points_over_215_5', null, homeGoals2, awayGoals2, extra)).toBe('lost');
-      expect(settleMarket('basketball_total_points_under_215_5', null, homeGoals2, awayGoals2, extra)).toBe('won');
-    });
-
     test('settles basketball team points over/under correctly', () => {
       const extra = { line: 105.5 };
 
@@ -715,7 +692,7 @@ describe('autoSettleFinishedMatches Worker', () => {
     expect(stored.settlementStatus).toBe('pending');
   });
 
-  test('basketball finished match settles winner and totals (OT included in FT score)', async () => {
+  test('basketball finished match settles team points (OT included in FT score)', async () => {
     await savePrediction(admin, {
       userId: 'user_bball',
       matchId: 'match_nba_1',
@@ -723,8 +700,8 @@ describe('autoSettleFinishedMatches Worker', () => {
       leagueSlug: 'nba',
       matchDate: '2020-09-01T12:00:00Z',
       predictions: [
-        { market: 'basketball_match_winner_home', label: 'Home Win', confidence: 70 },
-        { market: 'basketball_total_points_over_215_5', label: 'Over 215.5', confidence: 65 },
+        { market: 'basketball_home_points_over_105_5', label: 'Home Over 105.5', confidence: 70 },
+        { market: 'basketball_away_points_over_105_5', label: 'Away Over 105.5', confidence: 65 },
       ],
     });
 
@@ -742,8 +719,8 @@ describe('autoSettleFinishedMatches Worker', () => {
 
     expect(report.settled).toBe(1);
     const stored = [...mockFirestoreStore.values()].find(d => d.matchId === 'match_nba_1');
-    expect(stored.results.find(r => r.market === 'basketball_match_winner_home').outcome).toBe('won');
-    expect(stored.results.find(r => r.market === 'basketball_total_points_over_215_5').outcome).toBe('won');
+    expect(stored.results.find(r => r.market === 'basketball_home_points_over_105_5').outcome).toBe('won');
+    expect(stored.results.find(r => r.market === 'basketball_away_points_over_105_5').outcome).toBe('won');
   });
 });
 

@@ -435,7 +435,6 @@ function backtestBasketballMarkets(matches, options = {}) {
         actualTotal: actualTotalPoints,
         homeWinProbability: prediction.homeWinProbability,
         actualHomeWin,
-        market: prediction.market,
       });
     }
   });

@@ -6,7 +6,6 @@
  *   - Offensive / defensive / net ratings per 100 possessions
  *   - Expected points (home, away, total) with opponent-strength & home-court adjustment
  *   - Win probability via the score-difference distribution (NOT a simple expected-score comparison)
- *   - Total-point over/under probabilities via the total-score distribution
  *
  * Principles:
  *   - Missing box-score stats stay null (never fabricated or zeroed).
@@ -34,8 +33,6 @@ function leagueMeanFor(league) {
 }
 
 const LEAGUE_MEAN = leagueMeanFor(DEFAULT_LEAGUE_KEY);
-
-const DEFAULT_BASKETBALL_TOTAL_LINES = [195.5, 200.5, 205.5, 210.5, 215.5, 220.5];
 
 /**
  * Standard normal CDF (Abramowitz & Stegun approximation).
@@ -233,7 +230,6 @@ function analyzeBasketballHistory(matches, { isHomeContext = null, league = DEFA
  * @param {Object} params.homeAnalysis
  * @param {Object} params.awayAnalysis
  * @param {Object} [params.h2h]
- * @param {Array<number>} [params.totalLines]
  * @param {string} [params.league] - league key/alias; drives home-court + score variance
  * @returns {Object|null}
  */
@@ -241,7 +237,6 @@ function calculateBasketballPrediction({
   homeAnalysis,
   awayAnalysis,
   h2h = null,
-  totalLines = DEFAULT_BASKETBALL_TOTAL_LINES,
   league = DEFAULT_LEAGUE_KEY,
 }) {
   const mean = leagueMeanFor(league);
@@ -304,33 +299,6 @@ function calculateBasketballPrediction({
   const homeWinProb = 1 - normalCdf(0.5, diffMean, diffStd);
   const awayWinProb = 1 - homeWinProb;
 
-  // --- Total-point over/under probabilities ---
-  // total = Home + Away ~ Normal(expTotal, homeVar + awayVar)
-  const totalStd = Math.sqrt(homeVariance + awayVariance);
-  const totalLineProbs = {};
-  totalLines.forEach(line => {
-    const pOver = 1 - normalCdf(line + 0.5, expTotal, totalStd);
-    const pUnder = 1 - pOver;
-    totalLineProbs[line] = {
-      line,
-      over: Number(pOver.toFixed(6)),
-      under: Number(pUnder.toFixed(6)),
-    };
-  });
-
-  // Select strongest total recommendation
-  let bestTotal = null;
-  Object.values(totalLineProbs).forEach(stat => {
-    const maxP = Math.max(stat.over, stat.under);
-    if (!bestTotal || maxP > Math.max(bestTotal.over, bestTotal.under)) {
-      bestTotal = { ...stat, maxP, side: stat.over >= stat.under ? 'over' : 'under' };
-    }
-  });
-
-  // Match winner selection
-  const winnerSide = homeWinProb >= awayWinProb ? 'home' : 'away';
-  const winnerProb = Math.max(homeWinProb, awayWinProb);
-
   factors.push({
     label: `Expected: ${expHomePoints.toFixed(0)} - ${expAwayPoints.toFixed(0)} (total ${expTotal.toFixed(0)})`,
     side: 'neutral',
@@ -343,30 +311,17 @@ function calculateBasketballPrediction({
   });
 
   return {
-    market: winnerSide === 'home' ? 'basketball_match_winner_home' : 'basketball_match_winner_away',
-    label: `${winnerSide === 'home' ? 'Home' : 'Away'} Win`,
-    value: `${winnerSide === 'home' ? 'Home' : 'Away'} Team to Win`,
-    category: 'basketball',
-    confidence: Math.round(winnerProb * 100),
-    probability: Number(winnerProb.toFixed(4)),
     expectedHomePoints: Number(expHomePoints.toFixed(2)),
     expectedAwayPoints: Number(expAwayPoints.toFixed(2)),
     expectedTotalPoints: Number(expTotal.toFixed(2)),
     homeWinProbability: Number(homeWinProb.toFixed(4)),
     awayWinProbability: Number(awayWinProb.toFixed(4)),
-    totalLineProbabilities: totalLineProbs,
-    bestTotalLine: bestTotal ? {
-      line: bestTotal.line,
-      side: bestTotal.side,
-      probability: Number(bestTotal.maxP.toFixed(4)),
-    } : null,
     pace: Number(expPossessions.toFixed(2)),
     homeOrtg: Number(homeOrtg.toFixed(2)),
     awayOrtg: Number(awayOrtg.toFixed(2)),
     homeDrtg: Number(homeDrtg.toFixed(2)),
     awayDrtg: Number(awayDrtg.toFixed(2)),
     factors,
-    color: winnerProb >= 0.7 ? '#40c057' : winnerProb >= 0.6 ? '#ffa94d' : '#4dabf7',
     dataQuality: {
       homeSampleSize: homeAnalysis?.sampleSize || 0,
       awaySampleSize: awayAnalysis?.sampleSize || 0,
@@ -377,7 +332,7 @@ function calculateBasketballPrediction({
 }
 
 /**
- * Settle a basketball market.
+ * Settle a basketball team-points market.
  *
  * @param {string} market
  * @param {Object} scores - { homePoints, awayPoints, line }
@@ -389,17 +344,8 @@ function settleBasketball(market, scores) {
   const away = scores.awayPoints;
   if (home == null || away == null) return null;
   const line = scores.line;
-
-  if (market === 'basketball_match_winner_home' || market === 'basketball_match_winner') {
-    return home > away ? 'won' : 'lost';
-  }
-  if (market === 'basketball_match_winner_away') {
-    return away > home ? 'won' : 'lost';
-  }
   if (line == null) return null;
-  const total = Number(home) + Number(away);
-  if (market.startsWith('basketball_total_points_over')) return total > line ? 'won' : 'lost';
-  if (market.startsWith('basketball_total_points_under')) return total < line ? 'won' : 'lost';
+
   if (market.startsWith('basketball_home_points_over')) return Number(home) > line ? 'won' : 'lost';
   if (market.startsWith('basketball_home_points_under')) return Number(home) < line ? 'won' : 'lost';
   if (market.startsWith('basketball_away_points_over')) return Number(away) > line ? 'won' : 'lost';
@@ -409,7 +355,6 @@ function settleBasketball(market, scores) {
 
 module.exports = {
   LEAGUE_MEAN,
-  DEFAULT_BASKETBALL_TOTAL_LINES,
   normalCdf,
   estimatePossessions,
   calcRatings,

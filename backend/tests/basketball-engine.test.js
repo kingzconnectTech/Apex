@@ -295,43 +295,6 @@ describe('Basketball Engine', () => {
       expect(prediction.expectedAwayPoints).toBeGreaterThan(90);
       expect(prediction.expectedTotalPoints).toBeGreaterThan(190);
       expect(prediction.homeWinProbability).toBeGreaterThan(0.5);
-      expect(prediction.market).toMatch(/basketball_match_winner/);
-    });
-
-    test('should calculate total-point over/under probabilities', () => {
-      const homeMatches = [
-        { pf: 110, pa: 105, isHome: true, date: '2026-01-01T12:00:00Z', boxScore: { fga: 85, orb: 10, tov: 12, fta: 20 } },
-        { pf: 112, pa: 108, isHome: true, date: '2026-01-05T15:00:00Z', boxScore: { fga: 86, orb: 9, tov: 11, fta: 19 } },
-        { pf: 108, pa: 102, isHome: true, date: '2026-01-10T18:00:00Z', boxScore: { fga: 84, orb: 11, tov: 10, fta: 18 } },
-      ];
-
-      const awayMatches = [
-        { pf: 105, pa: 110, isHome: false, date: '2026-01-01T12:00:00Z', boxScore: { fga: 82, orb: 8, tov: 10, fta: 18 } },
-        { pf: 108, pa: 112, isHome: false, date: '2026-01-05T15:00:00Z', boxScore: { fga: 83, orb: 9, tov: 11, fta: 19 } },
-        { pf: 102, pa: 108, isHome: false, date: '2026-01-10T18:00:00Z', boxScore: { fga: 81, orb: 10, tov: 12, fta: 17 } },
-      ];
-
-      const homeAnalysis = analyzeBasketballHistory(homeMatches, { isHomeContext: true });
-      const awayAnalysis = analyzeBasketballHistory(awayMatches, { isHomeContext: false });
-
-      const prediction = calculateBasketballPrediction({
-        homeAnalysis,
-        awayAnalysis,
-        totalLines: [205.5, 210.5, 215.5],
-      });
-
-      expect(prediction).not.toBeNull();
-      expect(prediction.totalLineProbabilities).toBeDefined();
-      expect(prediction.totalLineProbabilities[205.5]).toBeDefined();
-      expect(prediction.totalLineProbabilities[210.5]).toBeDefined();
-      expect(prediction.totalLineProbabilities[215.5]).toBeDefined();
-
-      // Each line should have over and under probabilities
-      Object.values(prediction.totalLineProbabilities).forEach(lineProb => {
-        expect(lineProb.over).toBeGreaterThan(0);
-        expect(lineProb.under).toBeGreaterThan(0);
-        expect(lineProb.over + lineProb.under).toBeCloseTo(1, 4);
-      });
     });
 
     test('should return null when neither team has valid data', () => {
@@ -345,25 +308,6 @@ describe('Basketball Engine', () => {
   });
 
   describe('Basketball Settlement', () => {
-    test('should settle match winner correctly', () => {
-      const scores = { homePoints: 110, awayPoints: 105 };
-
-      expect(settleBasketball('basketball_match_winner_home', scores)).toBe('won');
-      expect(settleBasketball('basketball_match_winner_away', scores)).toBe('lost');
-      expect(settleBasketball('basketball_match_winner', scores)).toBe('won');
-    });
-
-    test('should settle total points over/under correctly', () => {
-      const scores = { homePoints: 110, awayPoints: 105, line: 210.5 };
-
-      expect(settleBasketball('basketball_total_points_over_210_5', scores)).toBe('won'); // 215 > 210.5
-      expect(settleBasketball('basketball_total_points_under_210_5', scores)).toBe('lost');
-
-      const scores2 = { homePoints: 100, awayPoints: 105, line: 210.5 };
-      expect(settleBasketball('basketball_total_points_over_210_5', scores2)).toBe('lost'); // 205 < 210.5
-      expect(settleBasketball('basketball_total_points_under_210_5', scores2)).toBe('won');
-    });
-
     test('should settle team points over/under correctly', () => {
       const scores = { homePoints: 110, awayPoints: 105, line: 105.5 };
 
@@ -375,13 +319,13 @@ describe('Basketball Engine', () => {
     });
 
     test('should return null when scores are missing', () => {
-      expect(settleBasketball('basketball_match_winner_home', null)).toBeNull();
-      expect(settleBasketball('basketball_match_winner_home', {})).toBeNull();
-      expect(settleBasketball('basketball_match_winner_home', { homePoints: 110 })).toBeNull();
+      expect(settleBasketball('basketball_home_points_over_105_5', null)).toBeNull();
+      expect(settleBasketball('basketball_home_points_over_105_5', {})).toBeNull();
+      expect(settleBasketball('basketball_home_points_over_105_5', { homePoints: 110 })).toBeNull();
     });
 
     test('should return null for unknown markets', () => {
-      const scores = { homePoints: 110, awayPoints: 105 };
+      const scores = { homePoints: 110, awayPoints: 105, line: 105.5 };
       expect(settleBasketball('unknown_market', scores)).toBeNull();
     });
   });
