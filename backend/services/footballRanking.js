@@ -33,19 +33,6 @@ const FOOTBALL_MARKET_PRIORITY = [
 ];
 
 /**
- * Home/Away Team Under 2.5 Goals — retired market. Never recommend or rank it.
- */
-function isRetiredTeamUnder25Market(pred) {
-  const market = String(pred?.market || pred?.type || '').toLowerCase().replace(/ /g, '_');
-  const label = String(pred?.label || pred?.value || '').toLowerCase();
-  if (market === 'home_team_under_2_5' || market === 'away_team_under_2_5') return true;
-  if (market === 'home_team_under_2_5_goals' || market === 'away_team_under_2_5_goals') return true;
-  if (/^(home|away)_team_under_2_5/.test(market)) return true;
-  if (label.includes('home team under 2.5') || label.includes('away team under 2.5')) return true;
-  return false;
-}
-
-/**
  * Selects the top-2 highest-confidence valid predictions from the four
  * approved football markets.
  *
@@ -59,9 +46,8 @@ function isRetiredTeamUnder25Market(pred) {
 function rankFootballPredictions(predictions) {
   if (!Array.isArray(predictions)) return [];
 
-  // Step 1: Validate (drop retired Team Under 2.5 markets)
+  // Step 1: Validate
   const validPredictions = predictions.filter((pred) => {
-    if (isRetiredTeamUnder25Market(pred)) return false;
     const conf = pred.confidence;
     return (
       typeof conf === 'number' &&
@@ -100,4 +86,4 @@ function rankFootballPredictions(predictions) {
   return deduped.slice(0, 2);
 }
 
-module.exports = { rankFootballPredictions, FOOTBALL_MARKET_PRIORITY, isRetiredTeamUnder25Market };
+module.exports = { rankFootballPredictions, FOOTBALL_MARKET_PRIORITY };
