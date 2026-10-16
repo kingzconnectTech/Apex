@@ -73,20 +73,49 @@ class EspnProvider {
     return task;
   }
 
-  async getScoreboard(sport, league, { traceId = null } = {}) {
+  async getScoreboard(sport, league, { dates = null, page = null, limit = null, traceId = null } = {}) {
     const ttl = TTL.FIXTURES_SCHEDULED;
-    const data = await this._request(`${sport}/${league}/scoreboard`, { ttl, traceId });
+    const queryParts = [];
+    if (dates) queryParts.push(`dates=${encodeURIComponent(dates)}`);
+    if (page != null) queryParts.push(`page=${encodeURIComponent(page)}`);
+    if (limit != null) queryParts.push(`limit=${encodeURIComponent(limit)}`);
+    const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    const data = await this._request(`${sport}/${league}/scoreboard${qs}`, { ttl, traceId });
     return data;
   }
 
-  async getFixtures(sport, league, { traceId = null, leagueDisplayName = '' } = {}) {
-    const data = await this.getScoreboard(sport, league, { traceId });
+  async getFixtures(sport, league, { dates = null, page = null, limit = null, traceId = null, leagueDisplayName = '' } = {}) {
+    const data = await this.getScoreboard(sport, league, { dates, page, limit, traceId });
     const events = data?.events || [];
     const out = events
       .map(e => normalizeFixtureESPN(e, sport, league, leagueDisplayName || league))
       .filter(Boolean);
     this._log('info', `fixtures found: ${out.length}`, { sport, league, traceId, count: out.length });
     return out;
+  }
+
+  async getFixturesPaginated(sport, league, { dates = null, limit = 50, maxPages = 5, traceId = null, leagueDisplayName = '' } = {}) {
+    let page = 1;
+    const all = [];
+    const seenIds = new Set();
+    while (page <= maxPages) {
+      const data = await this.getScoreboard(sport, league, { dates, page, limit, traceId });
+      const events = data?.events || [];
+      if (events.length === 0) break;
+      let newCount = 0;
+      for (const ev of events) {
+        if (!seenIds.has(ev.id)) {
+          seenIds.add(ev.id);
+          const normalized = normalizeFixtureESPN(ev, sport, league, leagueDisplayName || league);
+          if (normalized) all.push(normalized);
+          newCount++;
+        }
+      }
+      const pageCount = data?.pageCount || data?.pagination?.pages;
+      if (events.length < limit || newCount === 0 || (pageCount && page >= pageCount)) break;
+      page++;
+    }
+    return all;
   }
 
   async getTeam(sport, league, teamId, { traceId = null } = {}) {

@@ -209,9 +209,10 @@ class PitchApiProvider {
     return normalizeLeaguePitchAPI(raw);
   }
 
-  async getLeagueMatches(id, { season = null, status = 'all', traceId = null } = {}) {
+  async getLeagueMatches(id, { season = null, status = 'all', page = null, traceId = null } = {}) {
     const cleanId = String(id).replace(/^pa-/, '');
     const params = { status };
+    if (page != null) params.page = page;
     // PitchAPI requires slashed season format (e.g. "2026/2027") for European
     // competitions; a bare year ("2026") returns 400. Normalize and fall back
     // to the configured default season when none is supplied.
@@ -238,12 +239,35 @@ class PitchApiProvider {
     return normalizeFixturePitchAPI(raw);
   }
 
-  async getMatchesByDate(date, { status = 'all', traceId = null } = {}) {
+  async getMatchesByDate(date, { status = 'all', page = null, traceId = null } = {}) {
     const params = { status };
+    if (page != null) params.page = page;
     const raw = await this._request(`/v1/date/${date}`, params, { ttl: TTL.FIXTURES_SCHEDULED, traceId });
     if (!raw) return [];
     const list = Array.isArray(raw?.matches) ? raw.matches : (Array.isArray(raw) ? raw : []);
     return list.map(m => normalizeFixturePitchAPI(m)).filter(Boolean);
+  }
+
+  async getMatchesByDatePaginated(date, { status = 'all', maxPages = 5, traceId = null } = {}) {
+    let page = 1;
+    const all = [];
+    const seenIds = new Set();
+    while (page <= maxPages) {
+      const matches = await this.getMatchesByDate(date, { status, page, traceId });
+      if (matches.length === 0) break;
+      let newCount = 0;
+      for (const m of matches) {
+        const id = m.fixture?.id || m.id;
+        if (!seenIds.has(id)) {
+          seenIds.add(id);
+          all.push(m);
+          newCount++;
+        }
+      }
+      if (matches.length < 20 || newCount === 0) break;
+      page++;
+    }
+    return all;
   }
 
   async getMatchStats(id, { traceId = null } = {}) {

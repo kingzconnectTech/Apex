@@ -54,6 +54,7 @@ const {
   evaluateFixture,
   filterAndRankFixtures,
 } = require('./services/predictabilityEngine');
+const { LeoAssistanceService } = require('./services/leoAssistanceService');
 const { createBasketballRouter } = require('./routes/basketball');
 const basketballPersistence = require('./services/basketball/persistence');
 const { startBasketballScheduler } = require('./services/basketball/scheduler');
@@ -92,6 +93,9 @@ const compression = require('compression');
 // Initialize Sports Data Service (ESPN primary + PitchAPI fallback)
 const sportsData = new SportsDataService({ logger });
 logger.info('SportsDataService initialized', { providers: sportsData.getProvidersStatus() });
+
+// Initialize Leo Assistance Service
+const leoAssistanceService = new LeoAssistanceService({ logger, sportsData });
 
 // Initialize Express app
 const app = express();
@@ -894,7 +898,7 @@ app.get('/api/predictions/recommended', async (req, res) => {
     const targetDateStr = date ? new Date(date).toDateString() : null;
     const evaluatedFixtures = [];
 
-    for (const lConfig of targetLeagues.slice(0, 15)) {
+    for (const lConfig of targetLeagues) {
       try {
         const scoreboardData = await fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/scoreboard`);
         const events = scoreboardData?.events || [];
@@ -968,6 +972,36 @@ app.get('/api/predictions/recommended', async (req, res) => {
 });
 
 /**
+ * POST /api/leo/recommendations
+ *
+ * Full multi-stage Leo Assistance scan:
+ * Evaluates the entire eligible fixture set across providers, dates, and batches
+ * without premature truncation or skipped batches, ranks qualified predictions,
+ * and returns top recommendations with full completeness diagnostics.
+ */
+app.post('/api/leo/recommendations', async (req, res) => {
+  const { traceId } = req;
+  const { sports = ['soccer'], startDate, endDate, date, leagues, matchLimit = 5, minConfidence = 70 } = req.body || {};
+
+  try {
+    const result = await leoAssistanceService.scanAndRecommend({
+      sports,
+      startDate,
+      endDate,
+      date,
+      leagues,
+      matchLimit: Number(matchLimit) || 5,
+      minConfidence: Number(minConfidence) || 70,
+      traceId,
+    });
+    return res.json({ success: true, ...result, traceId });
+  } catch (error) {
+    logger.error('Error running Leo Assistance recommendations', { traceId, error: error.message });
+    return res.status(500).json({ error: error.message, traceId });
+  }
+});
+
+/**
  * GET /api/fixtures/all
  *
  * Full browsable fixture catalog:
@@ -987,7 +1021,7 @@ app.get('/api/fixtures/all', async (req, res) => {
     const allEvents = [];
     const targetDateStr = date ? new Date(date).toDateString() : null;
 
-    for (const lConfig of targetLeagues.slice(0, 20)) {
+    for (const lConfig of targetLeagues) {
       try {
         const scoreboardData = await fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/scoreboard`);
         const events = scoreboardData?.events || [];
@@ -2895,4 +2929,9 @@ module.exports = {
   evaluateMarketCandidate,
   evaluateFixture,
   filterAndRankFixtures,
+  leoAssistanceService,
+  LeoAssistanceService,
+  processScheduleForTeam,
+  buildH2H,
+  leaguesToRefresh,
 };
