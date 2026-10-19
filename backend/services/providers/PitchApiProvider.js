@@ -14,6 +14,7 @@ const {
   normalizeFixturePitchAPI,
   normalizeTeamStatsPitchAPI,
   normalizeH2HPitchAPI,
+  isFrenchCompetition,
 } = require('./normalizer');
 
 class PitchApiProvider {
@@ -203,6 +204,7 @@ class PitchApiProvider {
   }
 
   async getLeagueById(id, { traceId = null } = {}) {
+    if (isFrenchCompetition({ sport: 'football', leagueId: id })) return null;
     const cleanId = String(id).replace(/^pa-/, '');
     const raw = await this._request(`/v1/leagues/${cleanId}`, {}, { ttl: TTL.LEAGUES, traceId });
     if (!raw) return null;
@@ -210,6 +212,7 @@ class PitchApiProvider {
   }
 
   async getLeagueMatches(id, { season = null, status = 'all', page = null, traceId = null } = {}) {
+    if (isFrenchCompetition({ sport: 'football', leagueId: id })) return [];
     const cleanId = String(id).replace(/^pa-/, '');
     const params = { status };
     if (page != null) params.page = page;

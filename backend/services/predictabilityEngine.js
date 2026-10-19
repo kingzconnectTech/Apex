@@ -55,8 +55,8 @@ const DEFAULT_FILTER_CONFIG = {
   /** Minimum data quality score [0.0 - 1.0] */
   minDataQualityScore: 0.65,
 
-  /** Minimum calibrated probability threshold for recommendation eligibility [0.0 - 1.0] (75%) */
-  minCalibratedProbability: 0.75,
+  /** Minimum calibrated probability threshold for recommendation eligibility [0.0 - 1.0] (90%) */
+  minCalibratedProbability: 0.90,
 
   /** Minimum agreement between empirical Bayesian rate and Poisson expectancy model [0.0 - 1.0] */
   minModelAgreementScore: 0.65,
@@ -259,22 +259,34 @@ function evaluateMarketCandidate({
   config = DEFAULT_FILTER_CONFIG,
 }) {
   const cfg = { ...DEFAULT_FILTER_CONFIG, ...(config || {}) };
+  // Normalize threshold to 0.0 - 1.0 scale (handling 90 vs 0.90)
+  let minProbThreshold = cfg.minCalibratedProbability != null ? Number(cfg.minCalibratedProbability) : 0.90;
+  if (isNaN(minProbThreshold) || minProbThreshold <= 0) minProbThreshold = 0.90;
+  if (minProbThreshold > 1.0) minProbThreshold = minProbThreshold / 100;
+  cfg.minCalibratedProbability = minProbThreshold;
+
   const rejectionReasons = [];
 
   const hCount = cleanHomeMatches.length;
   const aCount = cleanAwayMatches.length;
   const totalSample = hCount + aCount;
 
-  // 1. Prediction existence
-  if (!predictionResult || typeof predictionResult.probability !== 'number') {
+  // 1. Prediction existence & numeric finite check
+  if (
+    !predictionResult ||
+    typeof predictionResult.probability !== 'number' ||
+    isNaN(predictionResult.probability) ||
+    !isFinite(predictionResult.probability)
+  ) {
     return {
       market,
       selection: 'Under',
       is_eligible: false,
-      rejection_reasons: ['No statistically valid prediction generated for this market'],
+      rejection_reasons: ['Prediction confidence is missing, non-finite, or invalid'],
       predictability_score: 0,
-      estimated_probability: 0,
-      calibrated_probability: 0,
+      estimated_probability: null,
+      calibrated_probability: null,
+      confidence: null,
       data_quality_score: 0,
       model_agreement_score: 0,
       historical_sample_size: totalSample,
@@ -363,10 +375,13 @@ function evaluateMarketCandidate({
     );
   }
 
-  // Check 4: Calibrated probability threshold (75%)
-  if (calibratedProb < cfg.minCalibratedProbability) {
+  // Check 4: Validated calibrated probability threshold (minimum 90%)
+  // Exactly 90.0% qualifies; 89.99% does NOT qualify. Never round up to meet threshold.
+  const unroundedPercentage = Number((calibratedProb * 100).toFixed(4));
+  const minRequiredPercentage = Number((cfg.minCalibratedProbability * 100).toFixed(4));
+  if (calibratedProb < cfg.minCalibratedProbability || unroundedPercentage < minRequiredPercentage) {
     rejectionReasons.push(
-      `Calibrated probability ${Math.round(calibratedProb * 100)}% is below required ${Math.round(cfg.minCalibratedProbability * 100)}% threshold`
+      `Calibrated confidence ${(calibratedProb * 100).toFixed(2)}% is below required ${minRequiredPercentage.toFixed(1)}% threshold`
     );
   }
 
@@ -417,6 +432,11 @@ function evaluateMarketCandidate({
     predictionResult.value || market
   );
 
+  // Confidence percentage: do NOT round up below 90% (89.99% must remain 89.99% or 89, not 90)
+  const confidenceValue = calibratedProb >= 0.90
+    ? Math.round(calibratedProb * 100)
+    : Number((calibratedProb * 100).toFixed(2));
+
   return {
     market,
     label: predictionResult.label || market,
@@ -427,7 +447,7 @@ function evaluateMarketCandidate({
     predictability_score: predictabilityScore,
     estimated_probability: estimatedProb,
     calibrated_probability: calibratedProb,
-    confidence: Math.round(calibratedProb * 100),
+    confidence: confidenceValue,
     data_quality_score: dataQualityScore,
     model_agreement_score: modelAgreementScore,
     historical_sample_size: totalSample,
@@ -569,15 +589,13 @@ function evaluateFixture({
   const isRecommended = eligibleCandidates.length > 0;
   const topCandidate = isRecommended ? eligibleCandidates[0] : null;
 
-  // Confidence label based on validated probability
+  // Confidence label based on validated probability (90%+ minimum)
   let confidenceLabel = 'Unvalidated';
-  if (topCandidate) {
-    if (topCandidate.calibrated_probability >= 0.85) {
-      confidenceLabel = 'Very High Confidence (Validated)';
-    } else if (topCandidate.calibrated_probability >= 0.80) {
-      confidenceLabel = 'High Confidence (Validated)';
-    } else if (topCandidate.calibrated_probability >= 0.75) {
-      confidenceLabel = 'Qualified High Confidence';
+  if (topCandidate && topCandidate.is_eligible) {
+    if (topCandidate.calibrated_probability >= 0.95) {
+      confidenceLabel = 'Elite Confidence (95%+ Validated)';
+    } else if (topCandidate.calibrated_probability >= 0.90) {
+      confidenceLabel = 'High Confidence (90%+ Validated)';
     }
   }
 
@@ -683,6 +701,24 @@ function filterAndRankFixtures(evaluatedFixturesList = []) {
   const totalRejected = totalAnalyzed - totalRecommended;
   const acceptanceRate = totalAnalyzed > 0 ? Number(((totalRecommended / totalAnalyzed) * 100).toFixed(1)) : 0;
 
+  // Calculate detailed exclusion counts
+  let predictionsRejectedBelow90 = 0;
+  let predictionsRejectedInvalid = 0;
+  let predictionsQualifying90Plus = 0;
+
+  allList.forEach(item => {
+    (item.eligibleCandidates || []).forEach(cand => {
+      if (cand.calibrated_probability >= 0.90) predictionsQualifying90Plus++;
+    });
+    (item.rejectedCandidates || []).forEach(cand => {
+      if (cand.calibrated_probability == null || cand.estimated_probability == null) {
+        predictionsRejectedInvalid++;
+      } else if (cand.calibrated_probability < 0.90) {
+        predictionsRejectedBelow90++;
+      }
+    });
+  });
+
   return {
     recommended,
     allFixtures,
@@ -691,6 +727,9 @@ function filterAndRankFixtures(evaluatedFixturesList = []) {
       totalAnalyzed,
       totalRejected,
       totalRecommended,
+      predictionsRejectedBelow90,
+      predictionsRejectedInvalid,
+      predictionsQualifying90Plus,
       acceptanceRate,
       rejectionReasonBreakdown: rejectionCounts,
     },

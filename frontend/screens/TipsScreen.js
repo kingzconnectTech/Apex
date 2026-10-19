@@ -93,8 +93,14 @@ export default function TipsScreen({ navigation }) {
       try {
         const remote = await fetchSportsDataLeagues();
         if (isMounted && Array.isArray(remote) && remote.length > 0) {
+          // Exclude any French leagues from dynamic sync
+          const nonFrenchRemote = remote.filter(r => {
+            const c = (r.league?.country || '').toUpperCase();
+            const n = (r.league?.name || '').toLowerCase();
+            return c !== 'FRA' && c !== 'FR' && c !== 'FRANCE' && n !== 'ligue 1' && n !== 'ligue 2';
+          });
           // Merge with local catalog for logos & regions
-          const remoteList = remote.map(r => {
+          const remoteList = nonFrenchRemote.map(r => {
             const local = PITCHAPI_77_LEAGUES.find(l => l.sourceId === r.league?.sourceId || l.name === r.league?.name);
             return {
               id: r.league?.id || local?.id,
@@ -122,20 +128,21 @@ export default function TipsScreen({ navigation }) {
       const y = date.getFullYear();
       const m = String(date.getMonth() + 1).padStart(2, '0');
       const d = String(date.getDate()).padStart(2, '0');
-      const dateStr = `${y}${m}${d}`;
+      const dateStr = `${y}-${m}-${d}`;
       const sport = selectedCategory === 'Football' ? 'soccer' : 'basketball';
       const res = await fetchRecommendedPredictions({
         sport,
         date: dateStr,
         league: selectedLeague !== 'All' && selectedLeague !== 'Live' ? selectedLeague : null,
-        minProb: 0.75,
+        minProb: 0.90,
       });
       if (res && res.success) {
-        const recs = Array.isArray(res.recommended) ? res.recommended.map(toSnake) : [];
+        const rawRecs = res.recommended || res.recommendations || [];
+        const recs = Array.isArray(rawRecs) ? rawRecs.map(toSnake) : [];
         setRecommendedData({
           recommendations: recs,
           totalAnalyzed: res.stats?.totalAnalyzed || res.totalAnalyzed || 0,
-          totalRecommended: res.stats?.totalRecommended || res.totalRecommended || 0,
+          totalRecommended: res.stats?.totalRecommended || res.totalRecommended || recs.length,
           totalRejected: res.stats?.totalRejected || res.totalRejected || 0,
           acceptanceRate: res.stats?.acceptanceRate || res.acceptanceRate || 0,
         });
@@ -561,8 +568,8 @@ export default function TipsScreen({ navigation }) {
         <Text style={styles.strictEmptyTitle}>Strict Quality Filter Active</Text>
         <Text style={styles.strictEmptyDesc}>
           {recommendedData.totalAnalyzed > 0
-            ? `Analyzed ${recommendedData.totalAnalyzed} upcoming fixtures. None passed our strict 75%+ calibrated probability and data quality requirements today.`
-            : 'No upcoming fixtures currently meet our strict 75%+ calibrated probability, data quality, and sample size criteria.'}
+            ? `Analyzed ${recommendedData.totalAnalyzed} upcoming fixtures. None passed our strict 90%+ validated confidence and data quality requirements today.`
+            : 'No upcoming fixtures currently meet our strict 90%+ validated confidence, data quality, and sample size criteria.'}
         </Text>
         <Text style={styles.strictEmptySubtext}>
           Apex protects prediction reliability by abstaining when historical evidence is volatile or insufficient, rather than predicting every game.
@@ -761,7 +768,7 @@ export default function TipsScreen({ navigation }) {
         loadingRecommended ? (
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color="#10B981" />
-            <Text style={styles.loadingText}>Scanning {recommendedData.totalAnalyzed || 'all'} fixtures for 75%+ probability markets...</Text>
+            <Text style={styles.loadingText}>Scanning {recommendedData.totalAnalyzed || 'all'} fixtures for 90%+ probability markets...</Text>
           </View>
         ) : (
           <FlatList

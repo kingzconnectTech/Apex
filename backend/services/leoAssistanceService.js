@@ -18,7 +18,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { buildDedupKey, fixturesMatch, _normalizeTeamName } = require('./providers/normalizer');
+const { buildDedupKey, fixturesMatch, _normalizeTeamName, isFrenchCompetition } = require('./providers/normalizer');
 const { DEFAULT_FILTER_CONFIG, evaluateFixture } = require('./predictabilityEngine');
 const { getPredictions } = require('./basketball/ingestion');
 
@@ -721,7 +721,6 @@ class LeoAssistanceService {
       { sport: 'soccer', league: 'esp.1', name: 'La Liga' },
       { sport: 'soccer', league: 'ita.1', name: 'Serie A' },
       { sport: 'soccer', league: 'ger.1', name: 'Bundesliga' },
-      { sport: 'soccer', league: 'fra.1', name: 'Ligue 1' },
       { sport: 'soccer', league: 'uefa.champions', name: 'Champions League' },
       { sport: 'soccer', league: 'uefa.europa', name: 'Europa League' },
       { sport: 'soccer', league: 'eng.2', name: 'Championship' },
@@ -729,14 +728,13 @@ class LeoAssistanceService {
       { sport: 'soccer', league: 'esp.2', name: 'La Liga 2' },
       { sport: 'soccer', league: 'ita.2', name: 'Serie B' },
       { sport: 'soccer', league: 'ger.2', name: '2. Bundesliga' },
-      { sport: 'soccer', league: 'fra.2', name: 'Ligue 2' },
       { sport: 'soccer', league: 'ned.1', name: 'Eredivisie' },
       { sport: 'soccer', league: 'por.1', name: 'Liga Portugal' },
       { sport: 'soccer', league: 'tur.1', name: 'Super Lig' },
       { sport: 'soccer', league: 'mex.1', name: 'Liga MX' },
       { sport: 'soccer', league: 'bra.1', name: 'Brasileirão' },
       { sport: 'soccer', league: 'usa.1', name: 'MLS' },
-    ];
+    ].filter(l => !isFrenchCompetition({ sport: l.sport, leagueSlug: l.league, name: l.name }));
   }
 }
 

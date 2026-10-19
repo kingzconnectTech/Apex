@@ -135,16 +135,16 @@ export const fetchPredictionStats = async (userId) => {
 };
 
 /**
- * Fetch high-confidence recommended predictions that pass the 75%+ calibrated probability filter.
+ * Fetch high-confidence recommended predictions that pass the 90%+ calibrated probability filter.
  *
  * @param {Object} options
  * @param {string} [options.sport='soccer']
  * @param {string} [options.league]
  * @param {string} [options.date]
- * @param {number} [options.minProb=0.75]
+ * @param {number} [options.minProb=0.90]
  * @returns {Promise<Object>} { success, totalAnalyzed, totalRecommended, totalRejected, acceptanceRate, recommendations }
  */
-export const fetchRecommendedPredictions = async ({ sport = 'soccer', league = null, date = null, minProb = 0.75 } = {}) => {
+export const fetchRecommendedPredictions = async ({ sport = 'soccer', league = null, date = null, minProb = 0.90 } = {}) => {
   try {
     const params = new URLSearchParams();
     if (sport) params.append('sport', sport);

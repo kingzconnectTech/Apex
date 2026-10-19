@@ -34,22 +34,65 @@ function _statusFromESPNState(state) {
   }
 }
 
+/**
+ * Identify any French competition using reliable metadata:
+ * country code, country name, league slug, competition ID, or competition name.
+ * Strictly avoids false positives on non-French leagues with similar substrings (e.g. Frankfurt, San Francisco).
+ */
+function isFrenchCompetition({
+  sport = '',
+  leagueSlug = '',
+  leagueId = '',
+  country = '',
+  name = '',
+  displayName = '',
+} = {}) {
+  const c = String(country || '').toLowerCase().trim();
+  if (c === 'fra' || c === 'fr' || c === 'france' || c === 'french') return true;
+
+  const s = String(leagueSlug || leagueId || '').toLowerCase().trim();
+  if (
+    s.startsWith('fra.') ||
+    s === 'betclic' ||
+    s.startsWith('lnb') ||
+    s === 'pa-l_3fjful' ||
+    s === 'l_3fjful' ||
+    s === 'pa-l_0275vp' ||
+    s === 'l_0275vp'
+  ) {
+    return true;
+  }
+
+  const n = String(name || displayName || '').toLowerCase().trim();
+  if (/\b(ligue\s*[12]|coupe de france|coupe de la ligue|betclic [eé]lite|trophee des champions)\b/i.test(n)) {
+    return true;
+  }
+
+  return false;
+}
+
 function normalizeLeagueESPN(raw, sport = 'soccer', espnSlug = '') {
   if (!raw) return null;
   const league = raw.league || raw;
+  const slug = espnSlug || league.slug || league.id || String(league.abbreviation || '');
+  const leagueName = league.name || league.shortName || espnSlug;
+  const country = league.country || '';
+  if (isFrenchCompetition({ sport, leagueSlug: slug, country, name: leagueName })) {
+    return null;
+  }
   return {
     sport,
     league: {
-      id: espnSlug || league.slug || league.id || String(league.abbreviation || ''),
+      id: slug,
       sourceId: String(league.id || espnSlug || ''),
-      name: league.name || league.shortName || espnSlug,
+      name: leagueName,
       abbreviation: league.abbreviation || '',
       country: '',
       season: null,
       logo: league.logos?.[0]?.href || league.logo || null,
     },
     source: PROVIDERS.ESPN,
-    providerIds: { [PROVIDERS.ESPN]: espnSlug || league.slug || String(league.id || '') },
+    providerIds: { [PROVIDERS.ESPN]: slug },
   };
 }
 
@@ -75,6 +118,10 @@ function normalizeTeamESPN(raw, sport = 'soccer', leagueSlug = '') {
 
 function normalizeFixtureESPN(event, sport = 'soccer', leagueSlug = '', leagueDisplayName = '') {
   if (!event) return null;
+  const leagueName = leagueDisplayName || leagueSlug;
+  if (isFrenchCompetition({ sport, leagueSlug, name: leagueName })) {
+    return null;
+  }
   const comp = event.competitions?.[0] || {};
   const competitors = comp.competitors || [];
   let home = competitors.find(c => c.homeAway === 'home');
@@ -200,6 +247,10 @@ function _statusFromPitchAPI(status) {
 function normalizeLeaguePitchAPI(raw) {
   if (!raw) return null;
   const lg = raw.league || raw;
+  const country = lg.country_code || lg.country || '';
+  if (isFrenchCompetition({ sport: 'football', leagueId: lg.id, country, name: lg.name })) {
+    return null;
+  }
   return {
     sport: 'football',
     league: {
@@ -207,7 +258,7 @@ function normalizeLeaguePitchAPI(raw) {
       sourceId: String(lg.id || ''),
       name: lg.name || '',
       abbreviation: '',
-      country: lg.country_code || lg.country || '',
+      country,
       season: lg.season || (Array.isArray(lg.seasons) && lg.seasons.length > 0 ? lg.seasons[0] : null),
       logo: lg.image_url || lg.logo || null,
     },
@@ -264,6 +315,10 @@ function normalizeFixturePitchAPI(raw, leagueOverride = null) {
   }
 
   const leagueObj = leagueOverride || league;
+  const country = leagueObj.country_code || leagueObj.country || '';
+  if (isFrenchCompetition({ sport: 'football', leagueId: leagueObj.id, country, name: leagueObj.name })) {
+    return null;
+  }
 
   return {
     sport: 'football',
@@ -566,4 +621,5 @@ module.exports = {
   normalizeBasketballBoxScoreESPN,
   buildDedupKey,
   fixturesMatch,
+  isFrenchCompetition,
 };

@@ -4,7 +4,7 @@
     "slug": "apex",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/Logo_A.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/Logo_B.png",
@@ -16,7 +16,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/Logo_A.png",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.kingzconnect.apx",

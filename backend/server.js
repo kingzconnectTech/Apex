@@ -58,6 +58,58 @@ const { LeoAssistanceService } = require('./services/leoAssistanceService');
 const { createBasketballRouter } = require('./routes/basketball');
 const basketballPersistence = require('./services/basketball/persistence');
 const { startBasketballScheduler } = require('./services/basketball/scheduler');
+const { isFrenchCompetition } = require('./services/providers/normalizer');
+
+/**
+ * Robust date parser supporting YYYYMMDD, YYYY-MM-DD, and ISO timestamps.
+ * Guarantees consistent date comparison and never returns 'Invalid Date'.
+ */
+function parseDateParam(dateInput) {
+  if (!dateInput) return null;
+  const s = String(dateInput).trim();
+  if (/^\d{8}$/.test(s)) {
+    const y = s.slice(0, 4);
+    const m = s.slice(4, 6);
+    const d = s.slice(6, 8);
+    return {
+      isoDate: `${y}-${m}-${d}`,
+      espnDate: s,
+      dateObj: new Date(`${y}-${m}-${d}T00:00:00Z`),
+    };
+  }
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getUTCFullYear();
+    const m = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getUTCDate()).padStart(2, '0');
+    return {
+      isoDate: `${y}-${m}-${d}`,
+      espnDate: `${y}${m}${d}`,
+      dateObj: parsed,
+    };
+  }
+  return null;
+}
+
+/**
+ * Returns upcoming dates for fixture discovery across the specified horizon (default 7 days).
+ */
+function getUpcomingEspnDates(days = 7) {
+  const dates = [];
+  const now = new Date();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(now.getTime() + i * 86400000);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    dates.push({
+      isoDate: `${y}-${m}-${day}`,
+      espnDate: `${y}${m}${day}`,
+      dateObj: d,
+    });
+  }
+  return dates;
+}
 
 const IS_ENTRY_POINT = require.main === module;
 
@@ -400,6 +452,14 @@ app.get('/api/proxy', async (req, res) => {
     if (!isValidRelativeTarget(target)) {
       return res.status(400).json({ error: 'Invalid target', traceId });
     }
+    const cleanTarget = String(target).split('?')[0];
+    const targetParts = cleanTarget.split('/');
+    const targetSport = targetParts[0] || '';
+    const targetLeague = targetParts[1] || '';
+    if (isFrenchCompetition({ sport: targetSport, leagueSlug: targetLeague })) {
+      logger.info('Blocked French competition in proxy', { traceId, target });
+      return res.status(404).json({ error: 'Competition not supported', traceId });
+    }
     upstreamUrl = `${ESPN_BASE}/${target}`;
 
     const cached = getCache(upstreamUrl);
@@ -560,7 +620,6 @@ const leaguesToRefresh = [
   { sport: 'soccer', league: 'esp.1' },
   { sport: 'soccer', league: 'ita.1' },
   { sport: 'soccer', league: 'ger.1' },
-  { sport: 'soccer', league: 'fra.1' },
   { sport: 'soccer', league: 'ned.1' },
   { sport: 'soccer', league: 'por.1' },
   { sport: 'soccer', league: 'tur.1' },
@@ -578,7 +637,6 @@ const leaguesToRefresh = [
   { sport: 'soccer', league: 'esp.2' },
   { sport: 'soccer', league: 'ita.2' },
   { sport: 'soccer', league: 'ger.2' },
-  { sport: 'soccer', league: 'fra.2' },
   { sport: 'soccer', league: 'ned.2' },
   { sport: 'soccer', league: 'por.2' },
   { sport: 'soccer', league: 'sct.2' },
@@ -594,11 +652,11 @@ const leaguesToRefresh = [
   // Top Tennis Leagues
   { sport: 'tennis', league: 'atp' },
   { sport: 'tennis', league: 'wta' }
-];
+].filter(l => !isFrenchCompetition({ sport: l.sport, leagueSlug: l.league }));
 
 if (IS_ENTRY_POINT) cron.schedule('*/15 * * * *', async () => {
   const traceId = uuidv4();
-  logger.info('Starting automated stats refresh for all leagues...', { traceId });
+  logger.info('Starting automated stats & upcoming fixtures refresh for all leagues...', { traceId });
   
   let successCount = 0;
   let errorCount = 0;
@@ -607,25 +665,35 @@ if (IS_ENTRY_POINT) cron.schedule('*/15 * * * *', async () => {
   let afFixturesWarmed = 0;
   const sportSet = new Set();
   
+  // Discover upcoming dates (today + next 7 days horizon)
+  const upcomingDates = getUpcomingEspnDates(7);
+
   const refreshPromises = leaguesToRefresh.map(async (leagueConfig) => {
     const { sport, league } = leagueConfig;
+    if (isFrenchCompetition({ sport, leagueSlug: league })) return;
     sportSet.add(sport);
+
+    // 1. Refresh today's scoreboard
     try {
       const target = `${sport}/${league}/scoreboard`;
       const upstreamUrl = `${ESPN_BASE}/${target}`;
       await refreshAndNotify(upstreamUrl, traceId);
       successCount++;
-      logger.debug('Refreshed league stats', { traceId, sport, league });
     } catch (err) {
       errorCount++;
-      logger.error('Failed to refresh league stats', {
-        traceId,
-        sport,
-        league,
-        error: err.message
-      });
+      logger.error('Failed to refresh league stats', { traceId, sport, league, error: err.message });
     }
 
+    // 2. Synchronize upcoming fixture dates across 7-day horizon so upcoming matches appear early
+    for (const d of upcomingDates) {
+      try {
+        const targetUpcoming = `${sport}/${league}/scoreboard?dates=${d.espnDate}`;
+        const upstreamUpcomingUrl = `${ESPN_BASE}/${targetUpcoming}`;
+        await refreshAndNotify(upstreamUpcomingUrl, traceId);
+      } catch (_) {}
+    }
+
+    // 3. Warm secondary provider fixtures for soccer if enabled
     if ((sport === 'soccer' || sport === 'football') && sportsData && typeof sportsData.getFixtures === 'function') {
       try {
         const name = `${sport}/${league}`;
@@ -633,25 +701,19 @@ if (IS_ENTRY_POINT) cron.schedule('*/15 * * * *', async () => {
         const count = Array.isArray(fx) ? fx.length : 0;
         afSuccess++;
         afFixturesWarmed += count;
-        logger.debug('Warmed API-Football shared cache for league', { traceId, sport, league, count });
+        logger.debug('Warmed secondary provider fixtures for league', { traceId, sport, league, count });
       } catch (err2) {
         afError++;
-        logger.error('Failed to warm API-Football shared cache for league', {
-          traceId,
-          sport,
-          league,
-          error: err2.message
-        });
       }
     }
   });
   
   await Promise.all(refreshPromises);
   
-  logger.info('Automated stats refresh complete', {
+  logger.info('Automated stats & upcoming fixtures refresh complete', {
     traceId,
     espn: { successCount, errorCount },
-    apiFootball: { afSuccess, afError, afFixturesWarmed },
+    secondaryProvider: { afSuccess, afError, afFixturesWarmed },
     sportsCovered: Array.from(sportSet)
   });
 });
@@ -882,80 +944,173 @@ app.get('/api/predictions/recommended', async (req, res) => {
   const { sport = 'soccer', league = null, date = null, minProb = null } = req.query;
 
   try {
+    // Normalization of minProb threshold: minimum 90% (0.90) strictly enforced
+    let threshold = 0.90;
+    if (minProb != null) {
+      const parsedMin = parseFloat(minProb);
+      if (!isNaN(parsedMin) && parsedMin > 0) {
+        threshold = parsedMin > 1.0 ? parsedMin / 100 : parsedMin;
+      }
+    }
+    threshold = Math.max(0.90, threshold);
+
     const config = {
       ...DEFAULT_FILTER_CONFIG,
-      minCalibratedProbability: minProb ? parseFloat(minProb) : DEFAULT_FILTER_CONFIG.minCalibratedProbability,
+      minCalibratedProbability: threshold,
     };
 
-    let targetLeagues = leaguesToRefresh.filter(l => l.sport === sport || l.sport === 'football');
+    // French leagues excluded from candidate leagues
+    let targetLeagues = leaguesToRefresh.filter(l => (l.sport === sport || l.sport === 'football') && !isFrenchCompetition({ sport: l.sport, leagueSlug: l.league }));
     if (league) {
+      if (isFrenchCompetition({ sport, leagueSlug: league })) {
+        logger.info('Rejected French competition request in recommended feed', { traceId, league });
+        return res.json({
+          success: true,
+          recommended: [],
+          allFixtures: [],
+          stats: {
+            totalRetrieved: 0,
+            totalAnalyzed: 0,
+            totalRejected: 0,
+            totalRecommended: 0,
+            predictionsRejectedBelow90: 0,
+            predictionsRejectedInvalid: 0,
+            predictionsQualifying90Plus: 0,
+            acceptanceRate: 0,
+            rejectionReasonBreakdown: { 'French competitions excluded': 1 },
+          },
+          traceId,
+        });
+      }
       targetLeagues = targetLeagues.filter(l => l.league === league);
       if (targetLeagues.length === 0) {
         targetLeagues = [{ sport, league }];
       }
     }
 
-    const targetDateStr = date ? new Date(date).toDateString() : null;
+    // Diagnostics tracking
+    let fixturesDiscovered = 0;
+    let fixturesRetrieved = 0;
+    let fixturesSkippedDuplicate = 0;
+    let fixturesExcludedByStatusOrFilter = 0;
+    let failedFixturesCount = 0;
+
+    const parsedDate = parseDateParam(date);
+    // If a specific date was requested, query that date; otherwise discover upcoming across 7-day horizon
+    const datesToEvaluate = parsedDate ? [parsedDate] : getUpcomingEspnDates(7);
     const evaluatedFixtures = [];
+    const seenFixtureIds = new Set();
 
     for (const lConfig of targetLeagues) {
-      try {
-        const scoreboardData = await fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/scoreboard`);
-        const events = scoreboardData?.events || [];
+      if (isFrenchCompetition({ sport: lConfig.sport, leagueSlug: lConfig.league })) continue;
 
-        for (const ev of events) {
-          const competition = ev.competitions?.[0];
-          const state = competition?.status?.type?.state;
-          if (state !== 'pre' && state !== 'scheduled') continue;
+      for (const d of datesToEvaluate) {
+        try {
+          const qs = d.espnDate ? `?dates=${encodeURIComponent(d.espnDate)}` : '';
+          const scoreboardData = await fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/scoreboard${qs}`);
+          const events = scoreboardData?.events || [];
+          fixturesDiscovered += events.length;
 
-          if (targetDateStr) {
-            const evDate = new Date(ev.date).toDateString();
-            if (evDate !== targetDateStr) continue;
+          for (const ev of events) {
+            fixturesRetrieved++;
+            const competition = ev.competitions?.[0];
+            const compLeagueName = competition?.league?.name || lConfig.league;
+            const compLeagueSlug = competition?.league?.slug || lConfig.league;
+            if (isFrenchCompetition({ sport: lConfig.sport, leagueSlug: compLeagueSlug, name: compLeagueName })) {
+              fixturesExcludedByStatusOrFilter++;
+              continue;
+            }
+
+            const state = competition?.status?.type?.state;
+            if (state !== 'pre' && state !== 'scheduled') {
+              fixturesExcludedByStatusOrFilter++;
+              continue;
+            }
+
+            // Deduplicate across dates/pages
+            if (seenFixtureIds.has(ev.id)) {
+              fixturesSkippedDuplicate++;
+              continue;
+            }
+            seenFixtureIds.add(ev.id);
+
+            // Clean date filtering (comparing YYYY-MM-DD strings without Invalid Date bugs)
+            if (parsedDate) {
+              const evIso = ev.date ? new Date(ev.date).toISOString().slice(0, 10) : '';
+              if (evIso && evIso !== parsedDate.isoDate) {
+                fixturesExcludedByStatusOrFilter++;
+                continue;
+              }
+            }
+
+            const homeComp = competition?.competitors?.find(c => c.homeAway === 'home');
+            const awayComp = competition?.competitors?.find(c => c.homeAway === 'away');
+            if (!homeComp?.id || !awayComp?.id) {
+              fixturesExcludedByStatusOrFilter++;
+              continue;
+            }
+
+            let homeSched = null;
+            let awaySched = null;
+            try {
+              [homeSched, awaySched] = await Promise.all([
+                fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/teams/${homeComp.id}/schedule`),
+                fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/teams/${awayComp.id}/schedule`),
+              ]);
+            } catch (_) {
+              failedFixturesCount++;
+            }
+
+            const homeMatches = processScheduleForTeam(homeSched?.events || [], homeComp.id);
+            const awayMatches = processScheduleForTeam(awaySched?.events || [], awayComp.id);
+
+            const evalResult = evaluateFixture({
+              fixture: {
+                id: ev.id,
+                date: ev.date,
+                league: { name: compLeagueName },
+                status: state,
+              },
+              cleanHomeMatches: homeMatches,
+              cleanAwayMatches: awayMatches,
+              homeName: homeComp.team?.displayName || homeComp.team?.name || 'Home Team',
+              awayName: awayComp.team?.displayName || awayComp.team?.name || 'Away Team',
+              config,
+            });
+
+            evaluatedFixtures.push(evalResult);
           }
-
-          const homeComp = competition?.competitors?.find(c => c.homeAway === 'home');
-          const awayComp = competition?.competitors?.find(c => c.homeAway === 'away');
-          if (!homeComp?.id || !awayComp?.id) continue;
-
-          let homeSched = null;
-          let awaySched = null;
-          try {
-            [homeSched, awaySched] = await Promise.all([
-              fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/teams/${homeComp.id}/schedule`),
-              fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/teams/${awayComp.id}/schedule`),
-            ]);
-          } catch (_) {}
-
-          const homeMatches = processScheduleForTeam(homeSched?.events || [], homeComp.id);
-          const awayMatches = processScheduleForTeam(awaySched?.events || [], awayComp.id);
-
-          const evalResult = evaluateFixture({
-            fixture: {
-              id: ev.id,
-              date: ev.date,
-              league: { name: competition?.league?.name || lConfig.league },
-              status: state,
-            },
-            cleanHomeMatches: homeMatches,
-            cleanAwayMatches: awayMatches,
-            homeName: homeComp.team?.displayName || homeComp.team?.name || 'Home Team',
-            awayName: awayComp.team?.displayName || awayComp.team?.name || 'Away Team',
-            config,
-          });
-
-          evaluatedFixtures.push(evalResult);
+        } catch (lErr) {
+          logger.debug('League scoreboard fetch failed in recommended feed', { league: lConfig.league, date: d.espnDate, error: lErr.message });
         }
-      } catch (lErr) {
-        logger.debug('League scoreboard fetch failed in recommended feed', { league: lConfig.league, error: lErr.message });
       }
     }
 
     const { recommended, allFixtures, stats } = filterAndRankFixtures(evaluatedFixtures);
 
-    logger.info('Recommended predictions generated', {
+    // Merge comprehensive diagnostics into stats
+    stats.fixturesDiscovered = fixturesDiscovered;
+    stats.fixturesRetrieved = fixturesRetrieved;
+    stats.fixturesSkippedDuplicate = fixturesSkippedDuplicate;
+    stats.fixturesExcludedByStatusOrFilter = fixturesExcludedByStatusOrFilter;
+    stats.fixturesEvaluated = evaluatedFixtures.length;
+    stats.failedFixturesCount = failedFixturesCount;
+    stats.scanCompleted = true;
+    stats.horizonDays = datesToEvaluate.length;
+    stats.enforcedMinConfidence = threshold;
+
+    logger.info('[RECOMMENDATIONS DIAGNOSTICS]', {
       traceId,
-      totalAnalyzed: stats.totalAnalyzed,
+      fixturesDiscovered,
+      fixturesRetrieved,
+      fixturesSkippedDuplicate,
+      fixturesExcludedByStatusOrFilter,
+      fixturesEvaluated: stats.fixturesEvaluated,
+      predictionsRejectedBelow90: stats.predictionsRejectedBelow90,
+      predictionsRejectedInvalid: stats.predictionsRejectedInvalid,
+      predictionsQualifying90Plus: stats.predictionsQualifying90Plus,
       totalRecommended: stats.totalRecommended,
+      enforcedMinConfidence: threshold,
     });
 
     return res.json({
@@ -1012,58 +1167,80 @@ app.get('/api/fixtures/all', async (req, res) => {
   const { sport = 'soccer', league = null, date = null, status = 'all', page = 1, limit = 50 } = req.query;
 
   try {
-    let targetLeagues = leaguesToRefresh.filter(l => l.sport === sport || l.sport === 'football');
+    let targetLeagues = leaguesToRefresh.filter(l => (l.sport === sport || l.sport === 'football') && !isFrenchCompetition({ sport: l.sport, leagueSlug: l.league }));
     if (league) {
+      if (isFrenchCompetition({ sport, leagueSlug: league })) {
+        return res.json({ success: true, fixtures: [], totalCount: 0, page: 1, totalPages: 0, traceId });
+      }
       targetLeagues = targetLeagues.filter(l => l.league === league);
       if (targetLeagues.length === 0) targetLeagues = [{ sport, league }];
     }
 
     const allEvents = [];
-    const targetDateStr = date ? new Date(date).toDateString() : null;
+    const seenFixtureIds = new Set();
+    const parsedDate = parseDateParam(date);
+    const datesToQuery = parsedDate ? [parsedDate] : getUpcomingEspnDates(7);
 
     for (const lConfig of targetLeagues) {
-      try {
-        const scoreboardData = await fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/scoreboard`);
-        const events = scoreboardData?.events || [];
-        for (const ev of events) {
-          const comp = ev.competitions?.[0];
-          const st = comp?.status?.type?.state;
-          if (status !== 'all') {
-            if (status === 'pre' && st !== 'pre' && st !== 'scheduled') continue;
-            if (status === 'in' && st !== 'in') continue;
-            if (status === 'post' && st !== 'post') continue;
-          }
-          if (targetDateStr) {
-            const evDate = new Date(ev.date).toDateString();
-            if (evDate !== targetDateStr) continue;
-          }
+      if (isFrenchCompetition({ sport: lConfig.sport, leagueSlug: lConfig.league })) continue;
 
-          const homeComp = comp?.competitors?.find(c => c.homeAway === 'home');
-          const awayComp = comp?.competitors?.find(c => c.homeAway === 'away');
+      for (const d of datesToQuery) {
+        try {
+          const qs = d.espnDate ? `?dates=${encodeURIComponent(d.espnDate)}` : '';
+          const scoreboardData = await fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/scoreboard${qs}`);
+          const events = scoreboardData?.events || [];
+          for (const ev of events) {
+            if (seenFixtureIds.has(ev.id)) continue;
 
-          allEvents.push({
-            id: ev.id,
-            sport: lConfig.sport,
-            league: comp?.league?.name || lConfig.league,
-            leagueSlug: lConfig.league,
-            date: ev.date,
-            status: st || 'scheduled',
-            homeTeam: {
-              id: homeComp?.id,
-              name: homeComp?.team?.displayName || homeComp?.team?.name || 'Home',
-              logo: homeComp?.team?.logo || null,
-              score: homeComp?.score?.value ?? homeComp?.score ?? null,
-            },
-            awayTeam: {
-              id: awayComp?.id,
-              name: awayComp?.team?.displayName || awayComp?.team?.name || 'Away',
-              logo: awayComp?.team?.logo || null,
-              score: awayComp?.score?.value ?? awayComp?.score ?? null,
-            },
-          });
-        }
-      } catch (_) {}
+            const comp = ev.competitions?.[0];
+            const compLeagueSlug = comp?.league?.slug || lConfig.league;
+            const compLeagueName = comp?.league?.name || lConfig.league;
+            if (isFrenchCompetition({ sport: lConfig.sport, leagueSlug: compLeagueSlug, name: compLeagueName })) continue;
+
+            const st = comp?.status?.type?.state;
+            if (status !== 'all') {
+              if (status === 'pre' && st !== 'pre' && st !== 'scheduled') continue;
+              if (status === 'in' && st !== 'in') continue;
+              if (status === 'post' && st !== 'post') continue;
+            }
+
+            if (parsedDate) {
+              const evIso = ev.date ? new Date(ev.date).toISOString().slice(0, 10) : '';
+              if (evIso && evIso !== parsedDate.isoDate) continue;
+            }
+
+            seenFixtureIds.add(ev.id);
+
+            const homeComp = comp?.competitors?.find(c => c.homeAway === 'home');
+            const awayComp = comp?.competitors?.find(c => c.homeAway === 'away');
+
+            allEvents.push({
+              id: ev.id,
+              sport: lConfig.sport,
+              league: compLeagueName,
+              leagueSlug: lConfig.league,
+              date: ev.date,
+              status: st || 'scheduled',
+              homeTeam: {
+                id: homeComp?.id,
+                name: homeComp?.team?.displayName || homeComp?.team?.name || 'Home',
+                logo: homeComp?.team?.logo || null,
+                score: homeComp?.score?.value ?? homeComp?.score ?? null,
+              },
+              awayTeam: {
+                id: awayComp?.id,
+                name: awayComp?.team?.displayName || awayComp?.team?.name || 'Away',
+                logo: awayComp?.team?.logo || null,
+                score: awayComp?.score?.value ?? awayComp?.score ?? null,
+              },
+            });
+          }
+        } catch (_) {}
+      }
     }
+
+    // Sort by kickoff date ascending
+    allEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 50;
@@ -2687,7 +2864,6 @@ app.get('/api/live-predictions', async (req, res) => {
             { sport: 'soccer', league: 'esp.1' },
             { sport: 'soccer', league: 'ita.1' },
             { sport: 'soccer', league: 'ger.1' },
-            { sport: 'soccer', league: 'fra.1' },
             { sport: 'soccer', league: 'uefa.champions' },
             { sport: 'soccer', league: 'eng.2' },
             { sport: 'soccer', league: 'eng.3' },
@@ -2695,7 +2871,6 @@ app.get('/api/live-predictions', async (req, res) => {
             { sport: 'soccer', league: 'esp.2' },
             { sport: 'soccer', league: 'ita.2' },
             { sport: 'soccer', league: 'ger.2' },
-            { sport: 'soccer', league: 'fra.2' },
             { sport: 'soccer', league: 'ned.2' },
             { sport: 'soccer', league: 'por.2' },
             { sport: 'soccer', league: 'sct.2' },
@@ -2707,7 +2882,7 @@ app.get('/api/live-predictions', async (req, res) => {
             { sport: 'basketball', league: 'wnba' },
             { sport: 'tennis', league: 'atp' },
             { sport: 'tennis', league: 'wta' }
-        ];
+        ].filter(l => !isFrenchCompetition({ sport: l.sport, leagueSlug: l.league }));
 
         const livePredictions = [];
         const seenIds = new Set();

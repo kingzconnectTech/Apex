@@ -1,7 +1,7 @@
 const { PROVIDERS, TTL, leagueSupportsSeason } = require('./providers/config');
 const { EspnProvider } = require('./providers/EspnProvider');
 const { PitchApiProvider } = require('./providers/PitchApiProvider');
-const { buildDedupKey, fixturesMatch, _normalizeTeamName } = require('./providers/normalizer');
+const { buildDedupKey, fixturesMatch, _normalizeTeamName, isFrenchCompetition } = require('./providers/normalizer');
 const { sharedCache } = require('./providers/cache');
 
 function _sportForAF(sport) {
@@ -56,6 +56,7 @@ class SportsDataService {
   }
 
   async _getPitchApiLeagueId(sport, leagueSlug, { traceId = null, leagueDisplayName = '' } = {}) {
+    if (isFrenchCompetition({ sport, leagueSlug, name: leagueDisplayName })) return null;
     if (!_sportForAF(sport)) return null;
     if (String(leagueSlug).startsWith('pa-l_') || String(leagueSlug).startsWith('l_')) {
       return String(leagueSlug).replace(/^pa-/, '');
@@ -128,6 +129,9 @@ class SportsDataService {
   }
 
   async getFixtures(sport, leagueSlug, { traceId = null, leagueDisplayName = '', season = null } = {}) {
+    if (isFrenchCompetition({ sport, leagueSlug, name: leagueDisplayName })) {
+      return { fixtures: [], source: null, tried: [] };
+    }
     const tried = [];
 
     // 1. Primary: ESPN
@@ -179,6 +183,9 @@ class SportsDataService {
   }
 
   async getFixturesMerged(sport, leagueSlug, { traceId = null, leagueDisplayName = '', season = null } = {}) {
+    if (isFrenchCompetition({ sport, leagueSlug, name: leagueDisplayName })) {
+      return [];
+    }
     const all = [];
     const dedupKeys = new Set();
 
@@ -218,20 +225,20 @@ class SportsDataService {
   }
 
   async getLiveFixtures({ traceId = null, leagueConfigs = null } = {}) {
-    const leagues = leagueConfigs || [
+    const leagues = (leagueConfigs || [
       { sport: 'soccer', league: 'eng.1' }, { sport: 'soccer', league: 'esp.1' },
       { sport: 'soccer', league: 'ita.1' }, { sport: 'soccer', league: 'ger.1' },
-      { sport: 'soccer', league: 'fra.1' }, { sport: 'soccer', league: 'uefa.champions' },
+      { sport: 'soccer', league: 'uefa.champions' },
       { sport: 'soccer', league: 'eng.2' }, { sport: 'soccer', league: 'eng.3' },
       { sport: 'soccer', league: 'eng.4' }, { sport: 'soccer', league: 'esp.2' },
       { sport: 'soccer', league: 'ita.2' }, { sport: 'soccer', league: 'ger.2' },
-      { sport: 'soccer', league: 'fra.2' }, { sport: 'soccer', league: 'ned.2' },
+      { sport: 'soccer', league: 'ned.2' },
       { sport: 'soccer', league: 'por.2' }, { sport: 'soccer', league: 'sct.2' },
       { sport: 'soccer', league: 'bra.2' }, { sport: 'soccer', league: 'mex.2' },
       { sport: 'soccer', league: 'usa.2' }, { sport: 'soccer', league: 'jpn.2' },
       { sport: 'basketball', league: 'nba' }, { sport: 'basketball', league: 'wnba' },
       { sport: 'tennis', league: 'atp' }, { sport: 'tennis', league: 'wta' },
-    ];
+    ]).filter(cfg => !isFrenchCompetition({ sport: cfg.sport, leagueSlug: cfg.league }));
     const out = [];
     for (const cfg of leagues) {
       const { fixtures } = await this.getFixtures(cfg.sport, cfg.league, { traceId, leagueDisplayName: cfg.league });

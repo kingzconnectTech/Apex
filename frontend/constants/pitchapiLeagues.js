@@ -696,40 +696,6 @@ export const PITCHAPI_77_LEAGUES = [
     "isFree": true
   },
   {
-    "id": "pa-l_3FJFUl",
-    "sourceId": "l_3FJFUl",
-    "name": "Ligue 1",
-    "country": "FRA",
-    "region": "Europe",
-    "displayName": "Ligue 1 (FRA)",
-    "logo": "https://cdn.pitchapi.dev/images/leagues/60132b94cec9376428f59561ef11650b8a69b097d492642f9b737dc76f45cf94.webp",
-    "season": "2021/2022",
-    "seasons": [
-      "2021/2022",
-      "2022/2023",
-      "2023/2024",
-      "2024/2025",
-      "2025/2026",
-      "2026/2027"
-    ],
-    "isFree": true
-  },
-  {
-    "id": "pa-l_0275VP",
-    "sourceId": "l_0275VP",
-    "name": "Ligue 2",
-    "country": "FRA",
-    "region": "Europe",
-    "displayName": "Ligue 2 (FRA)",
-    "logo": "https://cdn.pitchapi.dev/images/leagues/34db88d1d5d004963713cd7e91c25e85b09c8315b1a01bfd233a865d88f21968.webp",
-    "season": "2025/2026",
-    "seasons": [
-      "2025/2026",
-      "2026/2027"
-    ],
-    "isFree": true
-  },
-  {
     "id": "pa-l_0eg6C9",
     "sourceId": "l_0eg6C9",
     "name": "MLS",

@@ -6,6 +6,7 @@ const {
   normalizeFixtureESPN,
   normalizeStandingsESPN,
   normalizeTeamStatsESPN,
+  isFrenchCompetition,
 } = require('./normalizer');
 
 class EspnProvider {
@@ -74,6 +75,10 @@ class EspnProvider {
   }
 
   async getScoreboard(sport, league, { dates = null, page = null, limit = null, traceId = null } = {}) {
+    if (isFrenchCompetition({ sport, leagueSlug: league })) {
+      this._log('debug', `Excluded French competition: ${league}`, { sport, league, traceId });
+      return null;
+    }
     const ttl = TTL.FIXTURES_SCHEDULED;
     const queryParts = [];
     if (dates) queryParts.push(`dates=${encodeURIComponent(dates)}`);
@@ -85,6 +90,9 @@ class EspnProvider {
   }
 
   async getFixtures(sport, league, { dates = null, page = null, limit = null, traceId = null, leagueDisplayName = '' } = {}) {
+    if (isFrenchCompetition({ sport, leagueSlug: league, name: leagueDisplayName })) {
+      return [];
+    }
     const data = await this.getScoreboard(sport, league, { dates, page, limit, traceId });
     const events = data?.events || [];
     const out = events
@@ -95,6 +103,9 @@ class EspnProvider {
   }
 
   async getFixturesPaginated(sport, league, { dates = null, limit = 50, maxPages = 5, traceId = null, leagueDisplayName = '' } = {}) {
+    if (isFrenchCompetition({ sport, leagueSlug: league, name: leagueDisplayName })) {
+      return [];
+    }
     let page = 1;
     const all = [];
     const seenIds = new Set();

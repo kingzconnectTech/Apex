@@ -50,6 +50,10 @@ class TTLCache {
   size() {
     return this._store.size;
   }
+
+  clear() {
+    this._store.clear();
+  }
 }
 
 const sharedCache = new TTLCache();

@@ -14,7 +14,6 @@ const TOP_LEAGUES = [
   { sport: 'soccer', league: 'esp.1', name: 'La Liga' },
   { sport: 'soccer', league: 'ita.1', name: 'Serie A' },
   { sport: 'soccer', league: 'ger.1', name: 'Bundesliga' },
-  { sport: 'soccer', league: 'fra.1', name: 'Ligue 1' },
   { sport: 'soccer', league: 'uefa.champions', name: 'Champions League' },
   { sport: 'soccer', league: 'uefa.europa', name: 'Europa League' },
   // Soccer - Lower Division Leagues
@@ -24,7 +23,6 @@ const TOP_LEAGUES = [
   { sport: 'soccer', league: 'esp.2', name: 'La Liga 2' },
   { sport: 'soccer', league: 'ita.2', name: 'Serie B' },
   { sport: 'soccer', league: 'ger.2', name: '2. Bundesliga' },
-  { sport: 'soccer', league: 'fra.2', name: 'Ligue 2' },
   { sport: 'soccer', league: 'ned.2', name: 'Eerste Divisie' },
   { sport: 'soccer', league: 'por.2', name: 'Liga Portugal 2' },
   { sport: 'soccer', league: 'sct.2', name: 'Scottish Championship' },
@@ -54,8 +52,6 @@ const ALL_LEAGUES = [
   { sport: 'soccer', league: 'ita.2', name: 'Serie B' },
   { sport: 'soccer', league: 'ger.1', name: 'Bundesliga' },
   { sport: 'soccer', league: 'ger.2', name: '2. Bundesliga' },
-  { sport: 'soccer', league: 'fra.1', name: 'Ligue 1' },
-  { sport: 'soccer', league: 'fra.2', name: 'Ligue 2' },
   { sport: 'soccer', league: 'ned.1', name: 'Eredivisie' },
   { sport: 'soccer', league: 'ned.2', name: 'Eerste Divisie' },
   { sport: 'soccer', league: 'por.1', name: 'Liga Portugal' },
@@ -127,7 +123,6 @@ const ALL_LEAGUES = [
   { sport: 'basketball', league: 'acb', name: 'Liga ACB (Spain)' },
   { sport: 'basketball', league: 'legabasket', name: 'Lega Basket Serie A (Italy)' },
   { sport: 'basketball', league: 'bbl', name: 'Basketball Bundesliga (Germany)' },
-  { sport: 'basketball', league: 'betclic', name: 'Betclic Élite (France)' },
   { sport: 'basketball', league: 'australia.nbl', name: 'NBL Australia' },
   { sport: 'basketball', league: 'cba', name: 'CBA (China)' },
   { sport: 'basketball', league: 'bcl', name: 'Basketball Champions League' },
@@ -204,20 +199,68 @@ const fetchFromBackendOrESPN = async (relativePath) => {
   }
 };
 
-export const fetchMatches = async (useTopLeaguesOnly = true, days = 1) => {
+function formatEspnDate(d) {
+  if (!d) return null;
+  if (typeof d === 'string' && /^\d{8}$/.test(d.trim())) {
+    return d.trim();
+  }
+  const dateObj = d instanceof Date ? d : new Date(d);
+  if (isNaN(dateObj.getTime())) return null;
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+function isFrenchCompetition(slug = '', name = '', country = '') {
+  const s = String(slug || '').toLowerCase().trim();
+  const n = String(name || '').toLowerCase().trim();
+  const c = String(country || '').toLowerCase().trim();
+  if (c === 'fra' || c === 'fr' || c === 'france' || c === 'french') return true;
+  if (s.startsWith('fra.') || s === 'betclic' || s.startsWith('lnb') || s === 'pa-l_3fjful' || s === 'pa-l_0275vp' || s === 'l_3fjful' || s === 'l_0275vp') return true;
+  if (/\b(ligue\s*[12]|coupe de france|coupe de la ligue|betclic [eé]lite|trophee des champions)\b/i.test(n)) return true;
+  return false;
+}
+
+export const fetchMatches = async (useTopLeaguesOnly = true, dateOrDays = null) => {
   try {
-    const leagues = useTopLeaguesOnly ? TOP_LEAGUES : ALL_LEAGUES;
+    const baseLeagues = useTopLeaguesOnly ? TOP_LEAGUES : ALL_LEAGUES;
+    const leagues = baseLeagues.filter(l => !isFrenchCompetition(l.league, l.name));
     
-    // 1. Fetch only current scoreboard (no extra days for speed)
-    const promises = leagues.map(async ({ sport, league, name }) => {
-      try {
-        const data = await fetchFromBackendOrESPN(`${sport}/${league}/scoreboard`);
-        return processEvents(data.events || [], sport, league, name);
-      } catch (error) {
-        console.warn(`Failed to fetch default for ${name}:`, error);
-        return [];
+    // Resolve dates to query (supports single date or upcoming horizon)
+    const datesToQuery = [];
+    if (dateOrDays instanceof Date || (typeof dateOrDays === 'string' && dateOrDays.length >= 8)) {
+      const dStr = formatEspnDate(dateOrDays);
+      if (dStr) datesToQuery.push(dStr);
+    } else if (typeof dateOrDays === 'number' && dateOrDays > 1) {
+      // Query up to dateOrDays upcoming days (e.g. 7 days horizon)
+      const now = new Date();
+      for (let i = 0; i < dateOrDays; i++) {
+        const d = new Date(now.getTime() + i * 86400000);
+        const dStr = formatEspnDate(d);
+        if (dStr) datesToQuery.push(dStr);
       }
-    });
+    } else {
+      // Default to today
+      const dStr = formatEspnDate(new Date());
+      if (dStr) datesToQuery.push(dStr);
+    }
+
+    const promises = [];
+    for (const dStr of datesToQuery) {
+      const qs = `?dates=${encodeURIComponent(dStr)}`;
+      for (const { sport, league, name } of leagues) {
+        if (isFrenchCompetition(league, name)) continue;
+        promises.push(
+          fetchFromBackendOrESPN(`${sport}/${league}/scoreboard${qs}`)
+            .then(data => processEvents(data.events || [], sport, league, name))
+            .catch(error => {
+              console.warn(`Failed to fetch ${name} for ${dStr}:`, error);
+              return [];
+            })
+        );
+      }
+    }
 
     // Execute all fetches
     const results = await Promise.all(promises);
@@ -226,12 +269,14 @@ export const fetchMatches = async (useTopLeaguesOnly = true, days = 1) => {
     const allMatchesRaw = results.flat();
     const seenIds = new Set();
     const allMatches = allMatchesRaw.filter(match => {
+      if (!match || !match.id) return false;
+      if (isFrenchCompetition(match.leagueSlug, match.league)) return false;
       if (seenIds.has(match.id)) return false;
       seenIds.add(match.id);
       return true;
-    }).sort((a, b) => a.date - b.date);
+    }).sort((a, b) => (a.date?.getTime?.() || 0) - (b.date?.getTime?.() || 0));
     
-    // Split into Live and Upcoming
+    // Split into Live, Upcoming, and Completed
     const live = allMatches.filter(match => match.status === 'in');
     const upcoming = allMatches.filter(match => match.status === 'pre');
     const completed = allMatches.filter(match => match.status === 'post');
@@ -240,16 +285,19 @@ export const fetchMatches = async (useTopLeaguesOnly = true, days = 1) => {
 
   } catch (error) {
     console.error('Error fetching matches:', error);
-    return { live: [], upcoming: [] };
+    return { live: [], upcoming: [], completed: [], all: [] };
   }
 };
 
 /**
  * Fetch matches for a specific league on-demand (works for ESPN and PitchAPI).
  */
-export const fetchLeagueMatches = async (leagueSlug, sport = 'soccer', name = '') => {
+export const fetchLeagueMatches = async (leagueSlug, sport = 'soccer', name = '', targetDate = null) => {
+  if (isFrenchCompetition(leagueSlug, name)) return [];
   try {
-    const data = await fetchFromBackendOrESPN(`${sport}/${leagueSlug}/scoreboard`);
+    const dStr = formatEspnDate(targetDate);
+    const qs = dStr ? `?dates=${encodeURIComponent(dStr)}` : '';
+    const data = await fetchFromBackendOrESPN(`${sport}/${leagueSlug}/scoreboard${qs}`);
     return processEvents(data.events || [], sport, leagueSlug, name || leagueSlug);
   } catch (error) {
     console.warn(`Failed to fetch matches for ${name || leagueSlug}:`, error);
@@ -259,9 +307,11 @@ export const fetchLeagueMatches = async (leagueSlug, sport = 'soccer', name = ''
 
 // Helper to process events (DRY)
 const processEvents = (events, sport, league, name) => {
-  return events.map(event => {
+  if (isFrenchCompetition(league, name)) return [];
+  return (events || []).map(event => {
     const competition = event.competitions?.[0];
     if (!competition) return null;
+    if (isFrenchCompetition(competition?.league?.slug || league, competition?.league?.name || name)) return null;
     
     const competitors = competition.competitors || [];
     let homeCompetitor, awayCompetitor;

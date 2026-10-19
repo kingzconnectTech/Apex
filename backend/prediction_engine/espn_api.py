@@ -95,8 +95,6 @@ class EspnClient:
             ("soccer", "ita.2"),       # Serie B
             ("soccer", "ger.1"),       # Bundesliga
             ("soccer", "ger.2"),       # 2. Bundesliga
-            ("soccer", "fra.1"),       # Ligue 1
-            ("soccer", "fra.2"),       # Ligue 2
             ("soccer", "ned.1"),       # Eredivisie
             ("soccer", "por.1"),       # Liga Portugal
             ("soccer", "por.2"),       # Liga Portugal 2
@@ -166,7 +164,6 @@ class EspnClient:
             ("basketball", "acb"),     # Liga ACB (Spain)
             ("basketball", "legabasket"), # Lega Basket Serie A (Italy)
             ("basketball", "bbl"),     # Basketball Bundesliga (Germany)
-            ("basketball", "betclic"), # Betclic Élite (France)
             ("basketball", "australia.nbl"), # NBL Australia
             ("basketball", "cba"),     # CBA (China)
             ("basketball", "bcl"),     # Basketball Champions League
