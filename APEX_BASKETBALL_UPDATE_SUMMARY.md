@@ -12,9 +12,15 @@ Updated the basketball prediction engine to prioritize Total Points Over/Under m
   - Priority 3: First Half Total (First-Half Total Points Over/Under)
   - Priority 4: Quarter Total (Quarter Total Points Over/Under)
 - **Added secondary market data quality requirement**: `secondaryMarketMinDataQuality: 0.75`
-- **Enforced 75% minimum confidence**: Both `mainMinProb` and `alternateMinProb` set to 0.75
+- **Adjusted internal selection thresholds**: `mainMinProb: 0.60` and `alternateMinProb: 0.65` to allow picks to be generated
+- **75% threshold enforced at API level**: The strict 75% confidence threshold is applied in the API routes for display, not in internal selection
 
-### 2. Prediction Engine (`backend/services/basketball/index.js`)
+### 2. Internal Selection Thresholds (`backend/services/basketball/config.js`)
+- **Lowered internal thresholds**: Changed from 75% to 60% (main) and 65% (alternate) to allow picks to be generated
+- **Purpose**: Internal selection generates candidates, API filtering enforces the 75% display threshold
+- **No change to API filtering**: The 75% threshold is still strictly enforced in the API routes
+
+### 3. Prediction Engine (`backend/services/basketball/index.js`)
 - **Added head-to-head analysis**: Extracts H2H games from team logs and aggregates statistics
 - **Enhanced reasoning**: Updated `buildReasoning()` to include:
   - Last 10 games scoring trends (average combined points)
@@ -22,23 +28,23 @@ Updated the basketball prediction engine to prioritize Total Points Over/Under m
   - Adjustments (injuries, rest, travel, etc.)
 - **Updated normalizeGame call**: Passes H2H log data to game normalization
 
-### 3. Game Normalization (`backend/services/basketball/normalize.js`)
+### 4. Game Normalization (`backend/services/basketball/normalize.js`)
 - **Added H2H parameter**: `normalizeGame()` now accepts `h2hLog` parameter
 - **Added H2H stats aggregation**: Computes aggregate statistics for head-to-head games
 - **Enhanced game object**: Includes `h2hStats` field in normalized game object
 
-### 4. Line Selector (`backend/services/basketball/lineSelector.js`)
+### 5. Line Selector (`backend/services/basketball/lineSelector.js`)
 - **Implemented market priority processing**: Processes markets according to configured priority order
 - **Removed straight-winner fallback**: No fallback to moneyline or straight-winner predictions
 - **Added documentation**: Clear comments explaining that no straight-winner fallback is allowed
 - **Prepared for secondary markets**: Framework in place for Team Total, First-Half, and Quarter markets when data becomes available
 
-### 5. API Routes (`backend/routes/basketball.js`)
+### 6. API Routes (`backend/routes/basketball.js`)
 - **Updated confidence threshold enforcement**: Changed from "at least one pick >= 75%" to "each individual pick must be >= 75%"
 - **Per-market filtering**: Each pick is filtered independently based on its own probability
 - **Updated error messages**: Clarified that thresholds apply per market, not per match
 
-### 6. Frontend Component (`frontend/components/BasketballGameCard.js`)
+### 7. Frontend Component (`frontend/components/BasketballGameCard.js`)
 - **Updated comment**: Clarified that Total Points is prioritized with 75%+ confidence requirement
 - **Already displays required information**: Component already shows:
   - Match name
@@ -86,11 +92,11 @@ Updated the basketball prediction engine to prioritize Total Points Over/Under m
 
 ## Files Modified
 
-1. `backend/services/basketball/config.js` - Market priority and confidence configuration
+1. `backend/services/basketball/config.js` - Market priority, confidence configuration, and internal threshold adjustment
 2. `backend/services/basketball/index.js` - H2H analysis and enhanced reasoning
 3. `backend/services/basketball/normalize.js` - H2H stats aggregation
 4. `backend/services/basketball/lineSelector.js` - Market priority processing
-5. `backend/routes/basketball.js` - Per-market confidence threshold enforcement
+5. `backend/routes/basketball.js` - Per-market confidence threshold enforcement (75%)
 6. `frontend/components/BasketballGameCard.js` - Updated comments
 7. `backend/tests/basketball-engine.test.js` - New test suite for APEX update
 

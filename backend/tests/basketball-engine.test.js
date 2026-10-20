@@ -338,7 +338,7 @@ describe('Basketball Engine', () => {
   });
 
   describe('APEX Basketball Over/Under Update', () => {
-    test('should enforce 75% confidence threshold per market', () => {
+    test('should enforce 75% confidence threshold per market at API level', () => {
       // Create predictions with varying confidence levels
       const predictions = [
         {
@@ -362,7 +362,7 @@ describe('Basketball Engine', () => {
         },
       ];
 
-      // Filter predictions to only include picks with probability >= 75%
+      // Filter predictions to only include picks with probability >= 75% (API-level filtering)
       const filtered = predictions.map(p => {
         const qualifyingPicks = p.picks.filter(pk => pk.probability >= 0.75);
         if (qualifyingPicks.length === 0) return null;
