@@ -13,6 +13,30 @@ import { saveTokenToDatabase } from './services/notificationService';
 import mobileAds from 'react-native-google-mobile-ads';
 import NetInfo from '@react-native-community/netinfo';
 
+// Error boundary to catch startup errors
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('App ErrorBoundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      console.error('Fatal error:', this.state.error);
+      return null;
+    }
+    return this.props.children;
+  }
+}
+
 // Screens
 import HomeScreen from './screens/HomeScreen';
 import TipsScreen from './screens/TipsScreen';
@@ -169,44 +193,70 @@ function AppContent() {
 
   // Initialize Ads
   useEffect(() => {
-    mobileAds()
-      .initialize()
-      .then(adapterStatuses => {
-        // console.log('Ads Initialized', adapterStatuses);
-      });
+    try {
+      mobileAds()
+        .initialize()
+        .then(adapterStatuses => {
+          console.log('Ads Initialized', adapterStatuses);
+        })
+        .catch(error => {
+          console.error('Failed to initialize ads:', error);
+        });
+    } catch (error) {
+      console.error('Ads initialization error:', error);
+    }
   }, []);
 
   // Monitor Internet Connection
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      setIsConnected(state.isConnected !== false);
-    });
-    return unsubscribe;
+    try {
+      const unsubscribe = NetInfo.addEventListener(state => {
+        setIsConnected(state.isConnected !== false);
+      });
+      return unsubscribe;
+    } catch (error) {
+      console.error('NetInfo error:', error);
+      setIsConnected(true); // Assume connected if error
+    }
   }, []);
 
   // Handle user state changes
   function onAuthStateChanged(user) {
-    setUser(user);
-    if (initializing) setInitializing(false);
+    try {
+      setUser(user);
+      if (initializing) setInitializing(false);
+    } catch (error) {
+      console.error('Auth state change error:', error);
+      if (initializing) setInitializing(false);
+    }
   }
 
   useEffect(() => {
-    const subscriber = auth().onAuthStateChanged(onAuthStateChanged);
-    return subscriber; // unsubscribe on unmount
+    try {
+      const subscriber = auth().onAuthStateChanged(onAuthStateChanged);
+      return subscriber; // unsubscribe on unmount
+    } catch (error) {
+      console.error('Auth initialization error:', error);
+      setInitializing(false); // Continue without auth
+    }
   }, []);
 
   // Handle FCM Tokens
   useEffect(() => {
     if (user) {
-      // Save token when user logs in
-      saveTokenToDatabase(user.uid);
-
-      // Listen for token refresh
-      const unsubscribeToken = messaging().onTokenRefresh(token => {
+      try {
+        // Save token when user logs in
         saveTokenToDatabase(user.uid);
-      });
 
-      return unsubscribeToken;
+        // Listen for token refresh
+        const unsubscribeToken = messaging().onTokenRefresh(token => {
+          saveTokenToDatabase(user.uid);
+        });
+
+        return unsubscribeToken;
+      } catch (error) {
+        console.error('FCM token error:', error);
+      }
     }
   }, [user]);
 
@@ -242,10 +292,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <UserProvider>
-        <AppContent />
-      </UserProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <UserProvider>
+          <AppContent />
+        </UserProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
