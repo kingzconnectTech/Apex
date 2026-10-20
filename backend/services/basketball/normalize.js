@@ -237,8 +237,9 @@ function buildLineups(injuriesByTeam) {
  * @param {Object} [params.odds]   - output of EspnProvider.extractBasketballOdds
  * @param {Array}  [params.injuries]
  * @param {string} params.league
+ * @param {Array}  [params.h2hLog] - head-to-head game log (derived games where these teams played each other)
  */
-function normalizeGame({ fixture, odds = null, injuries = [], league }) {
+function normalizeGame({ fixture, odds = null, injuries = [], league, h2hLog = [] }) {
   if (!fixture) return null;
   const leagueCfg = getLeagueConfig(league || fixture?.league?.slug || fixture?.league?.id);
   const injuriesByTeam = splitInjuriesByTeam(
@@ -246,6 +247,9 @@ function normalizeGame({ fixture, odds = null, injuries = [], league }) {
     fixture.homeTeam?.id,
     fixture.awayTeam?.id
   );
+
+  // Aggregate head-to-head statistics
+  const h2hStats = h2hLog && h2hLog.length > 0 ? aggregateGames(h2hLog) : null;
 
   return {
     id: String(fixture.fixture?.id ?? ''),
@@ -266,6 +270,7 @@ function normalizeGame({ fixture, odds = null, injuries = [], league }) {
     odds: odds || null,
     injuries: injuriesByTeam,
     lineups: buildLineups(injuriesByTeam),
+    h2hStats,
   };
 }
 

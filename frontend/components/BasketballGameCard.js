@@ -14,7 +14,9 @@ const MARKET_COLORS = {
   Spread: '#FF6B6B',
 };
 
-const MARKETS = ['Total Points', 'Spread'];
+// Basketball predictions prioritize Total Points Over/Under (75%+ confidence required)
+// Secondary markets (Team Totals, First-Half, Quarter) will be added when data is available
+const MARKETS = ['Total Points'];
 
 /** Resolve real team identity, falling back to the "A vs B" label only. */
 function resolveTeams(prediction) {
@@ -110,6 +112,11 @@ export default function BasketballGameCard({ prediction, onPress }) {
           <Text style={styles.oddsText}>
             {pick.odds != null ? `${pick.odds.toFixed(2)}` : '—'}
           </Text>
+        </View>
+
+        <View style={styles.projectedTotalRow}>
+          <Text style={styles.projectedTotalLabel}>Projected Total:</Text>
+          <Text style={styles.projectedTotalValue}>{projection.total ?? '—'} points</Text>
         </View>
 
         <View style={styles.barRow}>
@@ -386,6 +393,22 @@ const createStyles = (theme) => StyleSheet.create({
     fontSize: getResponsiveFontSize(14),
     fontWeight: '700',
     color: theme.textSecondary,
+  },
+  projectedTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: verticalScale(4),
+  },
+  projectedTotalLabel: {
+    fontSize: getResponsiveFontSize(11),
+    fontWeight: '600',
+    color: theme.textSecondary,
+  },
+  projectedTotalValue: {
+    fontSize: getResponsiveFontSize(13),
+    fontWeight: '700',
+    color: theme.primary,
   },
   barRow: {
     flexDirection: 'row',

@@ -97,11 +97,25 @@ function analyzeGame({
 }) {
   if (!fixture) return null;
 
-  const game = normalizeGame({ fixture, odds, injuries, league });
+  const game = normalizeGame({ fixture, odds, injuries, league, h2hLog });
   const leagueCfg = getLeagueConfig(game.league);
 
   const homeDerived = (homeLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
   const awayDerived = (awayLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
+
+  // Extract head-to-head games from team logs
+  const homeId = fixture.homeTeam?.id;
+  const awayId = fixture.awayTeam?.id;
+  const h2hLog = [];
+  if (homeId && awayId) {
+    (homeDerived || []).forEach(g => {
+      if (String(g.opponentId) === String(awayId)) {
+        h2hLog.push(g);
+      }
+    });
+    // Sort newest-first
+    h2hLog.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }
 
   const homeRatings = computeTeamRatings(homeDerived, leagueCfg, cfg, { isHomeContext: true });
   const awayRatings = computeTeamRatings(awayDerived, leagueCfg, cfg, { isHomeContext: false });
@@ -209,6 +223,25 @@ function buildReasoning(pick, result) {
     : `Projected margin ${result.projection.margin > 0 ? '+' : ''}${result.projection.margin}`;
   const parts = [proj];
 
+  // Add form-based evidence (last 10 games scoring trends)
+  const homeLast10 = result.homeForm?.last10;
+  const awayLast10 = result.awayForm?.last10;
+  if (isTotal && homeLast10 && awayLast10) {
+    const avgCombined = (homeLast10.avgTotal || 0) + (awayLast10.avgTotal || 0);
+    if (avgCombined > 0) {
+      parts.push(`teams avg ${avgCombined.toFixed(1)} pts in last 10`);
+    }
+  }
+
+  // Add head-to-head evidence when available
+  if (result.game?.h2hStats && result.game.h2hStats.sampleSize > 0) {
+    const h2hAvg = result.game.h2hStats.avgTotal;
+    if (h2hAvg != null) {
+      parts.push(`H2H avg ${h2hAvg.toFixed(1)} pts`);
+    }
+  }
+
+  // Add adjustments (injuries, rest, travel, etc.)
   const relevant = (result.adjustments?.breakdown || []).filter(b => (isTotal ? b.total : b.margin));
   relevant.slice(0, 2).forEach(b => {
     const val = isTotal ? b.total : b.margin;

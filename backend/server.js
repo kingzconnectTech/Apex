@@ -1831,16 +1831,7 @@ function analyzeMatchServer({
       });
     }
   } else if (isBasketball) {
-    // Basketball — preserve baseline recommendations (WIN + GOALS)
-    if (winPrediction) {
-      recommendations.push({
-        type: 'WIN',
-        label: 'Match Winner',
-        value: winPrediction,
-        confidence: Math.round(winConfidence),
-        color: diff > 0 ? '#40c057' : (diff < 0 ? '#ff6b6b' : '#868e96'),
-      });
-    }
+    // Basketball — prioritize Total Points Over/Under only (no straight-winner)
     if (goalsPrediction) {
       recommendations.push({
         type: 'GOALS',
@@ -1850,6 +1841,7 @@ function analyzeMatchServer({
         color: goalsConfidence >= 70 ? '#40c057' : '#ffa94d',
       });
     }
+    // Do NOT include straight-winner (WIN) predictions for basketball
   } else {
     // Soccer — delegate top-2 selection to the shared ranking utility.
     // rankFootballPredictions validates, deduplicates, sorts by confidence

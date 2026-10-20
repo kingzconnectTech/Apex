@@ -126,13 +126,13 @@ const CONFIG = {
 
   // --- Line & pick selection ---
   selection: {
-    mainMinProb: 0.75,
-    alternateMinProb: 0.75,
+    mainMinProb: 0.75,  // Enforce 75% minimum confidence for all markets
+    alternateMinProb: 0.75,  // Enforce 75% minimum confidence for all markets
     minEdge: 0.04,
     minDataQuality: 0.7,
     // score = rankProbWeight * prob + rankEvWeight * edgeScaledEv
-    rankProbWeight: 0.5,
-    rankEvWeight: 0.5,
+    rankProbWeight: 0.7,  // Prioritize probability over edge for basketball
+    rankEvWeight: 0.3,
     // edgeScaledEv = clamp(ev / evScale, 0, 1)
     evScale: 0.10,
     // Confidence tiers.
@@ -148,6 +148,16 @@ const CONFIG = {
       maxTotalForBigMargin: 245,
     },
     noPickLabel: 'No confident pick',
+    // Market priority order: highest priority first
+    // Only markets that meet the 75% confidence threshold are displayed
+    marketPriority: [
+      'Total Points',        // Priority 1: Full-Game Total Points Over/Under
+      'Team Total',          // Priority 2: Home/Away team total points Over/Under
+      'First Half Total',    // Priority 3: First-Half Total Points Over/Under
+      'Quarter Total',       // Priority 4: Quarter Total Points Over/Under
+    ],
+    // Secondary markets (team totals, halves, quarters) require higher data quality
+    secondaryMarketMinDataQuality: 0.75,
     // Live auto-downgrade / disable policy driven by rolling performance.
     autoDowngrade: {
       enabled: true,

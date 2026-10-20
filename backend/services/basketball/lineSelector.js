@@ -204,6 +204,10 @@ function bestOf(candidates) {
 /**
  * Full selection for one game.
  *
+ * Prioritizes markets according to the configured marketPriority array.
+ * Only markets that meet the 75% confidence threshold are displayed.
+ * No straight-winner or moneyline fallback is allowed.
+ *
  * @param {Object} params
  * @param {Object} params.projection - adjusted projection ({ total, margin }) plus sigma
  * @param {Object} params.lines      - { total:[...], spread:[...] }
@@ -271,10 +275,23 @@ function selectPicks({ projection, lines, ctx }) {
   };
 
   const picks = [];
-  const totalPick = applyPolicy(bestOf(totalCandidates), 'Total Points');
-  if (totalPick) picks.push(totalPick);
-  const spreadPick = applyPolicy(bestOf(spreadCandidates), 'Spread');
-  if (spreadPick) picks.push(spreadPick);
+  const marketPriority = cfg.selection?.marketPriority || ['Total Points'];
+
+  // Process markets in priority order
+  // Currently only Total Points is fully supported with ESPN data
+  // Secondary markets (Team Total, First-Half, Quarter) are prepared for future data availability
+  marketPriority.forEach(market => {
+    if (market === 'Total Points') {
+      const totalPick = applyPolicy(bestOf(totalCandidates), 'Total Points');
+      if (totalPick) picks.push(totalPick);
+    }
+    // Secondary markets would be added here when period-level data becomes available
+    // Example for Team Total (when data is available):
+    // else if (market === 'Team Total' && lines?.teamTotal) { ... }
+  });
+
+  // No straight-winner or moneyline fallback is allowed
+  // If no market meets the 75% threshold, return no pick
 
   const consistencyFlags = assessConsistency({
     projTotal: projection.total, projMargin: projection.margin, cfg,

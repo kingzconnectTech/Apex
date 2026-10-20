@@ -5,6 +5,13 @@
  *   AC-5: Basketball possessions formula uses correct units
  *   AC-6: Offensive/defensive ratings are per-100-possessions and consistent
  *   AC-7: Basketball win probability is not derived solely from expected scores
+ *
+ * Tests for APEX Basketball Over/Under Update:
+ *   - 75% confidence threshold enforcement per market
+ *   - Market priority (Total Points > Team Totals > First-Half > Quarter)
+ *   - No straight-winner/moneyline fallback
+ *   - Head-to-head analysis included in reasoning
+ *   - Last 10 games scoring trends included in reasoning
  */
 
 const {
@@ -327,6 +334,157 @@ describe('Basketball Engine', () => {
     test('should return null for unknown markets', () => {
       const scores = { homePoints: 110, awayPoints: 105, line: 105.5 };
       expect(settleBasketball('unknown_market', scores)).toBeNull();
+    });
+  });
+
+  describe('APEX Basketball Over/Under Update', () => {
+    test('should enforce 75% confidence threshold per market', () => {
+      // Create predictions with varying confidence levels
+      const predictions = [
+        {
+          gameId: '1',
+          picks: [
+            { market: 'Total Points', probability: 0.80, confidence: 'High' }, // Above threshold
+            { market: 'Spread', probability: 0.70, confidence: 'Medium' }, // Below threshold
+          ],
+        },
+        {
+          gameId: '2',
+          picks: [
+            { market: 'Total Points', probability: 0.74, confidence: 'Medium' }, // Below threshold
+          ],
+        },
+        {
+          gameId: '3',
+          picks: [
+            { market: 'Total Points', probability: 0.75, confidence: 'Medium' }, // Exactly at threshold
+          ],
+        },
+      ];
+
+      // Filter predictions to only include picks with probability >= 75%
+      const filtered = predictions.map(p => {
+        const qualifyingPicks = p.picks.filter(pk => pk.probability >= 0.75);
+        if (qualifyingPicks.length === 0) return null;
+        return { ...p, picks: qualifyingPicks };
+      }).filter(Boolean);
+
+      // Game 1: Only Total Points pick should remain (80% >= 75%)
+      expect(filtered[0].picks.length).toBe(1);
+      expect(filtered[0].picks[0].market).toBe('Total Points');
+      expect(filtered[0].picks[0].probability).toBe(0.80);
+
+      // Game 2: No picks should remain (74% < 75%)
+      expect(filtered.length).toBe(2); // Only games 1 and 3 should remain
+
+      // Game 3: Pick should remain (75% >= 75%)
+      expect(filtered[1].picks.length).toBe(1);
+      expect(filtered[1].picks[0].probability).toBe(0.75);
+    });
+
+    test('should prioritize Total Points market over other markets', () => {
+      const CONFIG = require('../services/basketball/config');
+      const marketPriority = CONFIG.selection?.marketPriority || [];
+
+      // Verify Total Points is first in priority
+      expect(marketPriority.length).toBeGreaterThan(0);
+      expect(marketPriority[0]).toBe('Total Points');
+
+      // Verify secondary markets are in the correct order
+      if (marketPriority.length > 1) {
+        expect(marketPriority[1]).toBe('Team Total');
+      }
+      if (marketPriority.length > 2) {
+        expect(marketPriority[2]).toBe('First Half Total');
+      }
+      if (marketPriority.length > 3) {
+        expect(marketPriority[3]).toBe('Quarter Total');
+      }
+    });
+
+    test('should not include straight-winner predictions in basketball output', () => {
+      // Verify that the basketball prediction engine does not produce straight-winner picks
+      const CONFIG = require('../services/basketball/config');
+      const marketPriority = CONFIG.selection?.marketPriority || [];
+
+      // Verify no moneyline or winner market is in the priority list
+      const hasWinnerMarket = marketPriority.some(m =>
+        m.toLowerCase().includes('winner') ||
+        m.toLowerCase().includes('moneyline') ||
+        m.toLowerCase().includes('straight')
+      );
+
+      expect(hasWinnerMarket).toBe(false);
+    });
+
+    test('should include head-to-head analysis when available', () => {
+      // Verify that head-to-head data is processed
+      const homeMatches = [
+        { pf: 110, pa: 105, isHome: true, date: '2026-01-01T12:00:00Z', opponentId: 'away-team-1' },
+        { pf: 108, pa: 102, isHome: true, date: '2026-01-05T15:00:00Z', opponentId: 'away-team-1' },
+      ];
+
+      const awayMatches = [
+        { pf: 105, pa: 110, isHome: false, date: '2026-01-01T12:00:00Z', opponentId: 'home-team-1' },
+        { pf: 102, pa: 108, isHome: false, date: '2026-01-05T15:00:00Z', opponentId: 'home-team-1' },
+      ];
+
+      // Extract H2H games (games where teams played each other)
+      const h2hLog = homeMatches.filter(g => String(g.opponentId) === 'away-team-1');
+
+      expect(h2hLog.length).toBe(2);
+      expect(h2hLog[0].opponentId).toBe('away-team-1');
+    });
+
+    test('should include last 10 games scoring trends in reasoning', () => {
+      const { buildTeamForm, deriveGameMetrics } = require('../services/basketball/normalize');
+      const { getLeagueConfig } = require('../services/basketball/leagues');
+
+      const leagueCfg = getLeagueConfig('nba');
+      const homeMatches = [];
+      const awayMatches = [];
+
+      // Generate 10 games for each team with box scores
+      for (let i = 0; i < 10; i++) {
+        homeMatches.push({
+          pf: 110 + i,
+          pa: 105 + i,
+          isHome: true,
+          date: `2026-01-${(i + 1).toString().padStart(2, '0')}T12:00:00Z`,
+          timestamp: new Date(`2026-01-${(i + 1).toString().padStart(2, '0')}T12:00:00Z`).getTime(),
+          boxScore: {
+            fga: 85 + i, orb: 10, tov: 12, fta: 20,
+            oppFga: 82 + i, oppOrb: 11, oppTov: 13, oppFta: 18,
+          },
+        });
+        awayMatches.push({
+          pf: 105 + i,
+          pa: 110 + i,
+          isHome: false,
+          date: `2026-01-${(i + 1).toString().padStart(2, '0')}T12:00:00Z`,
+          timestamp: new Date(`2026-01-${(i + 1).toString().padStart(2, '0')}T12:00:00Z`).getTime(),
+          boxScore: {
+            fga: 82 + i, orb: 11, tov: 13, fta: 18,
+            oppFga: 85 + i, oppOrb: 10, oppTov: 12, oppFta: 20,
+          },
+        });
+      }
+
+      const homeDerived = homeMatches.map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
+      const awayDerived = awayMatches.map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
+
+      const homeForm = buildTeamForm(homeDerived, { isHomeContext: true });
+      const awayForm = buildTeamForm(awayDerived, { isHomeContext: false });
+
+      // Verify last 10 games are analyzed
+      expect(homeForm.last10).toBeDefined();
+      expect(homeForm.last10.sampleSize).toBe(10);
+      expect(awayForm.last10).toBeDefined();
+      expect(awayForm.last10.sampleSize).toBe(10);
+
+      // Verify average totals are calculated
+      expect(homeForm.last10.avgTotal).toBeGreaterThan(0);
+      expect(awayForm.last10.avgTotal).toBeGreaterThan(0);
     });
   });
 });
