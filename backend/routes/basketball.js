@@ -39,7 +39,13 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
 
       const predictions = await getPredictions({ sportsData, leagues, date, traceId });
 
-      let filtered = predictions;
+      // Enforce 75% minimum confidence threshold for basketball
+      let filtered = predictions.filter(p => {
+        if (!p.picks || p.picks.length === 0) return false;
+        // Only include predictions where at least one pick has probability >= 75%
+        return p.picks.some(pk => pk.probability >= 0.75);
+      });
+
       if (confidence) filtered = filtered.filter(p => p.picks.some(pk => pk.confidence === confidence));
       if (market) filtered = filtered.filter(p => p.picks.some(pk => pk.market === market));
 
@@ -67,7 +73,29 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
       const found = await getGamePrediction({ sportsData, gameId, league, traceId });
       if (!found) return res.status(404).json({ error: `No basketball game ${gameId} found for league ${league}` });
 
-      res.json({ ...found.formatted, disclaimer: DISCLAIMER });
+      // Enforce 75% minimum confidence threshold for individual game predictions
+      const formatted = found.formatted;
+      if (formatted && formatted.picks && formatted.picks.length > 0) {
+        const originalCount = formatted.picks.length;
+        formatted.picks = formatted.picks.filter(pk => pk.probability >= 0.75);
+
+        logger?.log?.('info', '[BASKETBALL] individual game confidence threshold applied (75%)', {
+          traceId,
+          gameId,
+          originalCount,
+          filteredCount: formatted.picks.length,
+        });
+
+        if (formatted.picks.length === 0) {
+          return res.json({
+            ...formatted,
+            disclaimer: DISCLAIMER,
+            message: 'No basketball matches currently meet the 75% confidence threshold.',
+          });
+        }
+      }
+
+      res.json({ ...formatted, disclaimer: DISCLAIMER });
     } catch (err) {
       logger?.log?.('error', '[BASKETBALL] game prediction failed', { traceId, gameId: req.params.gameId, error: err?.message });
       res.status(500).json({ error: 'Failed to generate basketball prediction', detail: err?.message });

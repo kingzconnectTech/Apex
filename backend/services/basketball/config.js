@@ -126,8 +126,8 @@ const CONFIG = {
 
   // --- Line & pick selection ---
   selection: {
-    mainMinProb: 0.60,
-    alternateMinProb: 0.68,
+    mainMinProb: 0.75,
+    alternateMinProb: 0.75,
     minEdge: 0.04,
     minDataQuality: 0.7,
     // score = rankProbWeight * prob + rankEvWeight * edgeScaledEv

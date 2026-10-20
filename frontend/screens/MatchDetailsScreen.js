@@ -654,7 +654,8 @@ export default function MatchDetailsScreen({ route, navigation }) {
                   )}
 
                   <View style={styles.tipsList}>
-                    {botAnalysis.recommendations.map((rec, i) => {
+                    {botAnalysis.recommendations && botAnalysis.recommendations.length > 0 ? (
+                      botAnalysis.recommendations.map((rec, i) => {
                       const recMarketKey = (rec.type || '').toLowerCase();
                       const outcomeObj = settlementData?.results?.find(r =>
                         r.market === recMarketKey ||
@@ -710,12 +711,28 @@ export default function MatchDetailsScreen({ route, navigation }) {
                           <Text style={styles.tipValue}>{rec.value}</Text>
                         </View>
                       );
-                    })}
+                    })
+                    ) : (
+                      <View style={styles.predictionErrorContainer}>
+                        <Ionicons name="shield-checkmark-outline" size={32} color={theme.textSecondary} />
+                        <Text style={styles.predictionErrorText}>
+                          {match?.sport === 'soccer'
+                            ? 'No football matches currently meet the 90% confidence threshold.'
+                            : match?.sport === 'basketball'
+                            ? 'No basketball matches currently meet the 75% confidence threshold.'
+                            : 'No predictions currently meet the confidence threshold.'}
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
-                  <View style={styles.divider} />
+                  {botAnalysis.recommendations && botAnalysis.recommendations.length > 0 && (
+                    <View style={styles.divider} />
+                  )}
 
-                  <View style={styles.formSection}>
+                  {botAnalysis.recommendations && botAnalysis.recommendations.length > 0 && (
+                    <>
+                    <View style={styles.formSection}>
                     <Text style={styles.subTitle}>Recent Form</Text>
                     <View style={styles.teamFormRow}>
                       <Text style={styles.teamFormName} numberOfLines={1}>{homeName}</Text>
@@ -730,7 +747,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
                   <View style={styles.divider} />
 
                   <Text style={styles.subTitle}>Key Factors</Text>
-                  {botAnalysis.factors.map((factor, i) => (
+                  {botAnalysis.factors && botAnalysis.factors.map((factor, i) => (
                     <View key={i} style={styles.factorRow}>
                       <View style={[
                         styles.factorDot,
@@ -743,6 +760,8 @@ export default function MatchDetailsScreen({ route, navigation }) {
                       </Text>
                     </View>
                   ))}
+                    </>
+                  )}
                 </>
               )
             ) : (

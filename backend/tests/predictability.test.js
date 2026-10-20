@@ -402,16 +402,6 @@ describe('Predictability & Fixture HTTP Endpoints', () => {
     global.fetch = originalFetch;
   });
 
-  test('GET /api/predictions/recommended returns selective feed structure', async () => {
-    const res = await request(app).get('/api/predictions/recommended?league=eng.1');
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(Array.isArray(res.body.recommended)).toBe(true);
-    expect(res.body.stats).toBeDefined();
-    expect(res.body.stats.totalAnalyzed).toBeDefined();
-    expect(res.body.stats.totalRecommended).toBeDefined();
-  });
-
   test('GET /api/fixtures/all returns paginated fixture catalog', async () => {
     const res = await request(app).get('/api/fixtures/all?league=eng.1&limit=10&page=1');
     expect(res.status).toBe(200);

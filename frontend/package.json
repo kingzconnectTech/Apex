@@ -33,5 +33,9 @@
   "devDependencies": {
     "@react-native-community/cli": "^20.1.0",
     "@react-native/metro-config": "^0.83.1"
+  },
+  "allowScripts": {
+    "@firebase/util@1.13.0": true,
+    "protobufjs@7.5.4": true
   }
 }

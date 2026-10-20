@@ -54,7 +54,6 @@ const {
   evaluateFixture,
   filterAndRankFixtures,
 } = require('./services/predictabilityEngine');
-const { LeoAssistanceService } = require('./services/leoAssistanceService');
 const { createBasketballRouter } = require('./routes/basketball');
 const basketballPersistence = require('./services/basketball/persistence');
 const { startBasketballScheduler } = require('./services/basketball/scheduler');
@@ -145,9 +144,6 @@ const compression = require('compression');
 // Initialize Sports Data Service (ESPN primary + PitchAPI fallback)
 const sportsData = new SportsDataService({ logger });
 logger.info('SportsDataService initialized', { providers: sportsData.getProvidersStatus() });
-
-// Initialize Leo Assistance Service
-const leoAssistanceService = new LeoAssistanceService({ logger, sportsData });
 
 // Initialize Express app
 const app = express();
@@ -929,232 +925,6 @@ app.get('/api/predictions/settlement-health', requireSettlementAuth, async (req,
 // ──────────────────────────────────────────────────────────
 // PREDICTABILITY & SELECTIVE RECOMMENDATION ENDPOINTS
 // ──────────────────────────────────────────────────────────
-
-/**
- * GET /api/predictions/recommended
- *
- * Core selective prediction feed:
- * Fetches all available matches from ESPN & PitchAPI, evaluates candidates
- * using predictability and empirical Bayesian/Poisson models, and returns
- * ONLY matches and markets that meet strict quality criteria (>= 75% calibrated
- * probability, sample size >= 5 per team, data quality >= 0.65).
- */
-app.get('/api/predictions/recommended', async (req, res) => {
-  const { traceId } = req;
-  const { sport = 'soccer', league = null, date = null, minProb = null } = req.query;
-
-  try {
-    // Normalization of minProb threshold: minimum 90% (0.90) strictly enforced
-    let threshold = 0.90;
-    if (minProb != null) {
-      const parsedMin = parseFloat(minProb);
-      if (!isNaN(parsedMin) && parsedMin > 0) {
-        threshold = parsedMin > 1.0 ? parsedMin / 100 : parsedMin;
-      }
-    }
-    threshold = Math.max(0.90, threshold);
-
-    const config = {
-      ...DEFAULT_FILTER_CONFIG,
-      minCalibratedProbability: threshold,
-    };
-
-    // French leagues excluded from candidate leagues
-    let targetLeagues = leaguesToRefresh.filter(l => (l.sport === sport || l.sport === 'football') && !isFrenchCompetition({ sport: l.sport, leagueSlug: l.league }));
-    if (league) {
-      if (isFrenchCompetition({ sport, leagueSlug: league })) {
-        logger.info('Rejected French competition request in recommended feed', { traceId, league });
-        return res.json({
-          success: true,
-          recommended: [],
-          allFixtures: [],
-          stats: {
-            totalRetrieved: 0,
-            totalAnalyzed: 0,
-            totalRejected: 0,
-            totalRecommended: 0,
-            predictionsRejectedBelow90: 0,
-            predictionsRejectedInvalid: 0,
-            predictionsQualifying90Plus: 0,
-            acceptanceRate: 0,
-            rejectionReasonBreakdown: { 'French competitions excluded': 1 },
-          },
-          traceId,
-        });
-      }
-      targetLeagues = targetLeagues.filter(l => l.league === league);
-      if (targetLeagues.length === 0) {
-        targetLeagues = [{ sport, league }];
-      }
-    }
-
-    // Diagnostics tracking
-    let fixturesDiscovered = 0;
-    let fixturesRetrieved = 0;
-    let fixturesSkippedDuplicate = 0;
-    let fixturesExcludedByStatusOrFilter = 0;
-    let failedFixturesCount = 0;
-
-    const parsedDate = parseDateParam(date);
-    // If a specific date was requested, query that date; otherwise discover upcoming across 7-day horizon
-    const datesToEvaluate = parsedDate ? [parsedDate] : getUpcomingEspnDates(7);
-    const evaluatedFixtures = [];
-    const seenFixtureIds = new Set();
-
-    for (const lConfig of targetLeagues) {
-      if (isFrenchCompetition({ sport: lConfig.sport, leagueSlug: lConfig.league })) continue;
-
-      for (const d of datesToEvaluate) {
-        try {
-          const qs = d.espnDate ? `?dates=${encodeURIComponent(d.espnDate)}` : '';
-          const scoreboardData = await fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/scoreboard${qs}`);
-          const events = scoreboardData?.events || [];
-          fixturesDiscovered += events.length;
-
-          for (const ev of events) {
-            fixturesRetrieved++;
-            const competition = ev.competitions?.[0];
-            const compLeagueName = competition?.league?.name || lConfig.league;
-            const compLeagueSlug = competition?.league?.slug || lConfig.league;
-            if (isFrenchCompetition({ sport: lConfig.sport, leagueSlug: compLeagueSlug, name: compLeagueName })) {
-              fixturesExcludedByStatusOrFilter++;
-              continue;
-            }
-
-            const state = competition?.status?.type?.state;
-            if (state !== 'pre' && state !== 'scheduled') {
-              fixturesExcludedByStatusOrFilter++;
-              continue;
-            }
-
-            // Deduplicate across dates/pages
-            if (seenFixtureIds.has(ev.id)) {
-              fixturesSkippedDuplicate++;
-              continue;
-            }
-            seenFixtureIds.add(ev.id);
-
-            // Clean date filtering (comparing YYYY-MM-DD strings without Invalid Date bugs)
-            if (parsedDate) {
-              const evIso = ev.date ? new Date(ev.date).toISOString().slice(0, 10) : '';
-              if (evIso && evIso !== parsedDate.isoDate) {
-                fixturesExcludedByStatusOrFilter++;
-                continue;
-              }
-            }
-
-            const homeComp = competition?.competitors?.find(c => c.homeAway === 'home');
-            const awayComp = competition?.competitors?.find(c => c.homeAway === 'away');
-            if (!homeComp?.id || !awayComp?.id) {
-              fixturesExcludedByStatusOrFilter++;
-              continue;
-            }
-
-            let homeSched = null;
-            let awaySched = null;
-            try {
-              [homeSched, awaySched] = await Promise.all([
-                fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/teams/${homeComp.id}/schedule`),
-                fetchFromBackendOrESPN(`${lConfig.sport}/${lConfig.league}/teams/${awayComp.id}/schedule`),
-              ]);
-            } catch (_) {
-              failedFixturesCount++;
-            }
-
-            const homeMatches = processScheduleForTeam(homeSched?.events || [], homeComp.id);
-            const awayMatches = processScheduleForTeam(awaySched?.events || [], awayComp.id);
-
-            const evalResult = evaluateFixture({
-              fixture: {
-                id: ev.id,
-                date: ev.date,
-                league: { name: compLeagueName },
-                status: state,
-              },
-              cleanHomeMatches: homeMatches,
-              cleanAwayMatches: awayMatches,
-              homeName: homeComp.team?.displayName || homeComp.team?.name || 'Home Team',
-              awayName: awayComp.team?.displayName || awayComp.team?.name || 'Away Team',
-              config,
-            });
-
-            evaluatedFixtures.push(evalResult);
-          }
-        } catch (lErr) {
-          logger.debug('League scoreboard fetch failed in recommended feed', { league: lConfig.league, date: d.espnDate, error: lErr.message });
-        }
-      }
-    }
-
-    const { recommended, allFixtures, stats } = filterAndRankFixtures(evaluatedFixtures);
-
-    // Merge comprehensive diagnostics into stats
-    stats.fixturesDiscovered = fixturesDiscovered;
-    stats.fixturesRetrieved = fixturesRetrieved;
-    stats.fixturesSkippedDuplicate = fixturesSkippedDuplicate;
-    stats.fixturesExcludedByStatusOrFilter = fixturesExcludedByStatusOrFilter;
-    stats.fixturesEvaluated = evaluatedFixtures.length;
-    stats.failedFixturesCount = failedFixturesCount;
-    stats.scanCompleted = true;
-    stats.horizonDays = datesToEvaluate.length;
-    stats.enforcedMinConfidence = threshold;
-
-    logger.info('[RECOMMENDATIONS DIAGNOSTICS]', {
-      traceId,
-      fixturesDiscovered,
-      fixturesRetrieved,
-      fixturesSkippedDuplicate,
-      fixturesExcludedByStatusOrFilter,
-      fixturesEvaluated: stats.fixturesEvaluated,
-      predictionsRejectedBelow90: stats.predictionsRejectedBelow90,
-      predictionsRejectedInvalid: stats.predictionsRejectedInvalid,
-      predictionsQualifying90Plus: stats.predictionsQualifying90Plus,
-      totalRecommended: stats.totalRecommended,
-      enforcedMinConfidence: threshold,
-    });
-
-    return res.json({
-      success: true,
-      recommended,
-      allFixtures,
-      stats,
-      traceId,
-    });
-  } catch (error) {
-    logger.error('Error generating recommended predictions', { traceId, error: error.message });
-    return res.status(500).json({ error: error.message, traceId });
-  }
-});
-
-/**
- * POST /api/leo/recommendations
- *
- * Full multi-stage Leo Assistance scan:
- * Evaluates the entire eligible fixture set across providers, dates, and batches
- * without premature truncation or skipped batches, ranks qualified predictions,
- * and returns top recommendations with full completeness diagnostics.
- */
-app.post('/api/leo/recommendations', async (req, res) => {
-  const { traceId } = req;
-  const { sports = ['soccer'], startDate, endDate, date, leagues, matchLimit = 5, minConfidence = 70 } = req.body || {};
-
-  try {
-    const result = await leoAssistanceService.scanAndRecommend({
-      sports,
-      startDate,
-      endDate,
-      date,
-      leagues,
-      matchLimit: Number(matchLimit) || 5,
-      minConfidence: Number(minConfidence) || 70,
-      traceId,
-    });
-    return res.json({ success: true, ...result, traceId });
-  } catch (error) {
-    logger.error('Error running Leo Assistance recommendations', { traceId, error: error.message });
-    return res.status(500).json({ error: error.message, traceId });
-  }
-});
 
 /**
  * GET /api/fixtures/all
@@ -2636,6 +2406,53 @@ app.post('/api/match-prediction', async (req, res) => {
     });
   }
 
+  // --- Apply Sport-Specific Confidence Thresholds ---
+  // Football: 90% minimum confidence required
+  // Basketball: 75% minimum confidence required (handled by /api/basketball/predictions)
+  // Tennis: No specific threshold (preserves existing behavior)
+  if (sport === 'soccer' && prediction.recommendations) {
+    const originalCount = prediction.recommendations.length;
+    prediction.recommendations = prediction.recommendations.filter(rec => {
+      // Confidence is stored as percentage (0-100), filter for >= 90%
+      const confidence = rec.confidence ?? 0;
+      return confidence >= 90;
+    });
+
+    logger.info('Football confidence threshold applied (90%)', {
+      traceId,
+      matchId,
+      originalCount,
+      filteredCount: prediction.recommendations.length,
+    });
+
+    // If no recommendations meet threshold, set default values
+    if (prediction.recommendations.length === 0) {
+      prediction.prediction = 'No football matches currently meet the 90% confidence threshold.';
+      prediction.confidence = 0;
+      prediction.color = '#868e96';
+    }
+  } else if (sport === 'basketball' && prediction.recommendations) {
+    // Apply 75% threshold for basketball in match-prediction endpoint as well
+    const originalCount = prediction.recommendations.length;
+    prediction.recommendations = prediction.recommendations.filter(rec => {
+      const confidence = rec.confidence ?? 0;
+      return confidence >= 75;
+    });
+
+    logger.info('Basketball confidence threshold applied (75%)', {
+      traceId,
+      matchId,
+      originalCount,
+      filteredCount: prediction.recommendations.length,
+    });
+
+    if (prediction.recommendations.length === 0) {
+      prediction.prediction = 'No basketball matches currently meet the 75% confidence threshold.';
+      prediction.confidence = 0;
+      prediction.color = '#868e96';
+    }
+  }
+
   // --- Build Response ---
   const result = {
     matchId,
@@ -3104,8 +2921,6 @@ module.exports = {
   evaluateMarketCandidate,
   evaluateFixture,
   filterAndRankFixtures,
-  leoAssistanceService,
-  LeoAssistanceService,
   processScheduleForTeam,
   buildH2H,
   leaguesToRefresh,

@@ -135,35 +135,6 @@ export const fetchPredictionStats = async (userId) => {
 };
 
 /**
- * Fetch high-confidence recommended predictions that pass the 90%+ calibrated probability filter.
- *
- * @param {Object} options
- * @param {string} [options.sport='soccer']
- * @param {string} [options.league]
- * @param {string} [options.date]
- * @param {number} [options.minProb=0.90]
- * @returns {Promise<Object>} { success, totalAnalyzed, totalRecommended, totalRejected, acceptanceRate, recommendations }
- */
-export const fetchRecommendedPredictions = async ({ sport = 'soccer', league = null, date = null, minProb = 0.90 } = {}) => {
-  try {
-    const params = new URLSearchParams();
-    if (sport) params.append('sport', sport);
-    if (league && league !== 'All' && league !== 'Live') params.append('league', league);
-    if (date) params.append('date', date);
-    if (minProb) params.append('minProb', String(minProb));
-
-    const response = await fetch(`${API_URL}/api/predictions/recommended?${params.toString()}`);
-    if (!response.ok) {
-      return { success: false, recommendations: [], totalAnalyzed: 0, totalRecommended: 0, totalRejected: 0 };
-    }
-    return await response.json();
-  } catch (error) {
-    console.warn('[fetchRecommendedPredictions] Network error:', error.message);
-    return { success: false, recommendations: [], totalAnalyzed: 0, totalRecommended: 0, totalRejected: 0 };
-  }
-};
-
-/**
  * Fetch paginated fixture catalog across all configured providers and leagues.
  *
  * @param {Object} options

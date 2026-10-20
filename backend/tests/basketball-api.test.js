@@ -23,7 +23,7 @@ const persistence = require('../services/basketball/persistence');
 const { createBasketballRouter, DISCLAIMER } = require('../routes/basketball');
 
 /** A formatted prediction in the documented shape. */
-function mkPrediction({ gameId = '401', league = 'nba', confidence = 'Medium', market = 'Total Points' } = {}) {
+function mkPrediction({ gameId = '401', league = 'nba', confidence = 'Medium', market = 'Total Points', probability = 0.78 } = {}) {
   return {
     game: 'Home Hawks vs Away Aces',
     gameId,
@@ -35,7 +35,7 @@ function mkPrediction({ gameId = '401', league = 'nba', confidence = 'Medium', m
     picks: [{
       market,
       selection: 'Over 208.5',
-      probability: 0.68,
+      probability,
       odds: 1.85,
       edge: 0.06,
       confidence,
@@ -100,8 +100,8 @@ describe('basketball API (TR-18.1, TR-18.2, TR-18.3)', () => {
 
   test('TR-18.3: confidence and market query params narrow the result set', async () => {
     ingestion.getPredictions.mockResolvedValue([
-      mkPrediction({ gameId: '1', confidence: 'High', market: 'Total Points' }),
-      mkPrediction({ gameId: '2', confidence: 'Low', market: 'Spread' }),
+      mkPrediction({ gameId: '1', confidence: 'High', market: 'Total Points', probability: 0.82 }),
+      mkPrediction({ gameId: '2', confidence: 'Low', market: 'Spread', probability: 0.78 }),
     ]);
 
     const byConfidence = await request(buildApp()).get('/api/basketball/predictions?confidence=High');
@@ -173,5 +173,75 @@ describe('basketball API (TR-18.1, TR-18.2, TR-18.3)', () => {
     const res = await request(buildApp()).get('/api/basketball/predictions');
     expect(res.status).toBe(500);
     expect(res.body.error).toMatch(/failed to generate/i);
+  });
+
+  test('75% confidence threshold is applied to basketball predictions', async () => {
+    ingestion.getPredictions.mockResolvedValue([
+      mkPrediction({ gameId: '1', confidence: 'High', market: 'Total Points', probability: 0.82 }),
+      mkPrediction({ gameId: '2', confidence: 'Medium', market: 'Total Points', probability: 0.68 }),
+      mkPrediction({ gameId: '3', confidence: 'High', market: 'Spread', probability: 0.78 }),
+      mkPrediction({ gameId: '4', confidence: 'Low', market: 'Total Points', probability: 0.72 }),
+    ]);
+
+    const res = await request(buildApp()).get('/api/basketball/predictions');
+    expect(res.status).toBe(200);
+    // Only predictions with probability >= 0.75 should be included
+    expect(res.body.count).toBeGreaterThanOrEqual(0);
+    expect(res.body.count).toBeLessThanOrEqual(2);
+    // Verify all returned predictions meet the threshold
+    res.body.predictions.forEach(pred => {
+      pred.picks.forEach(pick => {
+        expect(pick.probability).toBeGreaterThanOrEqual(0.75);
+      });
+    });
+  });
+
+  test('individual game prediction applies 75% confidence threshold', async () => {
+    const gameWithLowConfidence = mkPrediction({
+      gameId: '401',
+      confidence: 'Low',
+      market: 'Total Points',
+      probability: 0.68,
+    });
+    gameWithLowConfidence.picks = [
+      { ...gameWithLowConfidence.picks[0], probability: 0.68 },
+      { ...gameWithLowConfidence.picks[0], market: 'Spread', probability: 0.72 },
+    ];
+
+    ingestion.getGamePrediction.mockResolvedValue({
+      result: {},
+      formatted: gameWithLowConfidence,
+    });
+
+    const res = await request(buildApp()).get('/api/basketball/predictions/401?league=nba');
+    expect(res.status).toBe(200);
+    // All picks below 75% should be filtered out
+    expect(res.body.picks.length).toBe(0);
+    expect(res.body.message).toContain('75% confidence threshold');
+  });
+
+  test('individual game prediction keeps picks above 75% threshold', async () => {
+    const gameWithHighConfidence = mkPrediction({
+      gameId: '401',
+      confidence: 'High',
+      market: 'Total Points',
+      probability: 0.82,
+    });
+    gameWithHighConfidence.picks = [
+      { ...gameWithHighConfidence.picks[0], probability: 0.82 },
+      { ...gameWithHighConfidence.picks[0], market: 'Spread', probability: 0.78 },
+    ];
+
+    ingestion.getGamePrediction.mockResolvedValue({
+      result: {},
+      formatted: gameWithHighConfidence,
+    });
+
+    const res = await request(buildApp()).get('/api/basketball/predictions/401?league=nba');
+    expect(res.status).toBe(200);
+    // Both picks above 75% should remain
+    expect(res.body.picks.length).toBe(2);
+    expect(res.body.picks[0].probability).toBeGreaterThanOrEqual(0.75);
+    expect(res.body.picks[1].probability).toBeGreaterThanOrEqual(0.75);
   });
 });
