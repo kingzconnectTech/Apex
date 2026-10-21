@@ -9,7 +9,6 @@ import { fetchSportsDataLeagues, fetchBasketballPredictions } from '../services/
 import { PITCHAPI_77_LEAGUES, PITCHAPI_LEAGUE_NAMES } from '../constants/pitchapiLeagues';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
-import BasketballGameCard from '../components/BasketballGameCard';
 import { useTheme } from '../context/ThemeContext';
 
 const CATEGORIES = ['Football', 'Basketball', 'Tennis'];
@@ -339,6 +338,41 @@ export default function TipsScreen({ navigation }) {
     );
   };
 
+  // Basketball tips use the exact same card as football tips. The engine's
+  // prediction is mapped into the match shape renderTipCard already consumes,
+  // so both categories render identically; the picks themselves stay in
+  // MatchDetails behind the same tap-through as football.
+  const renderBasketballCard = ({ item, index }) => {
+    const [labelHome, labelAway] = String(item.game || '').split(' vs ');
+    const tipoff = item.tipoff ? new Date(item.tipoff) : null;
+    const validTipoff = tipoff && !Number.isNaN(tipoff.getTime()) ? tipoff : null;
+    return renderTipCard({
+      index,
+      item: {
+        id: item.gameId,
+        league: item.league || 'Basketball',
+        sport: 'basketball',
+        leagueSlug: item.leagueKey || null,
+        date: validTipoff,
+        status: 'pre',
+        time: validTipoff ? validTipoff.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'TBD',
+        homeTeam: {
+          id: item.homeTeam?.id,
+          name: item.homeTeam?.name || labelHome || 'Home',
+          logo: item.homeTeam?.logo || null,
+          score: null,
+        },
+        awayTeam: {
+          id: item.awayTeam?.id,
+          name: item.awayTeam?.name || labelAway || 'Away',
+          logo: item.awayTeam?.logo || null,
+          score: null,
+        },
+        basketballPrediction: item,
+      },
+    });
+  };
+
   const renderBasketballEmptyState = () => (
     <View style={styles.strictEmptyContainer}>
       <View style={styles.strictEmptyIconCircle}>
@@ -461,14 +495,9 @@ export default function TipsScreen({ navigation }) {
           </View>
         ) : (
           <FlatList
-            data={basketballPredictions}
-            renderItem={({ item }) => (
-              <BasketballGameCard
-                prediction={item}
-                onPress={(match) => navigation.navigate('MatchDetails', { match })}
-              />
-            )}
-            keyExtractor={(item, idx) => `bb_${item.gameId || idx}`}
+            data={basketballPredictions.slice(0, visibleMatchesCount)}
+            renderItem={renderBasketballCard}
+            keyExtractor={item => String(item.gameId)}
             contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}
             initialNumToRender={5}
