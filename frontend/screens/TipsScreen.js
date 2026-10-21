@@ -529,6 +529,7 @@ export default function TipsScreen({ navigation }) {
             ListHeaderComponent={renderBasketballHeader()}
             ListEmptyComponent={renderBasketballEmptyState()}
           />
+        )
       ) : selectedCategory === 'Football' ? (
         <FlatList
             data={filteredTips.slice(0, visibleMatchesCount)}
@@ -545,7 +546,8 @@ export default function TipsScreen({ navigation }) {
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} colors={[theme.primary]} />
             }
             ListEmptyComponent={renderFootballEmptyState()}
-      ) : (
+          />
+        ) : (
         <FlatList
             data={filteredTips.slice(0, visibleMatchesCount)}
             renderItem={renderTipCard}
@@ -573,7 +575,7 @@ export default function TipsScreen({ navigation }) {
                 </View>
               ) : null
             }
-        />
+          />
       )}
 
       {showDatePicker && (
