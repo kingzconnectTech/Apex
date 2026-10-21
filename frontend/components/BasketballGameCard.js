@@ -14,7 +14,7 @@ const MARKET_COLORS = {
   Spread: '#FF6B6B',
 };
 
-// Basketball predictions prioritize Total Points Over/Under (75%+ confidence required)
+// Basketball predictions prioritize Total Points Over/Under
 // Secondary markets (Team Totals, First-Half, Quarter) will be added when data is available
 const MARKETS = ['Total Points'];
 

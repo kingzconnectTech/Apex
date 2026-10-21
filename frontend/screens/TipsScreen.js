@@ -356,12 +356,12 @@ export default function TipsScreen({ navigation }) {
       <View style={styles.strictEmptyIconCircle}>
         <Ionicons name="basketball-outline" size={48} color="#00F2FE" />
       </View>
-      <Text style={styles.strictEmptyTitle}>No basketball matches currently meet the 75% confidence threshold.</Text>
+      <Text style={styles.strictEmptyTitle}>No basketball matches found.</Text>
       <Text style={styles.strictEmptyDesc}>
-        We analysed the scheduled games and none cleared the 75% calibrated probability threshold.
+        We analysed the scheduled games and none are available for the selected filters.
       </Text>
       <Text style={styles.strictEmptySubtext}>
-        Apex abstains rather than force a pick. Try another date, league, confidence or market filter.
+        Try another date, league, confidence or market filter.
       </Text>
     </View>
   );

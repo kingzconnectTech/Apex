@@ -719,7 +719,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
                           {match?.sport === 'soccer'
                             ? 'No football matches currently meet the 90% confidence threshold.'
                             : match?.sport === 'basketball'
-                            ? 'No basketball matches currently meet the 75% confidence threshold.'
+                            ? 'No basketball predictions available.'
                             : 'No predictions currently meet the confidence threshold.'}
                         </Text>
                       </View>

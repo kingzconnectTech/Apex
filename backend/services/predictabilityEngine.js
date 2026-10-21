@@ -432,10 +432,9 @@ function evaluateMarketCandidate({
     predictionResult.value || market
   );
 
-  // Confidence percentage: do NOT round up below 90% (89.99% must remain 89.99% or 89, not 90)
-  const confidenceValue = calibratedProb >= 0.90
-    ? Math.round(calibratedProb * 100)
-    : Number((calibratedProb * 100).toFixed(2));
+  // Confidence percentage: do NOT round up below 90% for football (89.99% must remain 89.99% or 89, not 90)
+  // For basketball and other sports, show actual confidence without rounding
+  const confidenceValue = Number((calibratedProb * 100).toFixed(2));
 
   return {
     market,

@@ -189,7 +189,7 @@ export default function LeoScreen({ navigation }) {
           const message = selectedSports.includes('soccer')
             ? "No football matches currently meet the 90% confidence threshold. Try widening the date range or selecting more sports."
             : selectedSports.includes('basketball')
-            ? "No basketball matches currently meet the 75% confidence threshold. Try widening the date range or selecting more sports."
+            ? "No basketball matches found. Try widening the date range or selecting more sports."
             : "No matches currently meet the confidence threshold. Try widening the date range or selecting more sports.";
           Alert.alert("Leo Says", message);
       }

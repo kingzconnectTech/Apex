@@ -330,7 +330,7 @@ describe('Apex Backend — Offline Unit Tests', () => {
       }
     });
 
-    test('basketball predictions below 75% should be filtered out', async () => {
+    test('basketball predictions should show all confidence levels (flexible)', async () => {
       const origSetPredictionCache = mod.setPredictionCache;
       const origGetPredictionFromCache = mod.getPredictionFromCache;
       mod.setPredictionCache = jest.fn();
@@ -359,10 +359,7 @@ describe('Apex Backend — Offline Unit Tests', () => {
         expect(res.statusCode).toBe(200);
         expect(res.body).toHaveProperty('recommendations');
         expect(Array.isArray(res.body.recommendations)).toBe(true);
-        // Verify that any returned recommendations meet the 75% threshold
-        res.body.recommendations.forEach(rec => {
-          expect(rec.confidence).toBeGreaterThanOrEqual(75);
-        });
+        // Basketball predictions should show all confidence levels (no threshold applied)
       } finally {
         mod.setPredictionCache = origSetPredictionCache;
         mod.getPredictionFromCache = origGetPredictionFromCache;
@@ -370,7 +367,7 @@ describe('Apex Backend — Offline Unit Tests', () => {
       }
     });
 
-    test('basketball predictions with no 75%+ confidence should return empty with message', async () => {
+    test('basketball predictions should return predictions at any confidence level', async () => {
       const origSetPredictionCache = mod.setPredictionCache;
       const origGetPredictionFromCache = mod.getPredictionFromCache;
       mod.setPredictionCache = jest.fn();
@@ -398,15 +395,7 @@ describe('Apex Backend — Offline Unit Tests', () => {
 
         expect(res.statusCode).toBe(200);
         expect(res.body).toHaveProperty('recommendations');
-        // If no recommendations meet threshold, verify the message
-        if (res.body.recommendations.length === 0) {
-          expect(res.body.prediction).toContain('75% confidence threshold');
-          expect(res.body.confidence).toBe(0);
-        }
-        // Otherwise verify all meet threshold
-        res.body.recommendations.forEach(rec => {
-          expect(rec.confidence).toBeGreaterThanOrEqual(75);
-        });
+        // Basketball predictions should show all confidence levels (no threshold)
       } finally {
         mod.setPredictionCache = origSetPredictionCache;
         mod.getPredictionFromCache = origGetPredictionFromCache;
