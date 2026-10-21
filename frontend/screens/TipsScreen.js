@@ -43,9 +43,6 @@ const BASKETBALL_LEAGUE_KEYS = {
   EuroLeague: 'euroleague',
 };
 
-const CONFIDENCE_FILTERS = ['All', 'High', 'Medium', 'Low'];
-const MARKET_FILTERS = ['All', 'Total Points', 'Spread'];
-
 export default function TipsScreen({ navigation }) {
   const { theme, isDarkMode } = useTheme();
   const styles = createStyles(theme, isDarkMode);
@@ -62,8 +59,6 @@ export default function TipsScreen({ navigation }) {
   const [basketballPredictions, setBasketballPredictions] = useState([]);
   const [loadingBasketball, setLoadingBasketball] = useState(false);
   const [basketballDisclaimer, setBasketballDisclaimer] = useState(null);
-  const [basketballConfidence, setBasketballConfidence] = useState('All');
-  const [basketballMarket, setBasketballMarket] = useState('All');
 
   // 77 Leagues Directory State
   const [leaguesCatalog, setLeaguesCatalog] = useState(PITCHAPI_77_LEAGUES);
@@ -118,12 +113,12 @@ export default function TipsScreen({ navigation }) {
       const d = String(date.getDate()).padStart(2, '0');
       const dateStr = `${y}-${m}-${d}`;
       const leagueKey = BASKETBALL_LEAGUE_KEYS[selectedLeague] || null;
+      console.log('[TipsScreen] Loading basketball predictions for date:', dateStr, 'league:', leagueKey);
       const res = await fetchBasketballPredictions({
         date: dateStr,
         league: leagueKey,
-        confidence: basketballConfidence,
-        market: basketballMarket,
       });
+      console.log('[TipsScreen] Basketball predictions response:', res);
       setBasketballPredictions(res.predictions || []);
       setBasketballDisclaimer(res.disclaimer || null);
     } catch (e) {
@@ -140,12 +135,6 @@ export default function TipsScreen({ navigation }) {
       loadBasketballPredictions(dateFilter);
     }
   }, [dateFilter, selectedCategory, selectedLeague]);
-
-  useEffect(() => {
-    if (selectedCategory === 'Basketball') {
-      loadBasketballPredictions(dateFilter);
-    }
-  }, [dateFilter, selectedCategory, selectedLeague, basketballConfidence, basketballMarket]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -472,34 +461,6 @@ export default function TipsScreen({ navigation }) {
                     </TouchableOpacity>
                 ))}
             </ScrollView>
-
-            {selectedCategory === 'Basketball' && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subFiltersContent}>
-                {CONFIDENCE_FILTERS.map(c => (
-                  <TouchableOpacity
-                    key={`conf_${c}`}
-                    style={[styles.subFilterPill, basketballConfidence === c && styles.subFilterPillActive]}
-                    onPress={() => setBasketballConfidence(c)}
-                  >
-                    <Text style={[styles.subFilterText, basketballConfidence === c && styles.subFilterTextActive]}>
-                      {c === 'All' ? 'All Confidence' : c}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-                <View style={styles.verticalDivider} />
-                {MARKET_FILTERS.map(m => (
-                  <TouchableOpacity
-                    key={`mkt_${m}`}
-                    style={[styles.subFilterPill, basketballMarket === m && styles.subFilterPillActive]}
-                    onPress={() => setBasketballMarket(m)}
-                  >
-                    <Text style={[styles.subFilterText, basketballMarket === m && styles.subFilterTextActive]}>
-                      {m === 'All' ? 'All Markets' : m}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
         </View>
       </SafeAreaView>
 

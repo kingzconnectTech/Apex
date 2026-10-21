@@ -34,6 +34,9 @@ export default function MatchDetailsScreen({ route, navigation }) {
   const interstitialRef = useRef(null);
   const pendingActionRef = useRef(null);
 
+  // Basketball prediction from TipsScreen
+  const basketballPrediction = match?.basketballPrediction || null;
+
   // Load Interstitial Ad
   useEffect(() => {
     const ad = InterstitialAd.createForAdRequest(AdUnits.INTERSTITIAL, {
@@ -121,9 +124,10 @@ export default function MatchDetailsScreen({ route, navigation }) {
           }
 
           // --- Fetch prediction from backend (server-side ESPN data + algorithm) ---
+          // Skip basketball predictions as they use the dedicated engine from TipsScreen
           const homeId = getTeamId(match.homeTeam);
           const awayId = getTeamId(match.awayTeam);
-          if (homeId && awayId) {
+          if (homeId && awayId && match?.sport !== 'basketball') {
             setPredictionLoading(true);
             setPredictionError(null);
             try {
@@ -487,7 +491,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
   const confidenceAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (botAnalysis) {
+    if (botAnalysis && match?.sport !== 'basketball') {
       confidenceAnim.setValue(0); // Reset
       const timer = setTimeout(() => {
         Animated.timing(confidenceAnim, {
@@ -498,7 +502,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [botAnalysis]);
+  }, [botAnalysis, match?.sport]);
 
   const getConfidenceColor = (conf) => {
       if (conf >= 70) return theme.success; // High - Green
@@ -610,6 +614,72 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 <Ionicons name="cloud-offline-outline" size={32} color={theme.textSecondary} />
                 <Text style={styles.predictionErrorText}>{predictionError}</Text>
               </View>
+            ) : match?.sport === 'basketball' ? (
+              // Basketball uses dedicated engine - show prediction directly or empty state
+              basketballPrediction ? (
+              // Basketball predictions from dedicated engine
+              <>
+                <View style={styles.tipsList}>
+                  <View style={[styles.tipCard, { borderLeftColor: '#00F2FE' }]}>
+                    <View style={styles.tipHeader}>
+                      <View style={[styles.tipTypeBadge, { backgroundColor: 'rgba(0, 242, 254, 0.2)' }]}>
+                        <Text style={[styles.tipTypeText, { color: '#00F2FE' }]}>Calibrated Engine</Text>
+                      </View>
+                      <Text style={styles.tipConfidence}>
+                        {Math.round((basketballPrediction.data_quality || 0) * 100)}% Data Quality
+                      </Text>
+                    </View>
+
+                    {/* Projection */}
+                    <View style={styles.projectionRow}>
+                      <Text style={styles.projectionLabel}>Projected Total:</Text>
+                      <Text style={styles.projectionValue}>{basketballPrediction.projection?.total?.toFixed(1) || '—'} pts</Text>
+                    </View>
+                    <View style={styles.projectionRow}>
+                      <Text style={styles.projectionLabel}>Projected Margin:</Text>
+                      <Text style={styles.projectionValue}>
+                        {basketballPrediction.projection?.margin > 0 ? '+' : ''}{basketballPrediction.projection?.margin?.toFixed(1) || '—'}
+                      </Text>
+                    </View>
+
+                    {/* Picks */}
+                    {basketballPrediction.picks && basketballPrediction.picks.length > 0 ? (
+                      basketballPrediction.picks.map((pick, idx) => (
+                        <View key={idx} style={styles.pickSection}>
+                          <View style={styles.pickRowHeader}>
+                            <Text style={styles.pickMarketLabel}>{pick.market}</Text>
+                            <View style={[
+                              styles.confidenceMiniBadge,
+                              pick.confidence === 'High' ? styles.confidenceHigh :
+                              pick.confidence === 'Medium' ? styles.confidenceMedium : styles.confidenceLow
+                            ]}>
+                              <Text style={styles.confidenceMiniText}>{pick.confidence}</Text>
+                            </View>
+                          </View>
+                          <Text style={styles.pickSelectionText}>{pick.selection}</Text>
+                          <View style={styles.pickStatsRow}>
+                            <Text style={styles.pickStat}>Probability: {(pick.probability * 100).toFixed(1)}%</Text>
+                            <Text style={styles.pickStat}>Edge: {(pick.edge * 100).toFixed(1)}%</Text>
+                          </View>
+                          {pick.reasoning && (
+                            <Text style={styles.pickReasoningText}>{pick.reasoning}</Text>
+                          )}
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.noPickText}>No confident pick available</Text>
+                    )}
+                  </View>
+                </View>
+              </>
+              ) : (
+                <View style={styles.predictionErrorContainer}>
+                  <Ionicons name="information-circle-outline" size={32} color={theme.textSecondary} />
+                  <Text style={styles.predictionErrorText}>
+                    No basketball prediction available. Please check the Tips screen for calibrated predictions.
+                  </Text>
+                </View>
+              )
             ) : botAnalysis ? (
               !showPrediction ? (
                 <View style={styles.lockedContainer}>
@@ -716,11 +786,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
                       <View style={styles.predictionErrorContainer}>
                         <Ionicons name="shield-checkmark-outline" size={32} color={theme.textSecondary} />
                         <Text style={styles.predictionErrorText}>
-                          {match?.sport === 'soccer'
-                            ? 'No football matches currently meet the 90% confidence threshold.'
-                            : match?.sport === 'basketball'
-                            ? 'No basketball predictions available.'
-                            : 'No predictions currently meet the confidence threshold.'}
+                          No predictions currently meet the confidence threshold.
                         </Text>
                       </View>
                     )}
@@ -1318,6 +1384,88 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     color: theme.textSecondary,
     fontSize: getResponsiveFontSize(11),
     marginTop: verticalScale(2),
+  },
+  // Basketball prediction styles
+  projectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: verticalScale(8),
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  projectionLabel: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(13),
+  },
+  projectionValue: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(15),
+    fontWeight: 'bold',
+  },
+  pickSection: {
+    marginTop: verticalScale(12),
+    paddingTop: verticalScale(12),
+    borderTopWidth: 1,
+    borderTopColor: theme.border,
+  },
+  pickRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: verticalScale(8),
+  },
+  pickMarketLabel: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(13),
+    fontWeight: 'bold',
+  },
+  confidenceMiniBadge: {
+    paddingHorizontal: horizontalScale(8),
+    paddingVertical: verticalScale(3),
+    borderRadius: moderateScale(6),
+  },
+  confidenceHigh: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+  },
+  confidenceMedium: {
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+  },
+  confidenceLow: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  confidenceMiniText: {
+    fontSize: getResponsiveFontSize(10),
+    fontWeight: 'bold',
+    color: theme.text,
+  },
+  pickSelectionText: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: 'bold',
+    marginBottom: verticalScale(6),
+  },
+  pickStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: verticalScale(6),
+  },
+  pickStat: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+  },
+  pickReasoningText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    lineHeight: getResponsiveFontSize(17),
+    marginTop: verticalScale(4),
+  },
+  noPickText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(13),
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: verticalScale(12),
   },
 });
 

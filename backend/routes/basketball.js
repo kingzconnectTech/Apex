@@ -41,8 +41,7 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
 
       // Apply confidence threshold per pick (per market)
       // Each individual pick must have probability >= threshold to be displayed
-      // TEMPORARILY LOWERED FOR DEBUGGING - was 0.75
-      const THRESHOLD = 0.50;
+      const THRESHOLD = 0.30;
       let filtered = predictions.map(pred => {
         const filteredPicks = (pred.picks || []).filter(pick => pick.probability >= THRESHOLD);
         return { ...pred, picks: filteredPicks };
@@ -77,8 +76,7 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
       if (!found) return res.status(404).json({ error: `No basketball game ${gameId} found for league ${league}` });
 
       // Apply confidence threshold per pick
-      // TEMPORARILY LOWERED FOR DEBUGGING - was 0.75
-      const THRESHOLD = 0.50;
+      const THRESHOLD = 0.30;
       const formatted = found.formatted;
       const filteredPicks = (formatted.picks || []).filter(pick => pick.probability >= THRESHOLD);
 
@@ -86,7 +84,7 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
         return res.json({
           ...formatted,
           picks: [],
-          message: 'No picks meet the 75% confidence threshold',
+          message: 'No picks meet the 30% confidence threshold',
           disclaimer: DISCLAIMER,
         });
       }
