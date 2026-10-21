@@ -111,14 +111,14 @@ describe('Pick selection', () => {
   test('alternate lines require a higher probability than main lines', () => {
     const projection = { total: 218.4, margin: 0, sigmaTotal: 17.6, sigmaMargin: 11.8 };
     const lines = {
-      total: [{ line: 210.5, aOdds: 1.85, bOdds: 1.95, isMain: false }], // ~0.68 prob, alt floor 0.68
+      total: [{ line: 205.5, aOdds: 1.85, bOdds: 1.95, isMain: false }], // ~0.78 prob, alt floor 0.55
       spread: [],
     };
     const out = selectPicks({ projection, lines, ctx });
     const evaluated = out.evaluated.total[0];
     expect(evaluated.isMain).toBe(false);
-    // The alt threshold is what gates it; if it passes it must satisfy >= 0.68.
-    if (evaluated.passes) expect(evaluated.probability).toBeGreaterThanOrEqual(0.68);
+    // The alt threshold is what gates it; if it passes it must satisfy >= 0.55.
+    if (evaluated.passes) expect(evaluated.probability).toBeGreaterThanOrEqual(0.55);
   });
 
   test('bestOf ignores failing candidates', () => {

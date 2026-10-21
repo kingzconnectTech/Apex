@@ -278,12 +278,15 @@ function selectPicks({ projection, lines, ctx }) {
   const marketPriority = cfg.selection?.marketPriority || ['Total Points'];
 
   // Process markets in priority order
-  // Currently only Total Points is fully supported with ESPN data
+  // Primary markets: Total Points, Spread
   // Secondary markets (Team Total, First-Half, Quarter) are prepared for future data availability
   marketPriority.forEach(market => {
     if (market === 'Total Points') {
       const totalPick = applyPolicy(bestOf(totalCandidates), 'Total Points');
       if (totalPick) picks.push(totalPick);
+    } else if (market === 'Spread') {
+      const spreadPick = applyPolicy(bestOf(spreadCandidates), 'Spread');
+      if (spreadPick) picks.push(spreadPick);
     }
     // Secondary markets would be added here when period-level data becomes available
     // Example for Team Total (when data is available):

@@ -39,10 +39,15 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
 
       const predictions = await getPredictions({ sportsData, leagues, date, traceId });
 
-      // NORMAL MATCH ANALYSIS: Flexible - shows all confidence levels
-      // NO THRESHOLD APPLIED HERE - basketball predictions remain flexible
-      let filtered = predictions;
+      // Apply 75% confidence threshold per pick (per market)
+      // Each individual pick must have probability >= 75% to be displayed
+      const THRESHOLD = 0.75;
+      let filtered = predictions.map(pred => {
+        const filteredPicks = (pred.picks || []).filter(pick => pick.probability >= THRESHOLD);
+        return { ...pred, picks: filteredPicks };
+      }).filter(pred => pred.picks.length > 0);
 
+      // Additional optional filters
       if (confidence) filtered = filtered.filter(p => p.picks.some(pk => pk.confidence === confidence));
       if (market) filtered = filtered.filter(p => p.picks.some(pk => pk.market === market));
 
@@ -55,7 +60,7 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
         disclaimer: DISCLAIMER,
       });
     } catch (err) {
-      logger?.log?.('error', '[BASKETBALL] predictions failed', { traceId, error: err?.message });
+      logger?.log('error', '[BASKETBALL] predictions failed', { traceId, error: err?.message });
       res.status(500).json({ error: 'Failed to generate basketball predictions', detail: err?.message });
     }
   });
@@ -70,12 +75,23 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
       const found = await getGamePrediction({ sportsData, gameId, league, traceId });
       if (!found) return res.status(404).json({ error: `No basketball game ${gameId} found for league ${league}` });
 
-      // NORMAL MATCH ANALYSIS: Flexible - shows all confidence levels
-      // NO THRESHOLD APPLIED HERE - basketball predictions remain flexible
+      // Apply 75% confidence threshold per pick
+      const THRESHOLD = 0.75;
       const formatted = found.formatted;
-      res.json({ ...formatted, disclaimer: DISCLAIMER });
+      const filteredPicks = (formatted.picks || []).filter(pick => pick.probability >= THRESHOLD);
+
+      if (filteredPicks.length === 0) {
+        return res.json({
+          ...formatted,
+          picks: [],
+          message: 'No picks meet the 75% confidence threshold',
+          disclaimer: DISCLAIMER,
+        });
+      }
+
+      res.json({ ...formatted, picks: filteredPicks, disclaimer: DISCLAIMER });
     } catch (err) {
-      logger?.log?.('error', '[BASKETBALL] game prediction failed', { traceId, gameId: req.params.gameId, error: err?.message });
+      logger?.log('error', '[BASKETBALL] game prediction failed', { traceId, gameId: req.params.gameId, error: err?.message });
       res.status(500).json({ error: 'Failed to generate basketball prediction', detail: err?.message });
     }
   });
@@ -87,7 +103,7 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
       const report = await getBasketballPerformance(admin, { league, window: Number(window) || 100 });
       res.json({ ...report, disclaimer: DISCLAIMER });
     } catch (err) {
-      logger?.log?.('error', '[BASKETBALL] performance failed', { error: err?.message });
+      logger?.log('error', '[BASKETBALL] performance failed', { error: err?.message });
       res.status(500).json({ error: 'Failed to load basketball performance', detail: err?.message });
     }
   });

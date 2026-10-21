@@ -145,9 +145,9 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
 
             <View style={styles.footerContainer}>
-              <Text style={styles.footerText}>New to APEX?</Text>
+              <Text style={styles.footerText}>New to APEX</Text>
               <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                <Text style={styles.signupText}>Create Account</Text>
+                <Text style={styles.signupText}>Sign Up</Text>
               </TouchableOpacity>
             </View>
           </View>

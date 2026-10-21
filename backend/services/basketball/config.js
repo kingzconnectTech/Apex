@@ -153,9 +153,10 @@ const CONFIG = {
     // Market priority order: highest priority first
     marketPriority: [
       'Total Points',        // Priority 1: Full-Game Total Points Over/Under
-      'Team Total',          // Priority 2: Home/Away team total points Over/Under
-      'First Half Total',    // Priority 3: First-Half Total Points Over/Under
-      'Quarter Total',       // Priority 4: Quarter Total Points Over/Under
+      'Spread',             // Priority 2: Point Spread
+      'Team Total',          // Priority 3: Home/Away team total points Over/Under
+      'First Half Total',    // Priority 4: First-Half Total Points Over/Under
+      'Quarter Total',       // Priority 5: Quarter Total Points Over/Under
     ],
     // Secondary markets (team totals, halves, quarters) require higher data quality
     secondaryMarketMinDataQuality: 0.75,

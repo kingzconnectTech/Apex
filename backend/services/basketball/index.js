@@ -97,8 +97,7 @@ function analyzeGame({
 }) {
   if (!fixture) return null;
 
-  const game = normalizeGame({ fixture, odds, injuries, league, h2hLog });
-  const leagueCfg = getLeagueConfig(game.league);
+  const leagueCfg = getLeagueConfig(league);
 
   const homeDerived = (homeLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
   const awayDerived = (awayLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
@@ -116,6 +115,8 @@ function analyzeGame({
     // Sort newest-first
     h2hLog.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }
+
+  const game = normalizeGame({ fixture, odds, injuries, league, h2hLog });
 
   const homeRatings = computeTeamRatings(homeDerived, leagueCfg, cfg, { isHomeContext: true });
   const awayRatings = computeTeamRatings(awayDerived, leagueCfg, cfg, { isHomeContext: false });

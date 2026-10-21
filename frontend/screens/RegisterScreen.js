@@ -416,7 +416,7 @@ export default function RegisterScreen({ navigation }) {
             </TouchableOpacity>
 
             <View style={styles.footerContainer}>
-              <Text style={styles.footerText}>Already a PREDICTOR?</Text>
+              <Text style={styles.footerText}>Already a PREDICTOR</Text>
               <TouchableOpacity onPress={() => navigation.navigate('Login')}>
                 <Text style={styles.loginText}>Login</Text>
               </TouchableOpacity>

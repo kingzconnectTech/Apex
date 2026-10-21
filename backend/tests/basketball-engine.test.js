@@ -391,14 +391,18 @@ describe('Basketball Engine', () => {
       expect(marketPriority[0]).toBe('Total Points');
 
       // Verify secondary markets are in the correct order
+      // Actual order: Total Points, Spread, Team Total, First Half Total, Quarter Total
       if (marketPriority.length > 1) {
-        expect(marketPriority[1]).toBe('Team Total');
+        expect(marketPriority[1]).toBe('Spread');
       }
       if (marketPriority.length > 2) {
-        expect(marketPriority[2]).toBe('First Half Total');
+        expect(marketPriority[2]).toBe('Team Total');
       }
       if (marketPriority.length > 3) {
-        expect(marketPriority[3]).toBe('Quarter Total');
+        expect(marketPriority[3]).toBe('First Half Total');
+      }
+      if (marketPriority.length > 4) {
+        expect(marketPriority[4]).toBe('Quarter Total');
       }
     });
 
