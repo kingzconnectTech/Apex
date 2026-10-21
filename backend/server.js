@@ -2368,27 +2368,66 @@ app.post('/api/match-prediction', async (req, res) => {
   // --- Run Prediction Algorithm ---
   let prediction;
   try {
-    prediction = analyzeMatchServer({
-      homeName,
-      awayName,
-      homeStats: {
-        record: homeRecord,
-        lastMatches: homeLastMatches,
-        news: homeNews,
-      },
-      awayStats: {
-        record: awayRecord,
-        lastMatches: awayLastMatches,
-        news: awayNews,
-      },
-      h2h,
-      sport,
-      isDetailed: true,
-    });
+    if (sport === 'basketball') {
+      // Use basketball prediction engine
+      const { getGamePrediction } = require('./services/basketball/ingestion');
+      const { formatPrediction } = require('./services/basketball/index');
+
+      const basketballResult = await getGamePrediction({
+        sportsData,
+        gameId: matchId,
+        league: leagueSlug,
+        traceId,
+      });
+
+      if (!basketballResult) {
+        return res.status(404).json({
+          error: `No basketball prediction found for game ${matchId} in league ${leagueSlug}`,
+          traceId,
+        });
+      }
+
+      const formatted = basketballResult.formatted;
+      prediction = {
+        prediction: formatted.picks?.[0]?.selection || 'No confident pick',
+        confidence: formatted.picks?.[0]?.confidence || 0,
+        recommendations: (formatted.picks || []).map(p => ({
+          type: p.market,
+          label: p.market,
+          value: p.selection,
+          confidence: p.confidence,
+          probability: p.probability,
+          edge: p.edge,
+        })),
+        factors: formatted.risk_flags || [],
+        projection: formatted.projection,
+        dataQuality: formatted.data_quality,
+      };
+    } else {
+      // Use football prediction algorithm
+      prediction = analyzeMatchServer({
+        homeName,
+        awayName,
+        homeStats: {
+          record: homeRecord,
+          lastMatches: homeLastMatches,
+          news: homeNews,
+        },
+        awayStats: {
+          record: awayRecord,
+          lastMatches: awayLastMatches,
+          news: awayNews,
+        },
+        h2h,
+        sport,
+        isDetailed: true,
+      });
+    }
   } catch (algoError) {
     logger.error('Prediction algorithm error', {
       traceId,
       matchId,
+      sport,
       error: algoError.message,
       stack: algoError.stack,
     });

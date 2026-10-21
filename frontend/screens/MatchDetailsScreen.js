@@ -98,39 +98,35 @@ export default function MatchDetailsScreen({ route, navigation }) {
         checkBackendHealth().then(status => console.log('Backend Connection Status:', status));
 
         try {
-          // Basketball doesn't have team stats - skip for basketball
-          if (match?.sport !== 'basketball') {
-            // Fetch detailed info for both teams and the match itself
-            const [home, away, analysis] = await Promise.all([
-              fetchTeamDetails(match.sport, match.leagueSlug, getTeamId(match.homeTeam)),
-              fetchTeamDetails(match.sport, match.leagueSlug, getTeamId(match.awayTeam)),
-              fetchMatchAnalysis(match.sport, match.leagueSlug, match.id)
-            ]);
+          // Fetch detailed info for both teams and the match itself
+          const [home, away, analysis] = await Promise.all([
+            fetchTeamDetails(match.sport, match.leagueSlug, getTeamId(match.homeTeam)),
+            fetchTeamDetails(match.sport, match.leagueSlug, getTeamId(match.awayTeam)),
+            fetchMatchAnalysis(match.sport, match.leagueSlug, match.id)
+          ]);
 
-            setHomeDetails(home);
-            setAwayDetails(away);
-            setMatchAnalysis(analysis);
+          setHomeDetails(home);
+          setAwayDetails(away);
+          setMatchAnalysis(analysis);
 
-            // Fetch Deep Stats for H2H (Cards, Corners)
-            if (analysis?.headToHeadGames?.length > 0) {
-              const validH2H = analysis.headToHeadGames.filter(g =>
-                String(g.id) !== String(match.id) &&
-                g.homeTeamScore !== undefined &&
-                g.awayTeamScore !== undefined
-              );
-              if (validH2H.length > 0) {
-                const gameIds = validH2H.slice(0, 5).map(g => g.id);
-                const deepStats = await fetchGamesStats(match.sport, match.leagueSlug, gameIds);
-                setH2HDeepStats(deepStats);
-              }
+          // Fetch Deep Stats for H2H (Cards, Corners) - only for football
+          if (match?.sport !== 'basketball' && analysis?.headToHeadGames?.length > 0) {
+            const validH2H = analysis.headToHeadGames.filter(g =>
+              String(g.id) !== String(match.id) &&
+              g.homeTeamScore !== undefined &&
+              g.awayTeamScore !== undefined
+            );
+            if (validH2H.length > 0) {
+              const gameIds = validH2H.slice(0, 5).map(g => g.id);
+              const deepStats = await fetchGamesStats(match.sport, match.leagueSlug, gameIds);
+              setH2HDeepStats(deepStats);
             }
           }
 
           // --- Fetch prediction from backend (server-side ESPN data + algorithm) ---
-          // Skip basketball predictions as they use the dedicated engine from TipsScreen
           const homeId = getTeamId(match.homeTeam);
           const awayId = getTeamId(match.awayTeam);
-          if (homeId && awayId && match?.sport !== 'basketball') {
+          if (homeId && awayId) {
             setPredictionLoading(true);
             setPredictionError(null);
             try {
@@ -519,29 +515,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
         setShowPrediction(true);
 
         // Persist original prediction to Firestore for automatic tick/cross settlement
-        if (match?.sport === 'basketball' && basketballPrediction) {
-          // Save basketball prediction
-          savePredictionToBackend({
-            userId: user?.uid || 'anonymous',
-            matchId: String(match.id),
-            sport: 'basketball',
-            leagueSlug: match.leagueSlug || '',
-            league: match.league || '',
-            homeName,
-            awayName,
-            homeTeamId: getTeamId(match.homeTeam),
-            awayTeamId: getTeamId(match.awayTeam),
-            matchDate: match.date || null,
-            predictions: basketballPrediction.picks.map(p => ({
-              market: p.market || '',
-              label: p.market || '',
-              value: p.selection || '',
-              confidence: p.confidence || 'Medium',
-              selection: p.selection || '',
-            })),
-          });
-        } else if (botAnalysis && botAnalysis.recommendations && match) {
-          // Save football prediction
+        if (botAnalysis && botAnalysis.recommendations && match) {
           savePredictionToBackend({
             userId: user?.uid || 'anonymous',
             matchId: String(match.id),
@@ -640,8 +614,8 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 <Text style={styles.predictionErrorText}>{predictionError}</Text>
               </View>
             ) : match?.sport === 'basketball' ? (
-              // Basketball uses same UI pattern as football
-              basketballPrediction ? (
+              // Basketball uses same UI pattern as football via standard API
+              botAnalysis ? (
                 !showPrediction ? (
                   <View style={styles.lockedContainer}>
                     <Ionicons name="lock-closed" size={40} color={theme.textSecondary} />
@@ -662,26 +636,25 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 ) : (
                   <>
                     <View style={styles.tipsList}>
-                      {basketballPrediction.picks && basketballPrediction.picks.length > 0 ? (
-                        basketballPrediction.picks.map((pick, idx) => {
-                          const pickColor = pick.market === 'Total Points' ? '#00F2FE' : '#FF6B6B';
+                      {botAnalysis.recommendations && botAnalysis.recommendations.length > 0 ? (
+                        botAnalysis.recommendations.map((rec, idx) => {
+                          const pickColor = rec.type === 'Total Points' ? '#00F2FE' : '#FF6B6B';
                           return (
                             <View key={idx} style={[styles.tipCard, { borderLeftColor: pickColor }]}>
                               <View style={styles.tipHeader}>
                                 <View style={[styles.tipTypeBadge, { backgroundColor: pickColor + '20' }]}>
-                                  <Text style={[styles.tipTypeText, { color: pickColor }]}>{pick.market}</Text>
+                                  <Text style={[styles.tipTypeText, { color: pickColor }]}>{rec.label}</Text>
                                 </View>
                                 <Text style={styles.tipConfidence}>
-                                  {Math.round((basketballPrediction.data_quality || 0) * 100)}% Data Quality
+                                  {botAnalysis.dataQuality ? `${Math.round(botAnalysis.dataQuality * 100)}% Data Quality` : 'N/A'}
                                 </Text>
                               </View>
-                              <Text style={styles.tipValue}>{pick.selection}</Text>
-                              <View style={styles.pickStatsRow}>
-                                <Text style={styles.pickStat}>Probability: {(pick.probability * 100).toFixed(1)}%</Text>
-                                <Text style={styles.pickStat}>Edge: {(pick.edge * 100).toFixed(1)}%</Text>
-                              </View>
-                              {pick.reasoning && (
-                                <Text style={styles.pickReasoningText}>{pick.reasoning}</Text>
+                              <Text style={styles.tipValue}>{rec.value}</Text>
+                              {rec.probability && (
+                                <View style={styles.pickStatsRow}>
+                                  <Text style={styles.pickStat}>Probability: {(rec.probability * 100).toFixed(1)}%</Text>
+                                  {rec.edge && <Text style={styles.pickStat}>Edge: {(rec.edge * 100).toFixed(1)}%</Text>}
+                                </View>
                               )}
                             </View>
                           );
@@ -696,15 +669,15 @@ export default function MatchDetailsScreen({ route, navigation }) {
                       )}
                     </View>
 
-                    {basketballPrediction.picks && basketballPrediction.picks.length > 0 && (
+                    {botAnalysis.recommendations && botAnalysis.recommendations.length > 0 && (
                       <View style={styles.divider} />
                     )}
 
-                    {basketballPrediction.picks && basketballPrediction.picks.length > 0 && (
+                    {botAnalysis.recommendations && botAnalysis.recommendations.length > 0 && (
                       <>
                       <Text style={styles.subTitle}>Key Factors</Text>
-                      {basketballPrediction.risk_flags && basketballPrediction.risk_flags.length > 0 ? (
-                        basketballPrediction.risk_flags.map((flag, i) => (
+                      {botAnalysis.factors && botAnalysis.factors.length > 0 ? (
+                        botAnalysis.factors.map((flag, i) => (
                           <View key={i} style={styles.factorRow}>
                             <View style={[styles.factorDot, { backgroundColor: theme.warning }]} />
                             <Text style={styles.factorText}>{flag}</Text>
@@ -724,7 +697,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 <View style={styles.predictionErrorContainer}>
                   <Ionicons name="information-circle-outline" size={32} color={theme.textSecondary} />
                   <Text style={styles.predictionErrorText}>
-                    No basketball prediction available. Please check the Tips screen for calibrated predictions.
+                    No basketball prediction available.
                   </Text>
                 </View>
               )
