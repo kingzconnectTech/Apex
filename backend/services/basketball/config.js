@@ -126,9 +126,10 @@ const CONFIG = {
 
   // --- Line & pick selection ---
   selection: {
-    // Internal selection thresholds (allow picks to be generated, will be filtered at API level to 75%)
-    mainMinProb: 0.60,  // Internal: lower threshold to allow generation
-    alternateMinProb: 0.65,  // Internal: lower threshold to allow generation
+    // NORMAL MATCH ANALYSIS: Flexible - show all confidence levels
+    // Internal selection thresholds allow picks to be generated at various confidence levels
+    mainMinProb: 0.50,  // Lower threshold to allow generation
+    alternateMinProb: 0.55,  // Lower threshold to allow generation
     minEdge: 0.04,
     minDataQuality: 0.7,
     // score = rankProbWeight * prob + rankEvWeight * edgeScaledEv
@@ -150,7 +151,6 @@ const CONFIG = {
     },
     noPickLabel: 'No confident pick',
     // Market priority order: highest priority first
-    // Only markets that meet the 75% confidence threshold are displayed (enforced in API routes)
     marketPriority: [
       'Total Points',        // Priority 1: Full-Game Total Points Over/Under
       'Team Total',          // Priority 2: Home/Away team total points Over/Under

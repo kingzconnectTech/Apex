@@ -116,8 +116,6 @@ All 26 tests passed:
 
 ## Verification
 
-- ✅ 75% confidence threshold enforced per market (basketball API only)
-- ✅ 90% confidence threshold enforced per market (football - Leo AI only)
 - ✅ Total Points prioritized over other markets
 - ✅ No straight-winner/moneyline fallback
 - ✅ Head-to-head analysis included
@@ -126,7 +124,7 @@ All 26 tests passed:
 - ✅ Football predictions unchanged
 - ✅ Existing basketball fixtures, match statuses, and result settlement preserved
 - ✅ Leo AI uses sport-specific confidence thresholds (90% for football, 75% for basketball)
-- ✅ Normal match analysis (`/api/predict` and `/api/fixtures/evaluate`) remains flexible and shows all confidence levels
+- ✅ Normal match analysis (`/api/predict`, `/api/fixtures/evaluate`, and `/api/basketball/predictions`) remains flexible and shows all confidence levels
 
 ## Notes
 
