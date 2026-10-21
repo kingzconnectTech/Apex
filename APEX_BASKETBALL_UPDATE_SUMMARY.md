@@ -99,6 +99,8 @@ Updated the basketball prediction engine to prioritize Total Points Over/Under m
 5. `backend/routes/basketball.js` - Per-market confidence threshold enforcement (75%)
 6. `frontend/components/BasketballGameCard.js` - Updated comments
 7. `backend/tests/basketball-engine.test.js` - New test suite for APEX update
+8. `backend/services/leoAssistanceService.js` - Sport-specific confidence thresholds for Leo AI (90% football, 75% basketball)
+9. `frontend/screens/TipsScreen.js` - Fixed syntax error in conditional rendering
 
 ## Test Results
 
@@ -114,7 +116,8 @@ All 26 tests passed:
 
 ## Verification
 
-- ✅ 75% confidence threshold enforced per market
+- ✅ 75% confidence threshold enforced per market (basketball API only)
+- ✅ 90% confidence threshold enforced per market (football - Leo AI only)
 - ✅ Total Points prioritized over other markets
 - ✅ No straight-winner/moneyline fallback
 - ✅ Head-to-head analysis included
@@ -122,6 +125,8 @@ All 26 tests passed:
 - ✅ All tests passing
 - ✅ Football predictions unchanged
 - ✅ Existing basketball fixtures, match statuses, and result settlement preserved
+- ✅ Leo AI uses sport-specific confidence thresholds (90% for football, 75% for basketball)
+- ✅ Normal match analysis (`/api/predict` and `/api/fixtures/evaluate`) remains flexible and shows all confidence levels
 
 ## Notes
 

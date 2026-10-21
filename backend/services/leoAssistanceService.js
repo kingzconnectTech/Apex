@@ -660,6 +660,10 @@ class LeoAssistanceService {
    * Stage D: Ranks all qualifying predictions using calibrated probability & predictability score.
    * Ensures identical meaning across markets, uses consistent tie-breaking rules,
    * and isolates below-threshold predictions.
+   *
+   * Sport-specific confidence thresholds:
+   * - Football (soccer): 90% minimum confidence
+   * - Basketball: 75% minimum confidence
    */
   _rankPredictions(evaluatedResults, minConfidenceThreshold, stats, rejectionReasons) {
     const qualifyingList = [];
@@ -667,8 +671,17 @@ class LeoAssistanceService {
 
     for (const item of evaluatedResults) {
       const rating = Number(item.rating != null ? item.rating : item.analysis?.confidence || 0);
+      const sport = item.fixture?.sport || item.fixture?.league?.sport || 'soccer';
 
-      if (rating >= minConfidenceThreshold) {
+      // Apply sport-specific confidence thresholds for Leo AI
+      let sportSpecificThreshold = minConfidenceThreshold;
+      if (sport === 'soccer' || sport === 'football') {
+        sportSpecificThreshold = 90; // Football requires 90%+ confidence
+      } else if (sport === 'basketball') {
+        sportSpecificThreshold = 75; // Basketball requires 75%+ confidence
+      }
+
+      if (rating >= sportSpecificThreshold) {
         qualifyingList.push({
           ...item.fixture,
           rating,

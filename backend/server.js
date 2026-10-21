@@ -2399,51 +2399,10 @@ app.post('/api/match-prediction', async (req, res) => {
   }
 
   // --- Apply Sport-Specific Confidence Thresholds ---
-  // Football: 90% minimum confidence required
-  // Basketball: 75% minimum confidence required (handled by /api/basketball/predictions)
-  // Tennis: No specific threshold (preserves existing behavior)
-  if (sport === 'soccer' && prediction.recommendations) {
-    const originalCount = prediction.recommendations.length;
-    prediction.recommendations = prediction.recommendations.filter(rec => {
-      // Confidence is stored as percentage (0-100), filter for >= 90%
-      const confidence = rec.confidence ?? 0;
-      return confidence >= 90;
-    });
-
-    logger.info('Football confidence threshold applied (90%)', {
-      traceId,
-      matchId,
-      originalCount,
-      filteredCount: prediction.recommendations.length,
-    });
-
-    // If no recommendations meet threshold, set default values
-    if (prediction.recommendations.length === 0) {
-      prediction.prediction = 'No football matches currently meet the 90% confidence threshold.';
-      prediction.confidence = 0;
-      prediction.color = '#868e96';
-    }
-  } else if (sport === 'basketball' && prediction.recommendations) {
-    // Apply 75% threshold for basketball in match-prediction endpoint as well
-    const originalCount = prediction.recommendations.length;
-    prediction.recommendations = prediction.recommendations.filter(rec => {
-      const confidence = rec.confidence ?? 0;
-      return confidence >= 75;
-    });
-
-    logger.info('Basketball confidence threshold applied (75%)', {
-      traceId,
-      matchId,
-      originalCount,
-      filteredCount: prediction.recommendations.length,
-    });
-
-    if (prediction.recommendations.length === 0) {
-      prediction.prediction = 'No basketball matches currently meet the 75% confidence threshold.';
-      prediction.confidence = 0;
-      prediction.color = '#868e96';
-    }
-  }
+  // NORMAL MATCH ANALYSIS: Flexible - shows all confidence levels regardless of sport
+  // LEO AI: Uses sport-specific thresholds (90% for football, 75% for basketball) in leoAssistanceService.js
+  // Basketball API: 75% threshold enforced in /api/basketball/predictions route
+  // NO THRESHOLD APPLIED HERE - normal match analysis remains flexible
 
   // --- Build Response ---
   const result = {
