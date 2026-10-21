@@ -241,7 +241,7 @@ describe('Apex Backend — Offline Unit Tests', () => {
   });
 
   describe('POST /api/match-prediction — confidence threshold enforcement', () => {
-    test('football predictions below 90% should be filtered out', async () => {
+    test('normal match analysis returns football recommendations at every confidence level', async () => {
       // Mock the entire prediction flow by intercepting at the response level
       const origSetPredictionCache = mod.setPredictionCache;
       const origGetPredictionFromCache = mod.getPredictionFromCache;
@@ -271,14 +271,19 @@ describe('Apex Backend — Offline Unit Tests', () => {
             awayTeamId: '363',
           });
 
-        // The actual prediction will run, but we verify the threshold logic is in place
         expect(res.statusCode).toBe(200);
         expect(res.body).toHaveProperty('recommendations');
         expect(Array.isArray(res.body.recommendations)).toBe(true);
-        // Verify that any returned recommendations meet the 90% threshold
+        // Normal match analysis deliberately applies NO threshold: the 90% football
+        // gate is used for LEO AI recommendations, not for this endpoint.
+        expect(res.body.recommendations.length).toBeGreaterThan(0);
         res.body.recommendations.forEach(rec => {
-          expect(rec.confidence).toBeGreaterThanOrEqual(90);
+          expect(typeof rec.confidence).toBe('number');
+          expect(rec.confidence).toBeGreaterThanOrEqual(0);
+          expect(rec.confidence).toBeLessThanOrEqual(100);
         });
+        // Sub-90% picks are surfaced, proving nothing is filtered out here.
+        expect(res.body.recommendations.some(rec => rec.confidence < 90)).toBe(true);
       } finally {
         mod.setPredictionCache = origSetPredictionCache;
         mod.getPredictionFromCache = origGetPredictionFromCache;
@@ -286,7 +291,7 @@ describe('Apex Backend — Offline Unit Tests', () => {
       }
     });
 
-    test('football predictions with no 90%+ confidence should return empty with message', async () => {
+    test('the 90% football gate is reported through predictabilityMeta', async () => {
       const origSetPredictionCache = mod.setPredictionCache;
       const origGetPredictionFromCache = mod.getPredictionFromCache;
       mod.setPredictionCache = jest.fn();
@@ -313,16 +318,21 @@ describe('Apex Backend — Offline Unit Tests', () => {
           });
 
         expect(res.statusCode).toBe(200);
-        expect(res.body).toHaveProperty('recommendations');
-        // If no recommendations meet threshold, verify the message
-        if (res.body.recommendations.length === 0) {
-          expect(res.body.prediction).toContain('90% confidence threshold');
-          expect(res.body.confidence).toBe(0);
+
+        const meta = res.body.predictabilityMeta;
+        expect(meta).toBeTruthy();
+        expect(typeof meta.isRecommended).toBe('boolean');
+        expect(Array.isArray(meta.rejectionReasons)).toBe(true);
+
+        if (meta.isRecommended === false) {
+          // A rejected candidate must explain itself against the 90% football threshold.
+          expect(meta.rejectionReasons.length).toBeGreaterThan(0);
+          expect(meta.rejectionReasons.some(r => /below required 90(\.0)?% threshold/.test(r))).toBe(true);
+          expect(res.body.predictabilityMeta.topCalibratedProbability).toBeNull();
+        } else {
+          // An admitted candidate must actually clear the 90% football threshold.
+          expect(meta.topCalibratedProbability).toBeGreaterThanOrEqual(0.90);
         }
-        // Otherwise verify all meet threshold
-        res.body.recommendations.forEach(rec => {
-          expect(rec.confidence).toBeGreaterThanOrEqual(90);
-        });
       } finally {
         mod.setPredictionCache = origSetPredictionCache;
         mod.getPredictionFromCache = origGetPredictionFromCache;

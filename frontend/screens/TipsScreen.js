@@ -9,6 +9,7 @@ import { fetchSportsDataLeagues, fetchBasketballPredictions } from '../services/
 import { PITCHAPI_77_LEAGUES, PITCHAPI_LEAGUE_NAMES } from '../constants/pitchapiLeagues';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
+import BasketballGameCard from '../components/BasketballGameCard';
 import { useTheme } from '../context/ThemeContext';
 
 const CATEGORIES = ['Football', 'Basketball', 'Tennis'];
@@ -338,30 +339,6 @@ export default function TipsScreen({ navigation }) {
     );
   };
 
-  const renderBasketballCard = ({ item }) => {
-    // Convert basketball prediction to match format for consistent UI
-    const matchItem = {
-      id: item.gameId,
-      league: item.league,
-      sport: 'basketball',
-      status: 'pre', // Basketball predictions are for upcoming games
-      time: new Date(item.tipoff).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      homeTeam: {
-        id: item.homeTeam?.id,
-        name: item.homeTeam?.name,
-        logo: item.homeTeam?.logo,
-      },
-      awayTeam: {
-        id: item.awayTeam?.id,
-        name: item.awayTeam?.name,
-        logo: item.awayTeam?.logo,
-      },
-      basketballPrediction: item, // Store full prediction for MatchDetails
-    };
-
-    return renderTipCard({ item: matchItem });
-  };
-
   const renderBasketballEmptyState = () => (
     <View style={styles.strictEmptyContainer}>
       <View style={styles.strictEmptyIconCircle}>
@@ -485,7 +462,12 @@ export default function TipsScreen({ navigation }) {
         ) : (
           <FlatList
             data={basketballPredictions}
-            renderItem={renderBasketballCard}
+            renderItem={({ item }) => (
+              <BasketballGameCard
+                prediction={item}
+                onPress={(match) => navigation.navigate('MatchDetails', { match })}
+              />
+            )}
             keyExtractor={(item, idx) => `bb_${item.gameId || idx}`}
             contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}

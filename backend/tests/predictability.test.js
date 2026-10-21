@@ -8,7 +8,7 @@
  *   4. Predictability index scoring
  *   5. Strict candidate admission & explicit rejection reasons
  *   6. Fixture ranking and separation of 'All Fixtures' vs 'Recommended Predictions'
- *   7. Zero-recommendation behavior when no fixtures meet strict 75%+ criteria
+ *   7. Zero-recommendation behavior when no fixtures meet strict 90%+ criteria
  *   8. HTTP endpoints for recommended predictions and all fixtures
  */
 
@@ -172,7 +172,7 @@ describe('Candidate Admission & Strict Filtering', () => {
     date: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2).toISOString(), // 2 days in future
   };
 
-  test('admits a candidate that satisfies all strict criteria (prob >= 75%, sample >= 5, data quality >= 0.65)', () => {
+  test('admits a candidate that satisfies all strict criteria (prob >= 90%, sample >= 5, data quality >= 0.65)', () => {
     const cleanHome = generateMockMatches(8, { avgPf: 1.0 });
     const cleanAway = generateMockMatches(8, { avgPf: 0.8 });
 
@@ -180,8 +180,8 @@ describe('Candidate Admission & Strict Filtering', () => {
       market: 'under_4_5_goals',
       label: 'Under 4.5 Goals',
       value: 'Under 4.5',
-      probability: 0.84, // 84% > 75%
-      confidence: 84,
+      probability: 0.92, // 92% >= the 90% football threshold
+      confidence: 92,
       expectedGoals: 2.4,
       factors: [{ label: 'Strong defensive record' }],
     };
@@ -196,7 +196,7 @@ describe('Candidate Admission & Strict Filtering', () => {
 
     expect(candidate.is_eligible).toBe(true);
     expect(candidate.rejection_reasons.length).toBe(0);
-    expect(candidate.calibrated_probability).toBe(0.84);
+    expect(candidate.calibrated_probability).toBe(0.92);
     expect(candidate.predictability_score).toBeGreaterThanOrEqual(0.65);
     expect(candidate.supporting_evidence.length).toBeGreaterThan(0);
   });
@@ -223,14 +223,14 @@ describe('Candidate Admission & Strict Filtering', () => {
     expect(candidate.rejection_reasons.some(r => r.includes('Insufficient historical matches'))).toBe(true);
   });
 
-  test('rejects candidate when calibrated probability is below 75% threshold', () => {
+  test('rejects candidate when calibrated probability is below the 90% threshold', () => {
     const cleanHome = generateMockMatches(8);
     const cleanAway = generateMockMatches(8);
 
     const weakPrediction = {
       market: 'under_4_5_goals',
-      probability: 0.68, // 68% < 75% threshold
-      confidence: 68,
+      probability: 0.84, // 84% < 90% threshold
+      confidence: 84,
     };
 
     const candidate = evaluateMarketCandidate({
@@ -242,7 +242,7 @@ describe('Candidate Admission & Strict Filtering', () => {
     });
 
     expect(candidate.is_eligible).toBe(false);
-    expect(candidate.rejection_reasons.some(r => r.includes('below required 75% threshold'))).toBe(true);
+    expect(candidate.rejection_reasons.some(r => r.includes('below required 90.0% threshold'))).toBe(true);
   });
 
   test('rejects fixture whose kickoff time is in the past', () => {
@@ -295,7 +295,7 @@ describe('evaluateFixture & filterAndRankFixtures', () => {
     expect(evaluation.isRecommended).toBe(true);
     expect(evaluation.eligibleCandidates.length).toBeGreaterThan(0);
     expect(evaluation.topCandidate).toBeDefined();
-    expect(evaluation.topCandidate.calibrated_probability).toBeGreaterThanOrEqual(0.75);
+    expect(evaluation.topCandidate.calibrated_probability).toBeGreaterThanOrEqual(0.90);
     expect(evaluation.confidenceLabel).toMatch(/Validated|High Confidence/);
   });
 
@@ -312,7 +312,7 @@ describe('evaluateFixture & filterAndRankFixtures', () => {
       awayName: 'Dortmund',
     });
 
-    // None of the Under markets should pass the 75%+ threshold
+    // None of the Under markets should pass the 90%+ threshold
     expect(evaluation.isRecommended).toBe(false);
     expect(evaluation.topCandidate).toBeNull();
     expect(evaluation.fixtureRejectionReasons.length).toBeGreaterThan(0);

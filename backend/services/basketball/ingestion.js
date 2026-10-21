@@ -113,7 +113,13 @@ function fixtureFromSummary(summary, gameId, leagueCfg) {
 /** Fetch today's (or a given date's) basketball fixtures for one league. */
 async function fetchFixtures({ sportsData, leagueCfg, date = null, traceId = null }) {
   const { sport, league } = espnPaths(leagueCfg);
+  // ESPN's scoreboard only returns a narrow window around "now" when no `dates`
+  // is supplied, which silently omits most of the requested day's games. Pass the
+  // day explicitly (ESPN expects YYYYMMDD); the sameDay() filter below still
+  // guards against ESPN returning its usual +/- 1 day window.
+  const dates = date ? String(date).slice(0, 10).replace(/-/g, '') : null;
   const fixtures = await sportsData.espn.getFixtures(sport, league, {
+    dates,
     traceId,
     leagueDisplayName: leagueCfg.label,
   });

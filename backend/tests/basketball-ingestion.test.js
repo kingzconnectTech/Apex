@@ -17,6 +17,7 @@ const { EspnProvider } = require('../services/providers/EspnProvider');
 const { sharedCache } = require('../services/providers/cache');
 const CONFIG = require('../services/basketball/config');
 const {
+  fetchFixtures,
   fixtureFromSummary,
   getGamePrediction,
   getPredictions,
@@ -473,6 +474,60 @@ describe('basketball ingestion — list endpoint', () => {
     await expect(getPredictions({ sportsData: mkSportsData(provider), leagues: ['nope'] }))
       .rejects.toThrow(/nope/);
     expect(provider.getFixtures).not.toHaveBeenCalled();
+  });
+
+  test('the requested day is forwarded to ESPN as YYYYMMDD', async () => {
+    // Without `dates` ESPN only returns a narrow window around now, which dropped
+    // most of the day's games from the Tips list.
+    const provider = mkProvider();
+    provider.getFixtures = jest.fn().mockResolvedValue([]);
+
+    await fetchFixtures({
+      sportsData: mkSportsData(provider),
+      leagueCfg,
+      date: '2026-10-21',
+    });
+
+    expect(provider.getFixtures).toHaveBeenCalledWith('basketball', 'nba', expect.objectContaining({
+      dates: '20261021',
+    }));
+  });
+
+  test('fixtures outside the requested day are still filtered out', async () => {
+    const provider = mkProvider();
+    provider.getFixtures = jest.fn().mockResolvedValue([
+      {
+        fixture: { id: '401-a', date: '2026-10-21T23:30:00.000Z', status: 'pre' },
+        homeTeam: { id: HOME_ID, name: 'Home Hawks' },
+        awayTeam: { id: AWAY_ID, name: 'Away Aces' },
+      },
+      // ESPN's +/- 1 day window must not leak other days into the list.
+      {
+        fixture: { id: '401-b', date: '2026-10-22T23:30:00.000Z', status: 'pre' },
+        homeTeam: { id: HOME_ID, name: 'Home Hawks' },
+        awayTeam: { id: AWAY_ID, name: 'Away Aces' },
+      },
+    ]);
+
+    const out = await fetchFixtures({
+      sportsData: mkSportsData(provider),
+      leagueCfg,
+      date: '2026-10-21',
+    });
+
+    expect(out.map(f => f.fixture.id)).toEqual(['401-a']);
+  });
+
+  test('no date returns every fixture the scoreboard supplied', async () => {
+    const provider = mkProvider();
+    provider.getFixtures = jest.fn().mockResolvedValue([{ fixture: { id: '401-a', date: '2026-10-25T23:30:00.000Z' } }]);
+
+    const out = await fetchFixtures({ sportsData: mkSportsData(provider), leagueCfg });
+
+    expect(provider.getFixtures).toHaveBeenCalledWith('basketball', 'nba', expect.objectContaining({
+      dates: null,
+    }));
+    expect(out).toHaveLength(1);
   });
 });
 
