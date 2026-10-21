@@ -39,9 +39,10 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
 
       const predictions = await getPredictions({ sportsData, leagues, date, traceId });
 
-      // Apply 75% confidence threshold per pick (per market)
-      // Each individual pick must have probability >= 75% to be displayed
-      const THRESHOLD = 0.75;
+      // Apply confidence threshold per pick (per market)
+      // Each individual pick must have probability >= threshold to be displayed
+      // TEMPORARILY LOWERED FOR DEBUGGING - was 0.75
+      const THRESHOLD = 0.50;
       let filtered = predictions.map(pred => {
         const filteredPicks = (pred.picks || []).filter(pick => pick.probability >= THRESHOLD);
         return { ...pred, picks: filteredPicks };
@@ -75,8 +76,9 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
       const found = await getGamePrediction({ sportsData, gameId, league, traceId });
       if (!found) return res.status(404).json({ error: `No basketball game ${gameId} found for league ${league}` });
 
-      // Apply 75% confidence threshold per pick
-      const THRESHOLD = 0.75;
+      // Apply confidence threshold per pick
+      // TEMPORARILY LOWERED FOR DEBUGGING - was 0.75
+      const THRESHOLD = 0.50;
       const formatted = found.formatted;
       const filteredPicks = (formatted.picks || []).filter(pick => pick.probability >= THRESHOLD);
 
