@@ -126,12 +126,12 @@ const CONFIG = {
 
   // --- Line & pick selection ---
   selection: {
-    // NORMAL MATCH ANALYSIS: Flexible - show all confidence levels
-    // Internal selection thresholds allow picks to be generated at various confidence levels
-    mainMinProb: 0.50,  // Lower threshold to allow generation
-    alternateMinProb: 0.55,  // Lower threshold to allow generation
-    minEdge: 0.04,
-    minDataQuality: 0.7,
+    // NORMAL MATCH ANALYSIS: Show all predictions regardless of confidence level
+    // No probability threshold - all basketball matches should have predictions
+    mainMinProb: 0.0,  // No threshold - show all picks
+    alternateMinProb: 0.0,  // No threshold - show all picks
+    minEdge: 0.0,  // No edge threshold - show all picks
+    minDataQuality: 0.0,  // No data quality threshold - show all picks
     // score = rankProbWeight * prob + rankEvWeight * edgeScaledEv
     rankProbWeight: 0.7,  // Prioritize probability over edge for basketball
     rankEvWeight: 0.3,
@@ -179,9 +179,8 @@ const CONFIG = {
   // push outcomes on model-only lines, labelled clearly as model estimates.
   modelLines: {
     enabled: true,
-    // Minimum probability threshold for model lines (no edge from vig removal, so
-    // the model must produce a strong directional signal to pass the pick filter).
-    minProb: 0.65,
+    // No probability threshold - show all model line predictions
+    minProb: 0.0,
     // Total-line offset: generate Over/Under line at projected total + 0.5
     // (half-point above the mean; both sides should be ~50/50 there, so a 65%+
     // signal is meaningful).
@@ -192,9 +191,8 @@ const CONFIG = {
     // Implied probability used in place of bookmaker de-vigged fair probability.
     // 0.5 means no edge exists a priori; model must earn its probability.
     impliedProb: 0.50,
-    // Data quality floor for model lines is higher than for bookmaker lines,
-    // because there is no market signal to validate against.
-    minDataQuality: 0.75,
+    // No data quality threshold - show all model line predictions
+    minDataQuality: 0.0,
   },
 
   // --- Data quality ---

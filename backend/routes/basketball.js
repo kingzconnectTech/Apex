@@ -39,13 +39,8 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
 
       const predictions = await getPredictions({ sportsData, leagues, date, traceId });
 
-      // Apply confidence threshold per pick (per market)
-      // Each individual pick must have probability >= threshold to be displayed
-      const THRESHOLD = 0.30;
-      let filtered = predictions.map(pred => {
-        const filteredPicks = (pred.picks || []).filter(pick => pick.probability >= THRESHOLD);
-        return { ...pred, picks: filteredPicks };
-      }).filter(pred => pred.picks.length > 0);
+      // No threshold filtering - show all predictions
+      let filtered = predictions;
 
       // Additional optional filters
       if (confidence) filtered = filtered.filter(p => p.picks.some(pk => pk.confidence === confidence));
@@ -75,21 +70,9 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
       const found = await getGamePrediction({ sportsData, gameId, league, traceId });
       if (!found) return res.status(404).json({ error: `No basketball game ${gameId} found for league ${league}` });
 
-      // Apply confidence threshold per pick
-      const THRESHOLD = 0.30;
+      // No threshold filtering - show all predictions
       const formatted = found.formatted;
-      const filteredPicks = (formatted.picks || []).filter(pick => pick.probability >= THRESHOLD);
-
-      if (filteredPicks.length === 0) {
-        return res.json({
-          ...formatted,
-          picks: [],
-          message: 'No picks meet the 30% confidence threshold',
-          disclaimer: DISCLAIMER,
-        });
-      }
-
-      res.json({ ...formatted, picks: filteredPicks, disclaimer: DISCLAIMER });
+      res.json({ ...formatted, disclaimer: DISCLAIMER });
     } catch (err) {
       logger?.log('error', '[BASKETBALL] game prediction failed', { traceId, gameId: req.params.gameId, error: err?.message });
       res.status(500).json({ error: 'Failed to generate basketball prediction', detail: err?.message });

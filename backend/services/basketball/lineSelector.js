@@ -152,15 +152,12 @@ function evaluateTwoWayMarket({ lines, probFn, nameFn, market, sigma, ctx }) {
         : minDQ;
 
       const minProb = isModelLine
-        ? (cfg.modelLines?.minProb ?? 0.65)
-        : (isMain ? (cfg.selection.mainMinProb ?? 0.6) : (cfg.selection.alternateMinProb ?? 0.68));
+        ? (cfg.modelLines?.minProb ?? 0.0)
+        : (isMain ? (cfg.selection.mainMinProb ?? 0.0) : (cfg.selection.alternateMinProb ?? 0.0));
 
       const failReasons = [];
-      if (dataQuality < effectiveMinDQ) failReasons.push(`data quality ${round(dataQuality, 2)} < ${effectiveMinDQ}`);
-      if (p < minProb) failReasons.push(`probability ${round(p, 3)} < ${minProb}`);
-      if (edge < (cfg.selection.minEdge ?? 0.04)) failReasons.push(`edge ${round(edge, 3)} < ${cfg.selection.minEdge}`);
-
-      const passes = failReasons.length === 0;
+      // No threshold filtering - all candidates pass
+      const passes = true;
       const score = scoreCandidate({ probability: p, ev, cfg });
 
       const baseSelection = nameFn ? nameFn(side, line, ctx) : `${side} ${line}`;
@@ -192,20 +189,19 @@ function evaluateTwoWayMarket({ lines, probFn, nameFn, market, sigma, ctx }) {
 }
 
 /**
- * Select the best passing candidate for a market.
+ * Select the best candidate for a market (no threshold filtering).
  * @returns {Object|null}
  */
 function bestOf(candidates) {
-  const passing = candidates.filter(c => c.passes);
-  if (!passing.length) return null;
-  return passing.reduce((best, c) => (c.score > best.score ? c : best), passing[0]);
+  if (!candidates.length) return null;
+  return candidates.reduce((best, c) => (c.score > best.score ? c : best), candidates[0]);
 }
 
 /**
  * Full selection for one game.
  *
  * Prioritizes markets according to the configured marketPriority array.
- * Only markets that meet the 75% confidence threshold are displayed.
+ * All predictions are shown regardless of confidence threshold.
  * No straight-winner or moneyline fallback is allowed.
  *
  * @param {Object} params
@@ -294,7 +290,7 @@ function selectPicks({ projection, lines, ctx }) {
   });
 
   // No straight-winner or moneyline fallback is allowed
-  // If no market meets the 75% threshold, return no pick
+  // All markets show predictions regardless of threshold
 
   const consistencyFlags = assessConsistency({
     projTotal: projection.total, projMargin: projection.margin, cfg,

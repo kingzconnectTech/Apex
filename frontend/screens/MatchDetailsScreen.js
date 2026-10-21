@@ -159,20 +159,20 @@ export default function MatchDetailsScreen({ route, navigation }) {
             } finally {
               setPredictionLoading(false);
             }
+          }
 
-            // --- Check settlement status for this match ---
-            try {
-              const settleRes = await fetchPredictionSettlement(match.id, user?.uid);
-              if (settleRes) {
-                setSettlementData(settleRes);
-                // Reveal predictions automatically if match has already been settled
-                if (settleRes.settlementStatus === 'settled') {
-                  setShowPrediction(true);
-                }
+          // --- Check settlement status for this match (both football and basketball) ---
+          try {
+            const settleRes = await fetchPredictionSettlement(match.id, user?.uid);
+            if (settleRes) {
+              setSettlementData(settleRes);
+              // Reveal predictions automatically if match has already been settled
+              if (settleRes.settlementStatus === 'settled') {
+                setShowPrediction(true);
               }
-            } catch (settleErr) {
-              console.warn('Settlement fetch failed:', settleErr);
             }
+          } catch (settleErr) {
+            console.warn('Settlement fetch failed:', settleErr);
           }
         } catch (error) {
           console.error('Failed to load match details', error);
@@ -516,7 +516,29 @@ export default function MatchDetailsScreen({ route, navigation }) {
         setShowPrediction(true);
 
         // Persist original prediction to Firestore for automatic tick/cross settlement
-        if (botAnalysis && botAnalysis.recommendations && match) {
+        if (match?.sport === 'basketball' && basketballPrediction) {
+          // Save basketball prediction
+          savePredictionToBackend({
+            userId: user?.uid || 'anonymous',
+            matchId: String(match.id),
+            sport: 'basketball',
+            leagueSlug: match.leagueSlug || '',
+            league: match.league || '',
+            homeName,
+            awayName,
+            homeTeamId: getTeamId(match.homeTeam),
+            awayTeamId: getTeamId(match.awayTeam),
+            matchDate: match.date || null,
+            predictions: basketballPrediction.picks.map(p => ({
+              market: p.market || '',
+              label: p.market || '',
+              value: p.selection || '',
+              confidence: p.confidence || 'Medium',
+              selection: p.selection || '',
+            })),
+          });
+        } else if (botAnalysis && botAnalysis.recommendations && match) {
+          // Save football prediction
           savePredictionToBackend({
             userId: user?.uid || 'anonymous',
             matchId: String(match.id),
@@ -539,7 +561,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
         }
     } else {
         Alert.alert(
-            "Insufficient Balance", 
+            "Insufficient Balance",
             "You need 1 APT to view this prediction.",
             [
                 { text: "Cancel", style: "cancel" },
@@ -615,63 +637,100 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 <Text style={styles.predictionErrorText}>{predictionError}</Text>
               </View>
             ) : match?.sport === 'basketball' ? (
-              // Basketball uses dedicated engine - show prediction directly or empty state
+              // Basketball uses same UI pattern as football
               basketballPrediction ? (
-              // Basketball predictions from dedicated engine
-              <>
-                <View style={styles.tipsList}>
-                  <View style={[styles.tipCard, { borderLeftColor: '#00F2FE' }]}>
-                    <View style={styles.tipHeader}>
-                      <View style={[styles.tipTypeBadge, { backgroundColor: 'rgba(0, 242, 254, 0.2)' }]}>
-                        <Text style={[styles.tipTypeText, { color: '#00F2FE' }]}>Calibrated Engine</Text>
-                      </View>
-                      <Text style={styles.tipConfidence}>
-                        {Math.round((basketballPrediction.data_quality || 0) * 100)}% Data Quality
-                      </Text>
-                    </View>
-
-                    {/* Projection */}
-                    <View style={styles.projectionRow}>
-                      <Text style={styles.projectionLabel}>Projected Total:</Text>
-                      <Text style={styles.projectionValue}>{basketballPrediction.projection?.total?.toFixed(1) || '—'} pts</Text>
-                    </View>
-                    <View style={styles.projectionRow}>
-                      <Text style={styles.projectionLabel}>Projected Margin:</Text>
-                      <Text style={styles.projectionValue}>
-                        {basketballPrediction.projection?.margin > 0 ? '+' : ''}{basketballPrediction.projection?.margin?.toFixed(1) || '—'}
-                      </Text>
-                    </View>
-
-                    {/* Picks */}
-                    {basketballPrediction.picks && basketballPrediction.picks.length > 0 ? (
-                      basketballPrediction.picks.map((pick, idx) => (
-                        <View key={idx} style={styles.pickSection}>
-                          <View style={styles.pickRowHeader}>
-                            <Text style={styles.pickMarketLabel}>{pick.market}</Text>
-                            <View style={[
-                              styles.confidenceMiniBadge,
-                              pick.confidence === 'High' ? styles.confidenceHigh :
-                              pick.confidence === 'Medium' ? styles.confidenceMedium : styles.confidenceLow
-                            ]}>
-                              <Text style={styles.confidenceMiniText}>{pick.confidence}</Text>
+                !showPrediction ? (
+                  <View style={styles.lockedContainer}>
+                    <Ionicons name="lock-closed" size={40} color={theme.textSecondary} />
+                    <Text style={styles.lockedText}>AI Tips Locked</Text>
+                    <Text style={styles.lockedSubText}>Unlock to see the top predictions for this match.</Text>
+                    <TouchableOpacity style={styles.unlockButton} onPress={handleUnlockPrediction}>
+                      <LinearGradient
+                        colors={[theme.primary, theme.warning]}
+                        start={{x: 0, y: 0}}
+                        end={{x: 1, y: 0}}
+                        style={styles.unlockGradient}
+                      >
+                        <Text style={styles.unlockText}>Unlock All Tips (1 APT)</Text>
+                        <Ionicons name="key" size={16} color="#FFF" style={{ marginLeft: 8 }} />
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.tipsList}>
+                      {basketballPrediction.picks && basketballPrediction.picks.length > 0 ? (
+                        basketballPrediction.picks.map((pick, idx) => {
+                          const pickColor = pick.market === 'Total Points' ? '#00F2FE' : '#FF6B6B';
+                          return (
+                            <View key={idx} style={[styles.tipCard, { borderLeftColor: pickColor }]}>
+                              <View style={styles.tipHeader}>
+                                <View style={[styles.tipTypeBadge, { backgroundColor: pickColor + '20' }]}>
+                                  <Text style={[styles.tipTypeText, { color: pickColor }]}>{pick.market}</Text>
+                                </View>
+                                <Text style={styles.tipConfidence}>
+                                  {Math.round((basketballPrediction.data_quality || 0) * 100)}% Data Quality
+                                </Text>
+                              </View>
+                              <Text style={styles.tipValue}>{pick.selection}</Text>
+                              <View style={styles.pickStatsRow}>
+                                <Text style={styles.pickStat}>Probability: {(pick.probability * 100).toFixed(1)}%</Text>
+                                <Text style={styles.pickStat}>Edge: {(pick.edge * 100).toFixed(1)}%</Text>
+                              </View>
+                              {pick.reasoning && (
+                                <Text style={styles.pickReasoningText}>{pick.reasoning}</Text>
+                              )}
                             </View>
-                          </View>
-                          <Text style={styles.pickSelectionText}>{pick.selection}</Text>
-                          <View style={styles.pickStatsRow}>
-                            <Text style={styles.pickStat}>Probability: {(pick.probability * 100).toFixed(1)}%</Text>
-                            <Text style={styles.pickStat}>Edge: {(pick.edge * 100).toFixed(1)}%</Text>
-                          </View>
-                          {pick.reasoning && (
-                            <Text style={styles.pickReasoningText}>{pick.reasoning}</Text>
-                          )}
+                          );
+                        })
+                      ) : (
+                        <View style={styles.predictionErrorContainer}>
+                          <Ionicons name="shield-checkmark-outline" size={32} color={theme.textSecondary} />
+                          <Text style={styles.predictionErrorText}>
+                            No predictions available for this match.
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {basketballPrediction.picks && basketballPrediction.picks.length > 0 && (
+                      <View style={styles.divider} />
+                    )}
+
+                    {basketballPrediction.picks && basketballPrediction.picks.length > 0 && homeDetails && awayDetails && (
+                      <>
+                      <View style={styles.formSection}>
+                      <Text style={styles.subTitle}>Recent Form</Text>
+                      <View style={styles.teamFormRow}>
+                        <Text style={styles.teamFormName} numberOfLines={1}>{homeName}</Text>
+                        {renderForm(homeStats)}
+                      </View>
+                      <View style={styles.teamFormRow}>
+                        <Text style={styles.teamFormName} numberOfLines={1}>{awayName}</Text>
+                        {renderForm(awayStats)}
+                      </View>
+                    </View>
+
+                    <View style={styles.divider} />
+
+                    <Text style={styles.subTitle}>Key Factors</Text>
+                    {basketballPrediction.risk_flags && basketballPrediction.risk_flags.length > 0 ? (
+                      basketballPrediction.risk_flags.map((flag, i) => (
+                        <View key={i} style={styles.factorRow}>
+                          <View style={[styles.factorDot, { backgroundColor: theme.warning }]} />
+                          <Text style={styles.factorText}>{flag}</Text>
                         </View>
                       ))
                     ) : (
-                      <Text style={styles.noPickText}>No confident pick available</Text>
+                      <View style={styles.factorRow}>
+                        <View style={[styles.factorDot, { backgroundColor: theme.textSecondary }]} />
+                        <Text style={styles.factorText}>Standard analysis applied</Text>
+                      </View>
                     )}
-                  </View>
-                </View>
-              </>
+                      </>
+                    )}
+                  </>
+                )
               ) : (
                 <View style={styles.predictionErrorContainer}>
                   <Ionicons name="information-circle-outline" size={32} color={theme.textSecondary} />

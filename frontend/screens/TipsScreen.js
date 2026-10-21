@@ -9,7 +9,6 @@ import { fetchSportsDataLeagues, fetchBasketballPredictions } from '../services/
 import { PITCHAPI_77_LEAGUES, PITCHAPI_LEAGUE_NAMES } from '../constants/pitchapiLeagues';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize, width } from '../utils/responsive';
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
-import BasketballGameCard from '../components/BasketballGameCard';
 import { useTheme } from '../context/ThemeContext';
 
 const CATEGORIES = ['Football', 'Basketball', 'Tennis'];
@@ -168,8 +167,14 @@ export default function TipsScreen({ navigation }) {
   };
 
   const loadMoreTips = () => {
-    if (visibleMatchesCount < filteredTips.length) {
-      setVisibleMatchesCount(prev => prev + 10);
+    if (selectedCategory === 'Basketball') {
+      if (visibleMatchesCount < basketballPredictions.length) {
+        setVisibleMatchesCount(prev => prev + 10);
+      }
+    } else {
+      if (visibleMatchesCount < filteredTips.length) {
+        setVisibleMatchesCount(prev => prev + 10);
+      }
     }
   };
 
@@ -333,24 +338,41 @@ export default function TipsScreen({ navigation }) {
     );
   };
 
-  const renderBasketballCard = ({ item }) => (
-    <BasketballGameCard
-      prediction={item}
-      onPress={(matchPayload) => navigation.navigate('MatchDetails', { match: matchPayload })}
-    />
-  );
+  const renderBasketballCard = ({ item }) => {
+    // Convert basketball prediction to match format for consistent UI
+    const matchItem = {
+      id: item.gameId,
+      league: item.league,
+      sport: 'basketball',
+      status: 'pre', // Basketball predictions are for upcoming games
+      time: new Date(item.tipoff).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      homeTeam: {
+        id: item.homeTeam?.id,
+        name: item.homeTeam?.name,
+        logo: item.homeTeam?.logo,
+      },
+      awayTeam: {
+        id: item.awayTeam?.id,
+        name: item.awayTeam?.name,
+        logo: item.awayTeam?.logo,
+      },
+      basketballPrediction: item, // Store full prediction for MatchDetails
+    };
+
+    return renderTipCard({ item: matchItem });
+  };
 
   const renderBasketballEmptyState = () => (
     <View style={styles.strictEmptyContainer}>
       <View style={styles.strictEmptyIconCircle}>
         <Ionicons name="basketball-outline" size={48} color="#00F2FE" />
       </View>
-      <Text style={styles.strictEmptyTitle}>No basketball matches found.</Text>
+      <Text style={styles.strictEmptyTitle}>No basketball matches scheduled.</Text>
       <Text style={styles.strictEmptyDesc}>
-        We analysed the scheduled games and none are available for the selected filters.
+        No games found for the selected date and league.
       </Text>
       <Text style={styles.strictEmptySubtext}>
-        Try another date, league, confidence or market filter.
+        Try selecting a different date or league filter.
       </Text>
     </View>
   );
@@ -370,23 +392,7 @@ export default function TipsScreen({ navigation }) {
     </View>
   );
 
-  const renderBasketballHeader = () => (
-    <View>
-      <View style={styles.transparencyBar}>
-        <Ionicons name="analytics-outline" size={14} color={theme.textSecondary} style={{ marginRight: 6 }} />
-        <Text style={styles.transparencyBarText}>
-          {basketballPredictions.length} game{basketballPredictions.length === 1 ? '' : 's'} with model probabilities
-          {selectedLeague !== 'All' && selectedLeague !== 'Live' ? ` • ${selectedLeague}` : ''}
-        </Text>
-      </View>
-      {basketballDisclaimer ? (
-        <View style={styles.transparencyBar}>
-          <Ionicons name="information-circle-outline" size={14} color={theme.textSecondary} style={{ marginRight: 6 }} />
-          <Text style={styles.transparencyBarText}>{basketballDisclaimer}</Text>
-        </View>
-      ) : null}
-    </View>
-  );
+  const renderBasketballHeader = () => null; // No header needed - matches football UI
 
   const filteredTips = getFilteredMatches();
 
@@ -484,10 +490,13 @@ export default function TipsScreen({ navigation }) {
             contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}
             initialNumToRender={5}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            onEndReached={loadMoreTips}
+            onEndReachedThreshold={0.5}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" colors={['#10B981']} />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} colors={[theme.primary]} />
             }
-            ListHeaderComponent={renderBasketballHeader()}
             ListEmptyComponent={renderBasketballEmptyState()}
           />
         )
