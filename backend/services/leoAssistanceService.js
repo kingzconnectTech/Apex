@@ -661,9 +661,11 @@ class LeoAssistanceService {
    * Ensures identical meaning across markets, uses consistent tie-breaking rules,
    * and isolates below-threshold predictions.
    *
-   * Sport-specific confidence thresholds:
+   * LEO AI ONLY: Sport-specific confidence thresholds
    * - Football (soccer): 90% minimum confidence
    * - Basketball: 75% minimum confidence
+   *
+   * Note: minConfidenceThreshold parameter is IGNORED for Leo AI - sport-specific thresholds are enforced
    */
   _rankPredictions(evaluatedResults, minConfidenceThreshold, stats, rejectionReasons) {
     const qualifyingList = [];
@@ -673,12 +675,14 @@ class LeoAssistanceService {
       const rating = Number(item.rating != null ? item.rating : item.analysis?.confidence || 0);
       const sport = item.fixture?.sport || item.fixture?.league?.sport || 'soccer';
 
-      // Apply sport-specific confidence thresholds for Leo AI
-      let sportSpecificThreshold = minConfidenceThreshold;
+      // LEO AI: Apply sport-specific confidence thresholds (IGNORE minConfidenceThreshold parameter)
+      let sportSpecificThreshold;
       if (sport === 'soccer' || sport === 'football') {
         sportSpecificThreshold = 90; // Football requires 90%+ confidence
       } else if (sport === 'basketball') {
         sportSpecificThreshold = 75; // Basketball requires 75%+ confidence
+      } else {
+        sportSpecificThreshold = 70; // Default for other sports
       }
 
       if (rating >= sportSpecificThreshold) {
