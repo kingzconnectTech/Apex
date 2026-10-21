@@ -98,28 +98,31 @@ export default function MatchDetailsScreen({ route, navigation }) {
         checkBackendHealth().then(status => console.log('Backend Connection Status:', status));
 
         try {
-          // Fetch detailed info for both teams and the match itself
-          const [home, away, analysis] = await Promise.all([
-            fetchTeamDetails(match.sport, match.leagueSlug, getTeamId(match.homeTeam)),
-            fetchTeamDetails(match.sport, match.leagueSlug, getTeamId(match.awayTeam)),
-            fetchMatchAnalysis(match.sport, match.leagueSlug, match.id)
-          ]);
+          // Basketball doesn't have team stats - skip for basketball
+          if (match?.sport !== 'basketball') {
+            // Fetch detailed info for both teams and the match itself
+            const [home, away, analysis] = await Promise.all([
+              fetchTeamDetails(match.sport, match.leagueSlug, getTeamId(match.homeTeam)),
+              fetchTeamDetails(match.sport, match.leagueSlug, getTeamId(match.awayTeam)),
+              fetchMatchAnalysis(match.sport, match.leagueSlug, match.id)
+            ]);
 
-          setHomeDetails(home);
-          setAwayDetails(away);
-          setMatchAnalysis(analysis);
+            setHomeDetails(home);
+            setAwayDetails(away);
+            setMatchAnalysis(analysis);
 
-          // Fetch Deep Stats for H2H (Cards, Corners)
-          if (analysis?.headToHeadGames?.length > 0) {
-            const validH2H = analysis.headToHeadGames.filter(g =>
-              String(g.id) !== String(match.id) &&
-              g.homeTeamScore !== undefined &&
-              g.awayTeamScore !== undefined
-            );
-            if (validH2H.length > 0) {
-              const gameIds = validH2H.slice(0, 5).map(g => g.id);
-              const deepStats = await fetchGamesStats(match.sport, match.leagueSlug, gameIds);
-              setH2HDeepStats(deepStats);
+            // Fetch Deep Stats for H2H (Cards, Corners)
+            if (analysis?.headToHeadGames?.length > 0) {
+              const validH2H = analysis.headToHeadGames.filter(g =>
+                String(g.id) !== String(match.id) &&
+                g.homeTeamScore !== undefined &&
+                g.awayTeamScore !== undefined
+              );
+              if (validH2H.length > 0) {
+                const gameIds = validH2H.slice(0, 5).map(g => g.id);
+                const deepStats = await fetchGamesStats(match.sport, match.leagueSlug, gameIds);
+                setH2HDeepStats(deepStats);
+              }
             }
           }
 
@@ -697,36 +700,22 @@ export default function MatchDetailsScreen({ route, navigation }) {
                       <View style={styles.divider} />
                     )}
 
-                    {basketballPrediction.picks && basketballPrediction.picks.length > 0 && homeDetails && awayDetails && (
+                    {basketballPrediction.picks && basketballPrediction.picks.length > 0 && (
                       <>
-                      <View style={styles.formSection}>
-                      <Text style={styles.subTitle}>Recent Form</Text>
-                      <View style={styles.teamFormRow}>
-                        <Text style={styles.teamFormName} numberOfLines={1}>{homeName}</Text>
-                        {renderForm(homeStats)}
-                      </View>
-                      <View style={styles.teamFormRow}>
-                        <Text style={styles.teamFormName} numberOfLines={1}>{awayName}</Text>
-                        {renderForm(awayStats)}
-                      </View>
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <Text style={styles.subTitle}>Key Factors</Text>
-                    {basketballPrediction.risk_flags && basketballPrediction.risk_flags.length > 0 ? (
-                      basketballPrediction.risk_flags.map((flag, i) => (
-                        <View key={i} style={styles.factorRow}>
-                          <View style={[styles.factorDot, { backgroundColor: theme.warning }]} />
-                          <Text style={styles.factorText}>{flag}</Text>
+                      <Text style={styles.subTitle}>Key Factors</Text>
+                      {basketballPrediction.risk_flags && basketballPrediction.risk_flags.length > 0 ? (
+                        basketballPrediction.risk_flags.map((flag, i) => (
+                          <View key={i} style={styles.factorRow}>
+                            <View style={[styles.factorDot, { backgroundColor: theme.warning }]} />
+                            <Text style={styles.factorText}>{flag}</Text>
+                          </View>
+                        ))
+                      ) : (
+                        <View style={styles.factorRow}>
+                          <View style={[styles.factorDot, { backgroundColor: theme.textSecondary }]} />
+                          <Text style={styles.factorText}>Standard analysis applied</Text>
                         </View>
-                      ))
-                    ) : (
-                      <View style={styles.factorRow}>
-                        <View style={[styles.factorDot, { backgroundColor: theme.textSecondary }]} />
-                        <Text style={styles.factorText}>Standard analysis applied</Text>
-                      </View>
-                    )}
+                      )}
                       </>
                     )}
                   </>

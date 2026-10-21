@@ -97,105 +97,113 @@ function analyzeGame({
 }) {
   if (!fixture) return null;
 
-  const leagueCfg = getLeagueConfig(league);
+  try {
+    const leagueCfg = getLeagueConfig(league);
 
-  const homeDerived = (homeLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
-  const awayDerived = (awayLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
+    const homeDerived = (homeLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
+    const awayDerived = (awayLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
 
-  // Extract head-to-head games from team logs
-  const homeId = fixture.homeTeam?.id;
-  const awayId = fixture.awayTeam?.id;
-  const h2hLog = [];
-  if (homeId && awayId) {
-    (homeDerived || []).forEach(g => {
-      if (String(g.opponentId) === String(awayId)) {
-        h2hLog.push(g);
-      }
-    });
-    // Sort newest-first
-    h2hLog.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-  }
+    // Extract head-to-head games from team logs
+    const homeId = fixture.homeTeam?.id;
+    const awayId = fixture.awayTeam?.id;
+    const h2hLog = [];
+    if (homeId && awayId) {
+      (homeDerived || []).forEach(g => {
+        if (String(g.opponentId) === String(awayId)) {
+          h2hLog.push(g);
+        }
+      });
+      // Sort newest-first
+      h2hLog.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    }
 
-  const game = normalizeGame({ fixture, odds, injuries, league, h2hLog });
+    const game = normalizeGame({ fixture, odds, injuries, league, h2hLog });
 
-  const homeRatings = computeTeamRatings(homeDerived, leagueCfg, cfg, { isHomeContext: true });
-  const awayRatings = computeTeamRatings(awayDerived, leagueCfg, cfg, { isHomeContext: false });
+    const homeRatings = computeTeamRatings(homeDerived, leagueCfg, cfg, { isHomeContext: true });
+    const awayRatings = computeTeamRatings(awayDerived, leagueCfg, cfg, { isHomeContext: false });
 
-  const homeForm = buildTeamForm(homeDerived, { isHomeContext: true });
-  const awayForm = buildTeamForm(awayDerived, { isHomeContext: false });
+    const homeForm = buildTeamForm(homeDerived, { isHomeContext: true });
+    const awayForm = buildTeamForm(awayDerived, { isHomeContext: false });
 
-  // Optional Elo second signal for the margin.
-  let eloMargin = null;
-  if (eloRatings) {
-    const h = eloRatings[game.home.team.id];
-    const a = eloRatings[game.away.team.id];
-    if (h != null && a != null) eloMargin = eloDiffToMargin(h - a, cfg);
-  }
+    // Optional Elo second signal for the margin.
+    let eloMargin = null;
+    if (eloRatings) {
+      const h = eloRatings[game.home.team.id];
+      const a = eloRatings[game.away.team.id];
+      if (h != null && a != null) eloMargin = eloDiffToMargin(h - a, cfg);
+    }
 
-  const baseProjection = projectGame({ home: homeRatings, away: awayRatings, leagueCfg, cfg, eloMargin });
-  if (!baseProjection) return null;
+    const baseProjection = projectGame({ home: homeRatings, away: awayRatings, leagueCfg, cfg, eloMargin });
+    if (!baseProjection) {
+      console.warn(`[Basketball] Failed to project game ${game.id} - baseProjection is null`);
+      return null;
+    }
 
-  const adjustments = computeAdjustments({
-    projection: baseProjection,
-    homeRatings,
-    awayRatings,
-    injuries: game.injuries,
-    context,
-    leagueCfg,
-    cfg,
-  });
-  const projection = applyAdjustments(baseProjection, adjustments);
-
-  const dataQuality = computeDataQuality({
-    homeRatings, awayRatings, homeForm, awayForm,
-    injuries: game.injuries, odds: game.odds, lineups: game.lineups,
-    leagueCfg, cfg,
-  });
-
-  const sigma = estimateSigma({
-    projTotal: projection.total,
-    projMargin: projection.margin,
-    expectedPossessions: projection.expectedPossessions,
-    dataQuality: dataQuality.score,
-    leagueCfg,
-    cfg,
-  });
-
-  const projectionWithSigma = { ...projection, sigmaTotal: sigma.total, sigmaMargin: sigma.margin };
-
-  const confirmed = !!(game.lineups.home.confirmed && game.lineups.away.confirmed);
-  const calibrate = calibrator
-    ? (market, p) => calibrator.apply(game.league, market, p)
-    : null;
-
-  const lines = buildLines(game.odds, projection, cfg);
-  const selection = selectPicks({
-    projection: projectionWithSigma,
-    lines,
-    ctx: {
+    const adjustments = computeAdjustments({
+      projection: baseProjection,
+      homeRatings,
+      awayRatings,
+      injuries: game.injuries,
+      context,
+      leagueCfg,
       cfg,
-      dataQuality: dataQuality.score,
-      confirmed,
-      homeTeamName: game.home.team.name,
-      awayTeamName: game.away.team.name,
-      calibrate,
-      marketPolicy,
-    },
-  });
+    });
+    const projection = applyAdjustments(baseProjection, adjustments);
 
-  return {
-    game,
-    leagueCfg,
-    homeRatings, awayRatings,
-    homeForm, awayForm,
-    baseProjection,
-    adjustments,
-    projection: projectionWithSigma,
-    sigma,
-    dataQuality,
-    selection,
-    lines,
-  };
+    const dataQuality = computeDataQuality({
+      homeRatings, awayRatings, homeForm, awayForm,
+      injuries: game.injuries, odds: game.odds, lineups: game.lineups,
+      leagueCfg, cfg,
+    });
+
+    const sigma = estimateSigma({
+      projTotal: projection.total,
+      projMargin: projection.margin,
+      expectedPossessions: projection.expectedPossessions,
+      dataQuality: dataQuality.score,
+      leagueCfg,
+      cfg,
+    });
+
+    const projectionWithSigma = { ...projection, sigmaTotal: sigma.total, sigmaMargin: sigma.margin };
+
+    const confirmed = !!(game.lineups.home.confirmed && game.lineups.away.confirmed);
+    const calibrate = calibrator
+      ? (market, p) => calibrator.apply(game.league, market, p)
+      : null;
+
+    const lines = buildLines(game.odds, projection, cfg);
+    const selection = selectPicks({
+      projection: projectionWithSigma,
+      lines,
+      ctx: {
+        cfg,
+        dataQuality: dataQuality.score,
+        confirmed,
+        homeTeamName: game.home.team.name,
+        awayTeamName: game.away.team.name,
+        calibrate,
+        marketPolicy,
+      },
+    });
+
+    return {
+      game,
+      leagueCfg,
+      homeRatings, awayRatings,
+      homeForm, awayForm,
+      baseProjection,
+      adjustments,
+      projection: projectionWithSigma,
+      sigma,
+      dataQuality,
+      selection,
+      lines,
+    };
+  } catch (err) {
+    console.error(`[Basketball] analyzeGame error for league ${league}:`, err.message);
+    return null;
+  }
 }
 
 /** Join the applied adjustments into a small list of displayable factors. */

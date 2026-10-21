@@ -265,12 +265,12 @@ function computeTeamRatings(log, leagueCfg, cfg, { isHomeContext = null, adjuste
 
   if (gamesPlayed === 0) {
     return {
-      valid: false,
+      valid: true,  // Prior-based ratings are valid for projection
       sampleSize: 0,
       ortg: prior.ortg, drtg: prior.drtg, netRtg: (prior.ortg ?? 0) - (prior.drtg ?? 0),
       pace: prior.pace,
       rawOrtg: null, rawDrtg: null,
-      priorWeight: 0,
+      priorWeight: 1.0,  // Fully rely on prior
       splits: { home: null, away: null, relevant: null },
       restDays: null, backToBack: false, threeInFour: false, roadTripLength: 0,
       gamesPlayed: 0,

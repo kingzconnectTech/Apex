@@ -63,7 +63,9 @@ async function processFixture({ sportsData, leagueCfg, fixture, traceId = null, 
   const eventId = fixture?.fixture?.id;
   const homeId = fixture?.homeTeam?.id;
   const awayId = fixture?.awayTeam?.id;
-  if (!eventId || !homeId || !awayId) return null;
+  if (!eventId || !homeId || !awayId) {
+    return { error: `Missing fixture data: eventId=${eventId}, homeId=${homeId}, awayId=${awayId}` };
+  }
 
   const [summary, homeSched, awaySched] = await Promise.all([
     espn.getMatchSummary(sport, league, eventId, { traceId }),
@@ -76,19 +78,27 @@ async function processFixture({ sportsData, leagueCfg, fixture, traceId = null, 
   const homeLog = espn.processBasketballScheduleForTeam(homeSched?.events || [], homeId);
   const awayLog = espn.processBasketballScheduleForTeam(awaySched?.events || [], awayId);
 
-  return analyzeGame({
-    fixture,
-    odds,
-    injuries,
-    homeLog,
-    awayLog,
-    league: leagueCfg.key,
-    context,
-    eloRatings,
-    calibrator,
-    marketPolicy,
-    cfg,
-  });
+  try {
+    const result = analyzeGame({
+      fixture,
+      odds,
+      injuries,
+      homeLog,
+      awayLog,
+      league: leagueCfg.key,
+      context,
+      eloRatings,
+      calibrator,
+      marketPolicy,
+      cfg,
+    });
+    if (!result) {
+      return { error: `analyzeGame returned null for fixture ${eventId}` };
+    }
+    return result;
+  } catch (err) {
+    return { error: `analyzeGame failed for fixture ${eventId}: ${err.message}` };
+  }
 }
 
 /**
@@ -118,7 +128,10 @@ async function getPredictions({
       sportsData, leagueCfg, fixture, traceId, cfg, eloRatings, calibrator, marketPolicy,
     }));
     analyzed.filter(Boolean).forEach(r => {
-      if (r.error) return;
+      if (r.error) {
+        console.warn(`[Basketball] Fixture processing error:`, r.error);
+        return;
+      }
       const formatted = formatPrediction(r);
       if (formatted) out.push(formatted);
     });

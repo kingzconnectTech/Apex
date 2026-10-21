@@ -53,14 +53,15 @@ function projectGame({ home, away, leagueCfg, cfg, eloMargin = null }) {
   const awayDrtg = away.drtg ?? lm.drtg;
 
   const pace = blendPace(home.pace ?? lm.possessions, away.pace ?? lm.possessions, cfg.projection.paceBlendWeight);
-  if (pace == null || pace <= 0) return null;
+  const effectivePace = (pace != null && pace > 0) ? pace : (lm.possessions ?? 100);
+  if (effectivePace == null || effectivePace <= 0) return null;
 
   // Points per possession: attack vs opposing defence.
   const homePpp = ((homeOrtg + awayDrtg) / 2) / 100;
   const awayPpp = ((awayOrtg + homeDrtg) / 2) / 100;
 
-  const baseHome = pace * homePpp;
-  const baseAway = pace * awayPpp;
+  const baseHome = effectivePace * homePpp;
+  const baseAway = effectivePace * awayPpp;
   const baseTotal = baseHome + baseAway;
 
   const homeCourtPoints = leagueCfg.homeCourtPoints ?? 0;
@@ -71,7 +72,7 @@ function projectGame({ home, away, leagueCfg, cfg, eloMargin = null }) {
   const marginPreAdjust = blendMargins(ratingsMargin, eloMargin, cfg);
 
   return {
-    expectedPossessions: round(pace),
+    expectedPossessions: round(effectivePace),
     homePpp: round(homePpp, 4),
     awayPpp: round(awayPpp, 4),
     total: round(baseTotal),
