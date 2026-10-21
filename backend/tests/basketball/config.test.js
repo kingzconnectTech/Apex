@@ -82,9 +82,12 @@ describe('basketball per-league config (TR-10.1, TR-10.2)', () => {
   });
 
   test('selection thresholds and caps live in config, not in code', () => {
-    expect(CONFIG.selection.mainMinProb).toBeGreaterThan(CONFIG.selection.alternateMinProb - 1);
-    expect(CONFIG.selection.minEdge).toBeGreaterThan(0);
-    expect(CONFIG.selection.minDataQuality).toBeGreaterThan(0);
+    // Thresholds are deliberately zeroed so every match yields a prediction; the
+    // fields must still exist in config and never be hardcoded in the pipeline.
+    expect(CONFIG.selection.mainMinProb).toBeGreaterThanOrEqual(0);
+    expect(CONFIG.selection.alternateMinProb).toBeGreaterThanOrEqual(0);
+    expect(CONFIG.selection.minEdge).toBeGreaterThanOrEqual(0);
+    expect(CONFIG.selection.minDataQuality).toBeGreaterThanOrEqual(0);
     expect(CONFIG.adjustments.caps.combined).toBeGreaterThan(0);
     expect(Object.keys(LEAGUES).length).toBeGreaterThanOrEqual(4);
   });

@@ -175,73 +175,51 @@ describe('basketball API (TR-18.1, TR-18.2, TR-18.3)', () => {
     expect(res.body.error).toMatch(/failed to generate/i);
   });
 
-  test('75% confidence threshold is applied to basketball predictions', async () => {
+  test('picks are returned independently of their probability (no threshold filtering)', async () => {
     ingestion.getPredictions.mockResolvedValue([
       mkPrediction({ gameId: '1', confidence: 'High', market: 'Total Points', probability: 0.82 }),
-      mkPrediction({ gameId: '2', confidence: 'Medium', market: 'Total Points', probability: 0.68 }),
-      mkPrediction({ gameId: '3', confidence: 'High', market: 'Spread', probability: 0.78 }),
-      mkPrediction({ gameId: '4', confidence: 'Low', market: 'Total Points', probability: 0.72 }),
+      mkPrediction({ gameId: '2', confidence: 'Low', market: 'Spread', probability: 0.51 }),
     ]);
 
     const res = await request(buildApp()).get('/api/basketball/predictions');
     expect(res.status).toBe(200);
-    // Only predictions with probability >= 0.75 should be included
-    expect(res.body.count).toBeGreaterThanOrEqual(0);
-    expect(res.body.count).toBeLessThanOrEqual(2);
-    // Verify all returned predictions meet the threshold
-    res.body.predictions.forEach(pred => {
-      pred.picks.forEach(pick => {
-        expect(pick.probability).toBeGreaterThanOrEqual(0.75);
-      });
-    });
+    // The route must not drop validated picks: a 51% pick is still a real pick.
+    expect(res.body.count).toBe(2);
+    const probs = res.body.predictions.flatMap(p => p.picks.map(pk => pk.probability));
+    expect(probs).toContain(0.51);
   });
 
-  test('individual game prediction applies 75% confidence threshold', async () => {
-    const gameWithLowConfidence = mkPrediction({
-      gameId: '401',
-      confidence: 'Low',
-      market: 'Total Points',
-      probability: 0.68,
-    });
-    gameWithLowConfidence.picks = [
-      { ...gameWithLowConfidence.picks[0], probability: 0.68 },
-      { ...gameWithLowConfidence.picks[0], market: 'Spread', probability: 0.72 },
-    ];
+  test('a game with no confident pick still returns 200 with an explicit noPick label', async () => {
+    const noPick = mkPrediction({ gameId: '401' });
+    noPick.picks = [];
+    noPick.noPick = true;
+    noPick.noPickLabel = 'Not enough historical data';
 
-    ingestion.getGamePrediction.mockResolvedValue({
-      result: {},
-      formatted: gameWithLowConfidence,
-    });
+    ingestion.getGamePrediction.mockResolvedValue({ result: {}, formatted: noPick });
 
     const res = await request(buildApp()).get('/api/basketball/predictions/401?league=nba');
     expect(res.status).toBe(200);
-    // All picks below 75% should be filtered out
-    expect(res.body.picks.length).toBe(0);
-    expect(res.body.message).toContain('75% confidence threshold');
+    expect(res.body.picks).toEqual([]);
+    expect(res.body.noPick).toBe(true);
+    expect(res.body.noPickLabel).toBe('Not enough historical data');
   });
 
-  test('individual game prediction keeps picks above 75% threshold', async () => {
-    const gameWithHighConfidence = mkPrediction({
-      gameId: '401',
-      confidence: 'High',
-      market: 'Total Points',
-      probability: 0.82,
-    });
-    gameWithHighConfidence.picks = [
-      { ...gameWithHighConfidence.picks[0], probability: 0.82 },
-      { ...gameWithHighConfidence.picks[0], market: 'Spread', probability: 0.78 },
-    ];
-
+  test.each([
+    ['INVALID_LEAGUE', 400],
+    ['INVALID_GAME_ID', 400],
+    ['UPSTREAM_FAILURE', 502],
+    ['GENERATION_FAILURE', 500],
+    ['NO_SUMMARY', 404],
+    ['NO_FIXTURE_DATA', 404],
+  ])('ingestion error %s maps to HTTP %i with a machine-readable code', async (code, expectedStatus) => {
     ingestion.getGamePrediction.mockResolvedValue({
-      result: {},
-      formatted: gameWithHighConfidence,
+      error: { code, message: `stub: ${code}` },
     });
 
     const res = await request(buildApp()).get('/api/basketball/predictions/401?league=nba');
-    expect(res.status).toBe(200);
-    // Both picks above 75% should remain
-    expect(res.body.picks.length).toBe(2);
-    expect(res.body.picks[0].probability).toBeGreaterThanOrEqual(0.75);
-    expect(res.body.picks[1].probability).toBeGreaterThanOrEqual(0.75);
+    expect(res.status).toBe(expectedStatus);
+    expect(res.body.code).toBe(code);
+    expect(res.body.gameId).toBe('401');
+    expect(res.body.error).toContain(code);
   });
 });

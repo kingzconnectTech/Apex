@@ -12,6 +12,11 @@ import { InterstitialAd, AdEventType } from 'react-native-google-mobile-ads';
 import { AdUnits } from '../constants/ads';
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
 import { useTheme } from '../context/ThemeContext';
+import {
+  PREDICTION_STATE,
+  insufficientMarketMessage,
+  classifyPredictionResult,
+} from '../utils/basketballPredictionView';
 
 export default function MatchDetailsScreen({ route, navigation }) {
   const { theme, isDarkMode } = useTheme();
@@ -138,14 +143,15 @@ export default function MatchDetailsScreen({ route, navigation }) {
                 awayId,
                 user?.uid // Pass userId to check for saved predictions
               );
-              if (predResult && predResult.recommendations) {
+              const outcome = classifyPredictionResult(predResult, match?.sport);
+              if (outcome.state === PREDICTION_STATE.SUCCESS || outcome.state === PREDICTION_STATE.INSUFFICIENT_DATA) {
                 setBotAnalysis(predResult);
                 // If loaded from saved prediction, show settlement data if available
                 if (predResult.fromSavedPrediction && predResult.settlementStatus === 'settled') {
                   setShowPrediction(true);
                 }
               } else {
-                setPredictionError('Prediction data unavailable. Try again later.');
+                setPredictionError(outcome.message);
               }
             } catch (predErr) {
               console.warn('Prediction fetch failed:', predErr);
@@ -663,7 +669,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
                         <View style={styles.predictionErrorContainer}>
                           <Ionicons name="shield-checkmark-outline" size={32} color={theme.textSecondary} />
                           <Text style={styles.predictionErrorText}>
-                            No predictions available for this match.
+                            {insufficientMarketMessage(botAnalysis, match?.sport)}
                           </Text>
                         </View>
                       )}

@@ -88,45 +88,53 @@ describe('Pick selection', () => {
     expect(spread.probability).toBeGreaterThan(0.6);
   });
 
-  test('returns "No confident pick" when nothing clears the thresholds', () => {
-    // Line sits right on the projection -> probability ~0.5.
+  test('a ~50/50 line is still returned with its honest probability (no threshold filtering)', () => {
+    // Line sits right on the projection -> probability ~0.5. Thresholds are
+    // intentionally zeroed, so the pick is returned instead of being suppressed.
     const projection = { total: 218.0, margin: 0, sigmaTotal: 17.6, sigmaMargin: 11.8 };
     const lines = {
       total: [{ line: 218.5, aOdds: 1.91, bOdds: 1.91, isMain: true }],
       spread: [{ line: -0.5, aOdds: 1.91, bOdds: 1.91, isMain: true }],
     };
     const out = selectPicks({ projection, lines, ctx });
-    expect(out.noPick).toBe(true);
-    expect(out.picks).toEqual([]);
+    expect(out.noPick).toBe(false);
+    expect(out.picks.map(p => p.market)).toEqual(['Total Points', 'Spread']);
+    out.evaluated.total.forEach(c => expect(c.passes).toBe(true));
+    const total = out.picks.find(p => p.market === 'Total Points');
+    expect(total.probability).toBeGreaterThan(0.4);
+    expect(total.probability).toBeLessThan(0.6);
     expect(out.noPickLabel).toBe('No confident pick');
   });
 
-  test('data quality below the floor suppresses all picks', () => {
+  test('low data quality demotes confidence but does not suppress picks', () => {
     const projection = { total: 218.4, margin: 7.2, sigmaTotal: 17.6, sigmaMargin: 11.8 };
     const lines = { total: [{ line: 208.5, aOdds: 1.85, bOdds: 1.95, isMain: true }], spread: [] };
     const out = selectPicks({ projection, lines, ctx: { ...ctx, dataQuality: 0.5 } });
-    expect(out.noPick).toBe(true);
+    expect(out.noPick).toBe(false);
+    expect(out.picks.length).toBe(1);
+    expect(out.picks[0].confidence).not.toBe('High');
   });
 
-  test('alternate lines require a higher probability than main lines', () => {
+  test('alternate lines are evaluated exactly like main lines', () => {
     const projection = { total: 218.4, margin: 0, sigmaTotal: 17.6, sigmaMargin: 11.8 };
     const lines = {
-      total: [{ line: 205.5, aOdds: 1.85, bOdds: 1.95, isMain: false }], // ~0.78 prob, alt floor 0.55
+      total: [{ line: 205.5, aOdds: 1.85, bOdds: 1.95, isMain: false }], // ~0.77 over prob
       spread: [],
     };
     const out = selectPicks({ projection, lines, ctx });
     const evaluated = out.evaluated.total[0];
     expect(evaluated.isMain).toBe(false);
-    // The alt threshold is what gates it; if it passes it must satisfy >= 0.55.
-    if (evaluated.passes) expect(evaluated.probability).toBeGreaterThanOrEqual(0.55);
+    expect(evaluated.passes).toBe(true);
+    expect(evaluated.probability).toBeGreaterThan(0.5);
   });
 
-  test('bestOf ignores failing candidates', () => {
-    expect(bestOf([{ passes: false, score: 0.99 }, { passes: true, score: 0.2 }])).toEqual({ passes: true, score: 0.2 });
-    expect(bestOf([{ passes: false, score: 1 }])).toBeNull();
+  test('bestOf selects by score without filtering on passes', () => {
+    expect(bestOf([{ passes: false, score: 0.99 }, { passes: true, score: 0.2 }])).toEqual({ passes: false, score: 0.99 });
+    expect(bestOf([{ passes: false, score: 1 }])).toEqual({ passes: false, score: 1 });
+    expect(bestOf([])).toBeNull();
   });
 
-  test('model lines evaluate with null odds and require >= 0.65 probability', () => {
+  test('model lines evaluate with null odds and no fabricated bookmaker prices', () => {
     // Model projected total is 230, model line is at 218.5 (Over should be > 0.65)
     const projection = { total: 230.0, margin: 12.0, sigmaTotal: 17.6, sigmaMargin: 11.8 };
     const lines = {
@@ -148,14 +156,15 @@ describe('Pick selection', () => {
     expect(spreadPick.probability).toBeGreaterThanOrEqual(0.65);
   });
 
-  test('model lines are rejected when data quality is below modelLines.minDataQuality (0.75)', () => {
+  test('model lines evaluate at any data quality (no model-line data-quality floor)', () => {
     const projection = { total: 230.0, margin: 12.0, sigmaTotal: 17.6, sigmaMargin: 11.8 };
     const lines = {
       total: [{ line: 218.5, aOdds: null, bOdds: null, isMain: true, isModelLine: true }],
     };
-    // dq = 0.72 passes general minDataQuality (0.70) but fails modelLines minDataQuality (0.75)
-    const out = selectPicks({ projection, lines, ctx: { ...ctx, dataQuality: 0.72 } });
-    expect(out.noPick).toBe(true);
-    expect(out.picks.length).toBe(0);
+    const out = selectPicks({ projection, lines, ctx: { ...ctx, dataQuality: 0.5 } });
+    expect(out.noPick).toBe(false);
+    expect(out.picks.length).toBe(1);
+    expect(out.picks[0].isModelLine).toBe(true);
+    expect(out.picks[0].selection).toContain('(Model Line)');
   });
 });

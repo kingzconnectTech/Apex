@@ -12,7 +12,10 @@ import { API_URL } from '../constants/config';
  * @param {string|number} homeTeamId   - ESPN team ID for home side
  * @param {string|number} awayTeamId   - ESPN team ID for away side
  * @param {string}        [userId]     - User ID to check for saved predictions
- * @returns {Promise<Object|null>} prediction object or null on failure
+ * @returns {Promise<Object>} On success the prediction payload. On failure an
+ *   `{ unavailable: true, httpStatus, code, message }` marker so callers can
+ *   distinguish insufficient data / provider failure / generation failure
+ *   instead of collapsing everything into one generic message.
  */
 export const fetchMatchPrediction = async (matchId, sport, leagueSlug, homeTeamId, awayTeamId, userId = null) => {
   try {
@@ -35,13 +38,23 @@ export const fetchMatchPrediction = async (matchId, sport, leagueSlug, homeTeamI
         `[fetchMatchPrediction] Backend error ${response.status}:`,
         errorBody.error || 'Unknown error'
       );
-      return null;
+      return {
+        unavailable: true,
+        httpStatus: response.status,
+        code: errorBody.code || null,
+        message: errorBody.error || null,
+      };
     }
 
     return await response.json();
   } catch (error) {
     console.warn('[fetchMatchPrediction] Network error:', error.message);
-    return null;
+    return {
+      unavailable: true,
+      httpStatus: 0,
+      code: 'NETWORK_ERROR',
+      message: error.message,
+    };
   }
 };
 

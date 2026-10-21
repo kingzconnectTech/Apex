@@ -331,7 +331,7 @@ describe('Sport-Specific Prediction Engine (analyzeMatchServer)', () => {
     }
   });
 
-  test('basketball predictions remain unchanged (WIN + GOALS)', () => {
+  test('basketball predictions expose the Points market only (WIN removed)', () => {
     const result = analyzeMatchServer({
       homeName: 'Lakers',
       awayName: 'Celtics',
@@ -348,8 +348,10 @@ describe('Sport-Specific Prediction Engine (analyzeMatchServer)', () => {
     });
 
     const types = result.recommendations.map(r => r.type);
-    expect(types).toContain('WIN');
     expect(types).toContain('GOALS');
+    // The legacy straight-winner (WIN) market was removed for basketball.
+    expect(types).not.toContain('WIN');
+    result.recommendations.forEach(rec => expect(rec.label).not.toMatch(/winner|moneyline/i));
   });
 
   test('tennis predictions remain unchanged (WIN only)', () => {

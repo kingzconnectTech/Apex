@@ -6,7 +6,8 @@
     "start": "npx expo start",
     "android": "npx expo run:android",
     "ios": "npx expo run:ios",
-    "web": "npx expo start --web"
+    "web": "npx expo start --web",
+    "test": "node --test"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "8.4.4",

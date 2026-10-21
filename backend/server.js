@@ -2355,7 +2355,9 @@ app.post('/api/match-prediction', async (req, res) => {
       logger.warn('[SPORTS DATA] All providers returned insufficient data', {
         traceId, matchId, tried: dataTried,
       });
-      if (!homeName && !awayName) {
+      // Basketball has its own data path (basketball/ingestion) and reports its
+      // own, more specific failures below — do not mask it with a generic 502.
+      if (sport !== 'basketball' && !homeName && !awayName) {
         return res.status(502).json({
           error: 'Failed to fetch match data from all available providers. Please try again later.',
           traceId,
@@ -2371,7 +2373,6 @@ app.post('/api/match-prediction', async (req, res) => {
     if (sport === 'basketball') {
       // Use basketball prediction engine
       const { getGamePrediction } = require('./services/basketball/ingestion');
-      const { formatPrediction } = require('./services/basketball/index');
 
       const basketballResult = await getGamePrediction({
         sportsData,
@@ -2380,18 +2381,42 @@ app.post('/api/match-prediction', async (req, res) => {
         traceId,
       });
 
-      if (!basketballResult) {
-        return res.status(404).json({
-          error: `No basketball prediction found for game ${matchId} in league ${leagueSlug}`,
+      if (!basketballResult || basketballResult.error || !basketballResult.formatted) {
+        const errorCode = basketballResult?.error?.code || 'NO_SUMMARY';
+        const status = (errorCode === 'INVALID_LEAGUE' || errorCode === 'INVALID_GAME_ID') ? 400
+          : errorCode === 'UPSTREAM_FAILURE' ? 502
+            : errorCode === 'GENERATION_FAILURE' ? 500
+              : 404;
+
+        logger.warn('Basketball prediction unavailable', {
+          traceId,
+          matchId,
+          league: leagueSlug,
+          errorCode,
+          detail: basketballResult?.error?.message || 'no result',
+        });
+
+        return res.status(status).json({
+          error: basketballResult?.error?.message
+            || `No basketball prediction found for game ${matchId} in league ${leagueSlug}`,
+          code: errorCode,
+          matchId,
+          leagueSlug,
           traceId,
         });
       }
 
       const formatted = basketballResult.formatted;
+      // The ESPN game summary is the authoritative source for this game's team
+      // names; the generic ESPN team lookup is only a fallback.
+      homeName = formatted.homeTeam?.name || homeName || null;
+      awayName = formatted.awayTeam?.name || awayName || null;
+
+      const picks = formatted.picks || [];
       prediction = {
-        prediction: formatted.picks?.[0]?.selection || 'No confident pick',
-        confidence: formatted.picks?.[0]?.confidence || 0,
-        recommendations: (formatted.picks || []).map(p => ({
+        prediction: picks[0]?.selection || formatted.noPickLabel || 'No confident pick',
+        confidence: picks[0]?.confidence || 0,
+        recommendations: picks.map(p => ({
           type: p.market,
           label: p.market,
           value: p.selection,
@@ -2399,10 +2424,24 @@ app.post('/api/match-prediction', async (req, res) => {
           probability: p.probability,
           edge: p.edge,
         })),
+        // Markets are returned independently: an empty list here means the engine
+        // found insufficient data for either market — not an API failure.
+        noPick: Boolean(formatted.noPick),
+        noPickLabel: formatted.noPick ? (formatted.noPickLabel || 'No confident pick') : null,
         factors: formatted.risk_flags || [],
         projection: formatted.projection,
         dataQuality: formatted.data_quality,
+        modelVersion: formatted.modelVersion,
       };
+
+      logger.info('Basketball prediction generated', {
+        traceId,
+        matchId,
+        league: leagueSlug,
+        picksCount: prediction.recommendations.length,
+        markets: prediction.recommendations.map(r => r.type),
+        dataQuality: prediction.dataQuality,
+      });
     } else {
       // Use football prediction algorithm
       prediction = analyzeMatchServer({

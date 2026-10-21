@@ -109,8 +109,9 @@ describe('Basketball pipeline', () => {
     });
   });
 
-  test('a pick is never forced when nothing clears the thresholds', () => {
-    // Make the market line sit exactly on the projection.
+  test('a model-line pick is generated when no bookmaker line is available', () => {
+    // No usable bookmaker prices; model lines step a half point off the projection
+    // so a clearly labelled pick is still returned (never fabricated prices).
     const evenFixture = mkFixture();
     const result = analyzeGame({
       fixture: evenFixture,
@@ -119,12 +120,16 @@ describe('Basketball pipeline', () => {
       awayLog: mkLog(10, { isHome: false }),
       league: 'nba',
     });
-    expect(result.selection.noPick).toBe(true);
-    expect(result.selection.picks).toEqual([]);
-    expect(result.selection.noPickLabel).toBe('No confident pick');
+    expect(result.selection.noPick).toBe(false);
+    expect(result.selection.picks.length).toBe(2);
+    result.selection.picks.forEach(p => {
+      expect(p.isModelLine).toBe(true);
+      expect(p.odds).toBeNull();
+      expect(p.selection).toContain('(Model Line)');
+    });
   });
 
-  test('missing odds still yields a projection but no odds-dependent picks', () => {
+  test('missing odds still yields model-line picks plus an odds data-quality penalty', () => {
     const out = predictGame({
       fixture: mkFixture(),
       odds: null,
@@ -133,8 +138,12 @@ describe('Basketball pipeline', () => {
       league: 'nba',
     });
     expect(Number.isFinite(out.projection.total)).toBe(true);
-    expect(out.picks.length).toBe(0);
-    expect(out.noPick).toBe(true);
+    expect(out.picks.length).toBe(2);
+    expect(out.noPick).toBe(false);
+    out.picks.forEach(p => {
+      expect(p.isModelLine).toBe(true);
+      expect(p.odds).toBeNull();
+    });
     // The missing odds show up as a data-quality penalty rather than a forced pick.
     expect(out.data_quality_penalties.some(p => /odds/i.test(p.reason))).toBe(true);
   });

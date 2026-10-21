@@ -68,7 +68,18 @@ function createBasketballRouter({ sportsData, admin, logger = null } = {}) {
       if (!league) return res.status(400).json({ error: 'league query parameter is required' });
 
       const found = await getGamePrediction({ sportsData, gameId, league, traceId });
-      if (!found) return res.status(404).json({ error: `No basketball game ${gameId} found for league ${league}` });
+      if (!found || found.error || !found.formatted) {
+        const code = found?.error?.code || 'NO_SUMMARY';
+        const status = code === 'INVALID_LEAGUE' || code === 'INVALID_GAME_ID' ? 400
+          : code === 'UPSTREAM_FAILURE' ? 502
+            : code === 'GENERATION_FAILURE' ? 500
+              : 404;
+        return res.status(status).json({
+          error: found?.error?.message || `No basketball game ${gameId} found for league ${league}`,
+          code,
+          gameId,
+        });
+      }
 
       // No threshold filtering - show all predictions
       const formatted = found.formatted;

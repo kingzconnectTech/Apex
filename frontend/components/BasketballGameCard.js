@@ -8,15 +8,12 @@ import ConfidenceBadge from './ConfidenceBadge';
 import ValueTag from './ValueTag';
 import LineMovedIndicator from './LineMovedIndicator';
 import WhyThisPick from './WhyThisPick';
+import { resolveMarketViews } from '../utils/basketballPredictionView';
 
 const MARKET_COLORS = {
   'Total Points': '#00F2FE',
   Spread: '#FF6B6B',
 };
-
-// Basketball predictions prioritize Total Points Over/Under
-// Secondary markets (Team Totals, First-Half, Quarter) will be added when data is available
-const MARKETS = ['Total Points'];
 
 /** Resolve real team identity, falling back to the "A vs B" label only. */
 function resolveTeams(prediction) {
@@ -64,7 +61,6 @@ export default function BasketballGameCard({ prediction, onPress }) {
   const { homeName, awayName, homeLogo, awayLogo } = resolveTeams(prediction);
   const score = prediction.score || {};
   const projection = prediction.projection || {};
-  const picks = prediction.picks || [];
   const riskFlags = Array.isArray(prediction.risk_flags) ? prediction.risk_flags : [];
   const dq = Number(prediction.data_quality);
 
@@ -83,8 +79,7 @@ export default function BasketballGameCard({ prediction, onPress }) {
     });
   };
 
-  const renderPick = (market) => {
-    const pick = picks.find(p => p.market === market);
+  const renderPick = ({ market, pick, emptyLabel }) => {
     const color = MARKET_COLORS[market] || theme.primary;
 
     if (!pick) {
@@ -93,9 +88,7 @@ export default function BasketballGameCard({ prediction, onPress }) {
           <View style={styles.pickHeaderRow}>
             <Text style={styles.marketLabel}>{market.toUpperCase()}</Text>
           </View>
-          <Text style={styles.noPickText}>
-            {prediction.noPickLabel || 'No confident pick'}
-          </Text>
+          <Text style={styles.noPickText}>{emptyLabel}</Text>
         </View>
       );
     }
@@ -215,7 +208,7 @@ export default function BasketballGameCard({ prediction, onPress }) {
 
       {/* Picks */}
       <View style={styles.picksSection}>
-        {MARKETS.map(renderPick)}
+        {resolveMarketViews(prediction).map(renderPick)}
       </View>
 
       {/* Risk flags */}
