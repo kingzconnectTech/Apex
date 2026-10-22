@@ -6,12 +6,15 @@
  *          probability and within (0,1).
  * TR-16.3: A failing calibrator falls back to identity rather than producing
  *          out-of-range values.
+ * TR-16.4: The holdout gate needs more than a narrow win — a minimum sample, a
+ *          monotone curve and a minimum improvement on BOTH metrics.
  */
 
 const CONFIG = require('../services/basketball/config');
 const {
   fitIsotonic, applyIsotonic, fitPlatt, applyPlatt,
   brierScore, logLoss, calibrationCurve, Calibrator,
+  validateAgainstIdentity, isMonotone,
 } = require('../services/basketball/calibration');
 
 function rows(pairs) {
@@ -119,5 +122,71 @@ describe('basketball calibration (TR-16.1, TR-16.2, TR-16.3)', () => {
     expect(curve[0].actual).toBe(1);
     expect(curve[2].n).toBe(0);
     expect(curve[2].predicted).toBeNull();
+  });
+});
+
+describe('basketball calibration holdout gate (TR-16.4)', () => {
+  /** Well-calibrated sample: each bucket's realised rate equals its stated probability. */
+  function calibratedRows(perBucket = 40) {
+    const out = [];
+    [0.50, 0.58, 0.66, 0.74, 0.82].forEach(p => {
+      const ones = Math.round(perBucket * p);
+      for (let i = 0; i < perBucket; i++) out.push({ p, y: i < ones ? 1 : 0 });
+    });
+    return out;
+  }
+
+  test('isMonotone rejects an inverted isotonic curve and a negative Platt slope', () => {
+    expect(isMonotone({ method: 'isotonic', values: [0.4, 0.5, 0.7] })).toBe(true);
+    expect(isMonotone({ method: 'isotonic', values: [0.4, 0.7, 0.5] })).toBe(false);
+    expect(isMonotone({ method: 'platt', a: 1.2, b: -0.3 })).toBe(true);
+    expect(isMonotone({ method: 'platt', a: -1.2, b: -0.3 })).toBe(false);
+    expect(isMonotone(null)).toBe(false);
+  });
+
+  test('a non-monotone curve is rejected even when it scores better', () => {
+    const data = calibratedRows();
+    const inverted = { method: 'isotonic', xEnds: [0.7, 1], values: [0.9, 0.1], samples: data.length };
+    const gate = validateAgainstIdentity({ rows: data, model: inverted, minSamples: 50 });
+    expect(gate.monotone).toBe(false);
+    expect(gate.judged).toBe(false);
+    expect(gate.improved).toBe(false);
+  });
+
+  test('no verdict below the minimum holdout sample', () => {
+    const small = calibratedRows(8); // 5 buckets x 8 = 40 graded rows
+    const model = fitIsotonic(small, { minSamples: 40 });
+    const gate = validateAgainstIdentity({ rows: small, model, minSamples: 150 });
+    expect(gate.n).toBe(40);
+    expect(gate.judged).toBe(false);
+    expect(gate.after.brier).toBeNull();
+    expect(gate.improved).toBe(false);
+  });
+
+  test('a hair-thin improvement does not clear the minimum margin', () => {
+    const data = calibratedRows();
+    // An almost-identity Platt curve: technically better on this sample, but far
+    // short of the 0.002 minimum, so it must not be accepted.
+    const nudged = { method: 'platt', a: 1, b: 0.0001, samples: data.length };
+    const gate = validateAgainstIdentity({ rows: data, model: nudged, minSamples: 50 });
+    expect(gate.judged).toBe(true);
+    expect(Math.abs(gate.brierGain)).toBeLessThan(0.002);
+    expect(gate.improved).toBe(false);
+  });
+
+  test('a genuinely better curve is accepted', () => {
+    // Overconfident sample: reality is half as far from 0.5 as the model claims.
+    const data = [];
+    for (let i = 0; i < 400; i++) {
+      const stated = 0.5 + (i % 9) * 0.05;
+      const real = 0.5 + (stated - 0.5) * 0.5;
+      data.push({ p: stated, y: (i % 100) / 100 < real ? 1 : 0 });
+    }
+    const model = fitIsotonic(data, { minSamples: 100 });
+    const gate = validateAgainstIdentity({ rows: data, model, minSamples: 100 });
+    expect(gate.monotone).toBe(true);
+    expect(gate.improved).toBe(true);
+    expect(gate.brierGain).toBeGreaterThanOrEqual(0.002);
+    expect(gate.logLossGain).toBeGreaterThanOrEqual(0.002);
   });
 });

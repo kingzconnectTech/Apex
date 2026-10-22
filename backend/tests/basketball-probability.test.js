@@ -49,13 +49,24 @@ describe('Sigma from residuals', () => {
 });
 
 describe('Per-game sigma estimation', () => {
-  test('stays within configured bounds and rises when data quality drops', () => {
-    const good = estimateSigma({ projTotal: 225, projMargin: 3, expectedPossessions: 99.5, dataQuality: 1, leagueCfg: NBA, cfg: CFG });
+  test('stays within configured bounds and is independent of data quality', () => {
+    const good = estimateSigma({ projTotal: 225, projMargin: 3, expectedPossessions: 99.5, leagueCfg: NBA, cfg: CFG });
     const poor = estimateSigma({ projTotal: 225, projMargin: 3, expectedPossessions: 99.5, dataQuality: 0.6, leagueCfg: NBA, cfg: CFG });
     expect(good.total).toBeGreaterThanOrEqual(CFG.sigma.minTotal);
     expect(good.total).toBeLessThanOrEqual(CFG.sigma.maxTotal);
-    expect(poor.total).toBeGreaterThan(good.total);
-    expect(poor.margin).toBeGreaterThan(good.margin);
+    // R5: how far the score can land from the projection is a property of the
+    // game; a thin sample must lower the confidence label, not widen sigma.
+    expect(poor.total).toBe(good.total);
+    expect(poor.margin).toBe(good.margin);
+  });
+
+  test('sigma still responds to the inputs it is meant to model', () => {
+    const slow = estimateSigma({ projTotal: 225, projMargin: 3, expectedPossessions: 92, leagueCfg: NBA, cfg: CFG });
+    const fast = estimateSigma({ projTotal: 225, projMargin: 3, expectedPossessions: 108, leagueCfg: NBA, cfg: CFG });
+    expect(fast.total).toBeGreaterThan(slow.total);
+    const huge = estimateSigma({ projTotal: 260, projMargin: 3, expectedPossessions: 99.5, leagueCfg: NBA, cfg: CFG });
+    const normal = estimateSigma({ projTotal: 220, projMargin: 3, expectedPossessions: 99.5, leagueCfg: NBA, cfg: CFG });
+    expect(huge.total).toBeGreaterThan(normal.total);
   });
 
   test('league mean total is the pace * combined efficiency', () => {

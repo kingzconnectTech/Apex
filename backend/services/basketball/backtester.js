@@ -421,7 +421,41 @@ function evaluate(dataset, opts = {}) {
       residualMargin.push(actualMargin - result.projection.margin);
     }
 
-    gameRows.push({ window: win, league, actualTotal, actualMargin, closing });
+    // Per-game row. Used for baselines, residual/sigma fitting, closing-line
+    // benchmarks and the projection-bias diagnostics, which need the BASE
+    // projection and the applied adjustments separately to attribute a bias to
+    // pace, efficiency or a specific bounded adjustment.
+    const adj = result.adjustments || { margin: 0, total: 0, breakdown: [] };
+    const adjByType = {};
+    (adj.breakdown || []).forEach(b => {
+      const t = b.type || 'other';
+      adjByType[t] = (adjByType[t] || 0) + (Number.isFinite(b.total) ? b.total : 0);
+    });
+    gameRows.push({
+      window: win,
+      league,
+      gameId: String(g.gameId),
+      tipoff: g.tipoff || null,
+      actualTotal,
+      actualMargin,
+      homeScore,
+      awayScore,
+      closing,
+      projTotal: result.projection.total ?? null,
+      projMargin: result.projection.margin ?? null,
+      projPossessions: result.projection.expectedPossessions ?? null,
+      homePpp: result.projection.homePpp ?? null,
+      awayPpp: result.projection.awayPpp ?? null,
+      baseTotal: result.baseProjection?.total ?? null,
+      baseMargin: result.baseProjection?.margin ?? null,
+      adjTotal: Number.isFinite(adj.total) ? adj.total : 0,
+      adjMargin: Number.isFinite(adj.margin) ? adj.margin : 0,
+      adjByType,
+      homePace: result.homeRatings?.pace ?? null,
+      awayPace: result.awayRatings?.pace ?? null,
+      homeGamesPlayed: result.homeRatings?.gamesPlayed ?? null,
+      awayGamesPlayed: result.awayRatings?.gamesPlayed ?? null,
+    });
 
     const selected = result.selection?.picks || [];
     if (!selected.length) noPickGames++;
@@ -432,6 +466,8 @@ function evaluate(dataset, opts = {}) {
       const row = {
         window: win,
         league,
+        gameId: String(g.gameId),
+        tipoff: g.tipoff || null,
         market: pick.market,
         side: pick.side,
         line: pick.line,

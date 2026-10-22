@@ -12,6 +12,9 @@ const PROVIDERS = {
 };
 
 const ESPN_BASE = 'http://site.api.espn.com/apis/site/v2/sports';
+// ESPN's core API hosts per-season team aggregates (a completed season's totals).
+// The site API has no equivalent: site standings and per-season statistics 404.
+const ESPN_CORE_BASE = 'http://sports.core.api.espn.com/v2/sports';
 const PITCHAPI_BASE = 'https://api.pitchapi.dev';
 
 const PITCHAPI_KEY = process.env.PITCHAPI_KEY || '';
@@ -87,6 +90,8 @@ const TTL = {
   FIXTURES_FINISHED: 24 * 60 * 60 * 1000,
   STANDINGS: 60 * 60 * 1000,
   TEAM_STATS: 60 * 60 * 1000,
+  // A completed season's aggregate never changes.
+  SEASON_STATS: 12 * 60 * 60 * 1000,
   H2H: 12 * 60 * 60 * 1000,
   DEFAULT: 5 * 60 * 1000,
 };
@@ -94,6 +99,7 @@ const TTL = {
 module.exports = {
   PROVIDERS,
   ESPN_BASE,
+  ESPN_CORE_BASE,
   PITCHAPI_BASE,
   PITCHAPI_KEY,
   PITCHAPI_ENABLED,

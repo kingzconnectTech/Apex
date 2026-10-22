@@ -249,9 +249,12 @@ function blendMargins(ratingsMargin, eloMargin, cfg) {
  * @param {Object} [opts]
  * @param {boolean|null} [opts.isHomeContext]
  * @param {Object} [opts.adjusted] - { ortg, drtg } from opponentAdjustRatings for this team
+ * @param {Object|null} [opts.prior] - a REAL prior-season baseline for this team
+ *   ({ ortg, drtg, pace, gamesPlayed }). When absent the league-average
+ *   `leagueCfg.priorSeason` is used as a fallback, and `realPrior` is false.
  * @returns {Object}
  */
-function computeTeamRatings(log, leagueCfg, cfg, { isHomeContext = null, adjusted = null } = {}) {
+function computeTeamRatings(log, leagueCfg, cfg, { isHomeContext = null, adjusted = null, prior = null } = {}) {
   const games = Array.isArray(log) ? log.filter(Boolean) : [];
   const rCfg = cfg.ratings || {};
   const hl = rCfg.halfLifeGames ?? 9;
@@ -259,7 +262,10 @@ function computeTeamRatings(log, leagueCfg, cfg, { isHomeContext = null, adjuste
   const splitM = rCfg.splitShrinkageM ?? 4;
   const gamesPlayed = games.length;
   const lm = leagueCfg.leagueMean;
-  const prior = leagueCfg.priorSeason || lm;
+  // A team-specific prior-season baseline is a genuine input; leagueCfg.priorSeason
+  // is only a league-average fallback for teams we know nothing else about.
+  const baseline = prior || leagueCfg.priorSeason || lm;
+  const realPrior = !!prior;
 
   const weights = decayWeights(gamesPlayed, hl);
 
@@ -267,10 +273,13 @@ function computeTeamRatings(log, leagueCfg, cfg, { isHomeContext = null, adjuste
     return {
       valid: true,  // Prior-based ratings are valid for projection
       sampleSize: 0,
-      ortg: prior.ortg, drtg: prior.drtg, netRtg: (prior.ortg ?? 0) - (prior.drtg ?? 0),
-      pace: prior.pace,
+      ortg: baseline.ortg, drtg: baseline.drtg, netRtg: (baseline.ortg ?? 0) - (baseline.drtg ?? 0),
+      pace: baseline.pace,
       rawOrtg: null, rawDrtg: null,
       priorWeight: 1.0,  // Fully rely on prior
+      realPrior,
+      priorGames: prior?.gamesPlayed ?? null,
+      priorSource: prior?.source ?? 'league-mean',
       splits: { home: null, away: null, relevant: null },
       restDays: null, backToBack: false, threeInFour: false, roadTripLength: 0,
       gamesPlayed: 0,
@@ -282,9 +291,9 @@ function computeTeamRatings(log, leagueCfg, cfg, { isHomeContext = null, adjuste
   const rawPace = decayedMean(games.map(g => g.possessions), hl);
 
   // Prior-season blend, then empirical-Bayes shrinkage.
-  const blendedOrtg = blendPrior(rawOrtg, prior.ortg, gamesPlayed, rCfg.priorBlendFullWeightGames);
-  const blendedDrtg = blendPrior(rawDrtg, prior.drtg, gamesPlayed, rCfg.priorBlendFullWeightGames);
-  const blendedPace = blendPrior(rawPace, prior.pace, gamesPlayed, rCfg.priorBlendFullWeightGames);
+  const blendedOrtg = blendPrior(rawOrtg, baseline.ortg, gamesPlayed, rCfg.priorBlendFullWeightGames);
+  const blendedDrtg = blendPrior(rawDrtg, baseline.drtg, gamesPlayed, rCfg.priorBlendFullWeightGames);
+  const blendedPace = blendPrior(rawPace, baseline.pace, gamesPlayed, rCfg.priorBlendFullWeightGames);
 
   const ortg = shrink(blendedOrtg, gamesPlayed, lm.ortg, m);
   const drtg = shrink(blendedDrtg, gamesPlayed, lm.drtg, m);
@@ -323,6 +332,9 @@ function computeTeamRatings(log, leagueCfg, cfg, { isHomeContext = null, adjuste
     pace: round(pace),
     rawOrtg: round(rawOrtg), rawDrtg: round(rawDrtg),
     priorWeight: round(priorBlendWeight(gamesPlayed, rCfg.priorBlendFullWeightGames), 3),
+    realPrior,
+    priorGames: prior?.gamesPlayed ?? null,
+    priorSource: prior?.source ?? 'league-mean',
     splits: { home: homeSplit, away: awaySplit, relevant },
     restDays: latest?.restDays ?? null,
     backToBack: !!latest?.backToBack,

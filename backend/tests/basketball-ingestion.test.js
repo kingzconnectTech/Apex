@@ -15,6 +15,8 @@
 
 const { EspnProvider } = require('../services/providers/EspnProvider');
 const { sharedCache } = require('../services/providers/cache');
+const { normalizeBoxScore, buildPriorRatings } = require('../services/basketball/normalize');
+const { getLeagueConfig } = require('../services/basketball/leagues');
 const CONFIG = require('../services/basketball/config');
 const {
   fetchFixtures,
@@ -22,6 +24,7 @@ const {
   getGamePrediction,
   getPredictions,
   processFixture,
+  espnSeasonYear,
   ERROR_CODES,
 } = require('../services/basketball/ingestion');
 
@@ -119,8 +122,26 @@ function summaryPayload({ withOdds = true, withInjuries = true, state = 'pre' } 
   };
 }
 
-/** Real EspnProvider with the network methods replaced by mocks. */
-function mkProvider({ summary = summaryPayload(), homeSched = null, awaySched = null } = {}) {
+/**
+ * A prior-season team aggregate in the core-API shape: season TOTALS (points,
+ * possessions) which buildPriorRatings converts to per-game ratings.
+ */
+function priorAggregate({ gamesPlayed = 82, avgPoints = 116.34, possessions = 8242.36 } = {}) {
+  return { gamesPlayed, points: avgPoints * gamesPlayed, possessions };
+}
+
+/**
+ * Real EspnProvider with the network methods replaced by mocks.
+ *
+ * The prior-season fetches must be mocked too: `mkProvider` instantiates a real
+ * provider, so an unmocked getTeamSeasonStatistics / getTeamSeasonSchedule would
+ * make genuine HTTP calls from inside the suite. Defaults return "no prior",
+ * which is exactly the pre-Phase-1 behaviour.
+ */
+function mkProvider({
+  summary = summaryPayload(), homeSched = null, awaySched = null,
+  homePriorStats = null, awayPriorStats = null, priorSchedule = null,
+} = {}) {
   const provider = new EspnProvider({ logger: null });
   provider.getMatchSummary = jest.fn().mockResolvedValue(summary);
   provider.getTeamSchedule = jest.fn().mockImplementation((_sport, _league, teamId) => {
@@ -128,6 +149,24 @@ function mkProvider({ summary = summaryPayload(), homeSched = null, awaySched = 
       return Promise.resolve(homeSched || scheduleFor(HOME_ID, 'Home Hawks', 12, { pf: 118, pa: 104 }));
     }
     return Promise.resolve(awaySched || scheduleFor(AWAY_ID, 'Away Aces', 12, { pf: 104, pa: 114 }));
+  });
+  provider.getTeamSeasonStatistics = jest.fn().mockImplementation((_sport, _league, _season, teamId) => (
+    Promise.resolve(String(teamId) === HOME_ID ? homePriorStats : awayPriorStats)
+  ));
+  // The prior-season schedule supplies points-allowed, which the aggregate omits.
+  // It defaults to a full-season log whenever prior stats are supplied, so a test
+  // only has to say "this team had a real prior" once.
+  provider.getTeamSeasonSchedule = jest.fn().mockImplementation((_sport, _league, _season, teamId) => {
+    if (priorSchedule) {
+      return Promise.resolve(typeof priorSchedule === 'function' ? priorSchedule(teamId) : priorSchedule);
+    }
+    if (String(teamId) === HOME_ID && homePriorStats) {
+      return Promise.resolve(scheduleFor(HOME_ID, 'Home Hawks', 20, { pf: 116, pa: 111 }));
+    }
+    if (String(teamId) === AWAY_ID && awayPriorStats) {
+      return Promise.resolve(scheduleFor(AWAY_ID, 'Away Aces', 20, { pf: 110, pa: 114 }));
+    }
+    return Promise.resolve({ events: [] });
   });
   return provider;
 }
@@ -428,6 +467,178 @@ describe('basketball ingestion — partial data and independent markets', () => 
     // League priors keep the engine honest, but the low data quality is exposed.
     expect(f.data_quality).toBeLessThan(0.5);
     expect(Number.isFinite(f.projection.total)).toBe(true);
+  });
+});
+
+describe('Phase 1 — ESPN season labelling', () => {
+  test('an Oct-Dec game belongs to the season ending in the NEXT year', () => {
+    // 2026-10-22 is the 2026-27 season, which ESPN labels `2027`.
+    expect(espnSeasonYear('2026-10-22T23:00:00.000Z')).toBe(2027);
+    expect(espnSeasonYear('2026-12-31T00:00:00.000Z')).toBe(2027);
+  });
+
+  test('a Jan-Jul game belongs to the season ending in the SAME year', () => {
+    expect(espnSeasonYear('2026-03-01T00:00:00.000Z')).toBe(2026);
+    expect(espnSeasonYear('2026-06-15T00:00:00.000Z')).toBe(2026);
+  });
+
+  test('an unreadable date falls back to now rather than throwing', () => {
+    expect(Number.isFinite(espnSeasonYear(null))).toBe(true);
+    expect(Number.isFinite(espnSeasonYear('not-a-date'))).toBe(true);
+  });
+
+  test('the prior season year is requested from the core aggregate endpoint', async () => {
+    const provider = mkProvider();
+    await callGame(provider);
+
+    const seasons = provider.getTeamSeasonStatistics.mock.calls.map(c => c[2]);
+    expect(seasons).toEqual([2026, 2026]); // TIPOFF is Oct 2026 -> prior 2025-26
+    const teamIds = provider.getTeamSeasonStatistics.mock.calls.map(c => String(c[3]));
+    expect(teamIds).toContain(HOME_ID);
+    expect(teamIds).toContain(AWAY_ID);
+  });
+});
+
+describe('Phase 1 — prior-season baseline (buildPriorRatings)', () => {
+  // Real ESPN values recorded from a live core-API probe (NBA team 13, 2025-26):
+  // the aggregate exposes season TOTALS for points/possessions.
+  const STATS = { gamesPlayed: 82, points: 9540, possessions: 8242.36 };
+
+  test('converts a season TOTALS aggregate into per-game ratings', () => {
+    const prior = buildPriorRatings({
+      stats: STATS,
+      games: [{ pa: 118 }, { pa: 110 }], // -> avgPointsAllowed 114
+      leagueCfg: getLeagueConfig('nba'),
+    });
+
+    expect(prior).not.toBeNull();
+    expect(prior.source).toBe('prior-season');
+    expect(prior.gamesPlayed).toBe(82);
+    expect(prior.avgPoints).toBeCloseTo(116.34, 2);   // 9540 / 82
+    expect(prior.pace).toBeCloseTo(100.52, 2);        // 8242.36 / 82
+    expect(prior.ortg).toBeCloseTo(115.75, 1);        // 9540 / 8242.36 * 100
+    expect(prior.avgPointsAllowed).toBeCloseTo(114, 2);
+    expect(prior.drtg).toBeCloseTo(113.41, 1);        // 114 / pace * 100
+  });
+
+  test('returns null — never a guess — when the aggregate cannot support a rating', () => {
+    expect(buildPriorRatings({ stats: null, games: [], leagueCfg: getLeagueConfig('nba') })).toBeNull();
+    expect(buildPriorRatings({ stats: { gamesPlayed: 0, points: 0, possessions: 0 }, games: [] })).toBeNull();
+    expect(buildPriorRatings({ stats: { gamesPlayed: 82, points: null, possessions: 8242 }, games: [] })).toBeNull();
+    // No prior schedule -> points-allowed is unknown -> DRtg cannot be derived.
+    expect(buildPriorRatings({ stats: STATS, games: [], leagueCfg: getLeagueConfig('nba') })).toBeNull();
+  });
+});
+
+describe('Phase 1 — R1b compound made-attempted stats', () => {
+  test('splitPairStat parses "made-attempted" and rejects anything else', () => {
+    expect(EspnProvider.splitPairStat({ displayValue: '38-92' })).toEqual({ made: 38, attempted: 92 });
+    expect(EspnProvider.splitPairStat({ value: '8-36' })).toEqual({ made: 8, attempted: 36 });
+    expect(EspnProvider.splitPairStat({ displayValue: '44' })).toBeNull();
+    expect(EspnProvider.splitPairStat({ displayValue: 'N/A' })).toBeNull();
+    expect(EspnProvider.splitPairStat(null)).toBeNull();
+  });
+
+  test('extractBasketballBoxScore reads the summary endpoint\'s compound stats', () => {
+    // Verified ESPN summary shape: value is undefined, displayValue carries "38-92".
+    const team = {
+      statistics: [
+        { name: 'fieldGoalsMade-fieldGoalsAttempted', label: 'FG', displayValue: '38-92' },
+        { name: 'threePointFieldGoalsMade-threePointFieldGoalsAttempted', label: '3PT', displayValue: '8-36' },
+        { name: 'freeThrowsMade-freeThrowsAttempted', label: 'FT', displayValue: '21-27' },
+        { name: 'totalRebounds', label: 'REB', displayValue: '44' },
+        { name: 'offensiveRebounds', label: 'OREB', displayValue: '9' },
+        { name: 'turnovers', label: 'TO', displayValue: '12' },
+      ],
+    };
+    const opp = { statistics: [{ name: 'fieldGoalsMade-fieldGoalsAttempted', displayValue: '35-88' }] };
+
+    const box = EspnProvider.extractBasketballBoxScore(team, opp);
+    expect(box.fgm).toBe(38);
+    expect(box.fga).toBe(92);
+    expect(box.tpm).toBe(8);
+    expect(box.tpa).toBe(36);
+    expect(box.ftm).toBe(21);
+    expect(box.fta).toBe(27);
+    expect(box.trb).toBe(44);
+    expect(box.orb).toBe(9);
+    expect(box.tov).toBe(12);
+    expect(box.oppFgm).toBe(35);
+    expect(box.oppFga).toBe(88);
+  });
+
+  test('a compound-stat schedule now yields possessions (the Phase-0 gap)', () => {
+    const compound = [{ name: 'fieldGoalsMade-fieldGoalsAttempted', displayValue: '38-92' },
+      { name: 'freeThrowsMade-freeThrowsAttempted', displayValue: '21-27' },
+      { name: 'offensiveRebounds', displayValue: '9' },
+      { name: 'turnovers', displayValue: '12' }];
+    const us = competitor(HOME_ID, 'Home Hawks', { home: true, score: 112, stats: compound });
+    const them = competitor(AWAY_ID, 'Away Aces', { home: false, score: 108, stats: compound });
+    const events = [completedEvent(2001, TIPOFF, us, them)];
+
+    const provider = mkProvider();
+    const games = provider.processBasketballScheduleForTeam(events, HOME_ID);
+
+    expect(games).toHaveLength(1);
+    // fga(92) - orb(9) + tov(12) + 0.44 * fta(27)
+    const box = normalizeBoxScore(games[0].boxScore, getLeagueConfig('nba'));
+    expect(box.possessions).toBeCloseTo(106.88, 2);
+    expect(box.possessions).toBeGreaterThan(0);
+  });
+
+  test('the separate made/attempted stat shape still works (no regression)', () => {
+    const provider = mkProvider();
+    const box = EspnProvider.extractBasketballBoxScore(
+      { statistics: boxStats({ fgm: 42, fga: 88, tpm: 12, tpa: 32, ftm: 18, fta: 22 }) },
+      { statistics: boxStats({ fgm: 40 }) },
+    );
+    expect(box.fgm).toBe(42);
+    expect(box.fga).toBe(88);
+    expect(box.tpa).toBe(32);
+  });
+});
+
+describe('Phase 1 — prior-aware data quality', () => {
+  test('an early-season team with a real prior is penalised less than one without', async () => {
+    const early = () => ({
+      homeSched: scheduleFor(HOME_ID, 'Home Hawks', 2, { pf: 118, pa: 104 }),
+      awaySched: scheduleFor(AWAY_ID, 'Away Aces', 2, { pf: 104, pa: 114 }),
+    });
+
+    const without = await callGame(mkProvider(early()));
+    const with_ = await callGame(mkProvider({
+      ...early(),
+      homePriorStats: priorAggregate(),
+      awayPriorStats: priorAggregate(),
+    }));
+
+    const penalise = out => out.result.dataQuality.penalties.filter(p => /sample|early season/.test(p.reason));
+
+    // Both games are still early-season, but a real prior counts as an input.
+    expect(penalise(without)).toHaveLength(2);
+    expect(penalise(without).every(p => /small sample/.test(p.reason))).toBe(true);
+    expect(penalise(with_)).toHaveLength(2);
+    expect(penalise(with_).every(p => /prior-season baseline/.test(p.reason))).toBe(true);
+
+    expect(with_.result.dataQuality.score).toBeGreaterThan(without.result.dataQuality.score);
+  });
+
+  test('ratings report the prior source so the penalty can be explained', async () => {
+    const provider = mkProvider({
+      homeSched: scheduleFor(HOME_ID, 'Home Hawks', 2, { pf: 118, pa: 104 }),
+      homePriorStats: priorAggregate(),
+    });
+    const out = await callGame(provider);
+
+    expect(out.result.homeRatings.realPrior).toBe(true);
+    expect(out.result.homeRatings.priorSource).toBe('prior-season');
+    expect(out.result.homeRatings.priorGames).toBe(82);
+  });
+
+  test('without a prior the ratings fall back to the league mean (unchanged behaviour)', async () => {
+    const out = await callGame(mkProvider());
+    expect(out.result.homeRatings.realPrior).toBe(false);
+    expect(out.result.homeRatings.priorSource).toBe('league-mean');
   });
 });
 

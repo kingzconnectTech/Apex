@@ -109,25 +109,43 @@ const CONFIG = {
     totalSizeCoef: 0.02,
     // Additional sigma (points) per possession away from league baseline pace.
     paceCoef: 0.06,
-    // Sigma penalty when data quality is poor.
-    dqPenaltyTotal: 3.0,
-    dqPenaltyMargin: 2.0,
+    // NOTE: there is deliberately no data-quality term here. Sigma measures how
+    // far the actual score can land from the projection; data quality measures
+    // how well-founded the projection is. Coupling them conflated a genuinely
+    // uncertain game with a poorly-observed one and dragged every probability
+    // toward 50%. Data quality now only drives the confidence tier.
   },
 
   // --- Calibration ---
   calibration: {
     enabled: true,
     method: 'isotonic', // 'isotonic' | 'platt'
-    // Minimum out-of-sample samples required before a calibrator is trusted.
+    // Minimum out-of-sample samples required before a calibrator is fitted/trusted.
     minSamples: 150,
+    // Minimum GRADED holdout rows before the validation gate may return a verdict.
+    // Below this the fit is neither accepted nor rejected — it is simply unjudged.
+    minHoldout: 150,
+    // Minimum improvement over the identity (raw probability) required on the
+    // holdout for a calibrator to be accepted. A fit that merely edges ahead by
+    // noise is rejected: both metrics must clear the margin on their own.
+    minImprovementBrier: 0.002,
+    minImprovementLogLoss: 0.002,
+    // Reject any fitted curve that is not monotone non-decreasing in the raw
+    // probability (an isotonic fit can only be non-monotone from a bug; a Platt
+    // curve is monotone only while its slope `a` stays positive).
+    requireMonotone: true,
     // Probability clamp so we never emit 0 or 1.
     epsilon: 0.001,
   },
 
   // --- Line & pick selection ---
   selection: {
-    // NORMAL MATCH ANALYSIS: Show all predictions regardless of confidence level
-    // No probability threshold - all basketball matches should have predictions
+    // These gates are REAL (they are evaluated per candidate in
+    // lineSelector.evaluateTwoWayMarket and reported as passes/failReasons), but
+    // the values are deliberately permissive: the product policy is to publish
+    // every evaluated line with an honest label instead of hiding low-signal
+    // ones. Raising any of them starts suppressing picks — the machinery is
+    // already in place, only the numbers below would change.
     mainMinProb: 0.0,  // No threshold - show all picks
     alternateMinProb: 0.0,  // No threshold - show all picks
     minEdge: 0.0,  // No edge threshold - show all picks
@@ -137,9 +155,21 @@ const CONFIG = {
     rankEvWeight: 0.3,
     // edgeScaledEv = clamp(ev / evScale, 0, 1)
     evScale: 0.10,
-    // Confidence tiers.
+    // Confidence tiers are derived from the pick's own probability AND the data
+    // quality behind it — never from probability alone, and never padded to
+    // reach a tier. A 62% read off a verified sample and a 62% read off a guess
+    // must not carry the same label, so both bars must be cleared.
     confidence: {
-      highDataQuality: 0.85,
+      highProb: 0.62,
+      mediumProb: 0.55,
+      // Data quality required alongside the probability bar above.
+      highDataQuality: 0.70,
+      mediumDataQuality: 0.45,
+      // Credit applied to the data-quality term when a REAL lineup source has
+      // confirmed the starters. Verified against ESPN: the core roster endpoint
+      // returns 200 pre-game with the full squad but zero `starter`/`active`
+      // flags, so this is false in production and the credit is inert.
+      confirmedLineupsDqCredit: 0.05,
     },
     // Consistency check: a big spread with a very low total (or vice versa) is flagged.
     consistency: {
@@ -198,6 +228,11 @@ const CONFIG = {
   // --- Data quality ---
   dataQuality: {
     minGamesPerTeam: 5,
+    // Penalty weight applied while a team is below minGamesPerTeam. Ratings built
+    // from a REAL prior-season baseline are genuine inputs, so they take the small
+    // `priorSmallSamplePenalty`; ratings that fell back to the league mean take the
+    // full 0.3 inside computeDataQuality.
+    priorSmallSamplePenalty: 0.1,
     confirmedLineupsBonus: 0.05,
     missingFieldPenalty: 0.03,
     questionablePlayerPenalty: 0.05,

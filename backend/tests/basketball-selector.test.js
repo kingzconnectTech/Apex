@@ -6,7 +6,7 @@
 
 const {
   toDecimal, removeVig, scoreCandidate, assessConsistency, lineMovement,
-  bestOf, selectPicks,
+  confidenceTier, bestOf, selectPicks,
 } = require('../services/basketball/lineSelector');
 const CFG = require('../services/basketball/config');
 
@@ -166,5 +166,88 @@ describe('Pick selection', () => {
     expect(out.picks.length).toBe(1);
     expect(out.picks[0].isModelLine).toBe(true);
     expect(out.picks[0].selection).toContain('(Model Line)');
+  });
+});
+
+describe('Confidence tiers (R12)', () => {
+  const C = CFG.selection.confidence;
+
+  test('High needs a strong probability AND strong data quality', () => {
+    expect(confidenceTier({ probability: C.highProb, dq: C.highDataQuality, confirmed: false, cfg: CFG })).toBe('High');
+    // Same probability, thinner data -> cannot claim High.
+    expect(confidenceTier({ probability: C.highProb, dq: C.mediumDataQuality, confirmed: false, cfg: CFG })).toBe('Medium');
+    // Same data, weaker claim -> cannot claim High.
+    expect(confidenceTier({ probability: C.mediumProb - 0.01, dq: 0.99, confirmed: false, cfg: CFG })).toBe('Low');
+  });
+
+  test('a coin-flip line with thin data is labelled Low, not Medium', () => {
+    expect(confidenceTier({ probability: 0.5, dq: 0.5, confirmed: false, cfg: CFG })).toBe('Low');
+    expect(confidenceTier({ probability: 0.5, dq: 0.99, confirmed: false, cfg: CFG })).toBe('Low');
+  });
+
+  test('confirmed lineups are a credit, never a tier of their own', () => {
+    // A credit cannot rescue a thin sample.
+    expect(confidenceTier({ probability: C.highProb, dq: 0.2, confirmed: true, cfg: CFG })).toBe('Low');
+    // A pick just under the High data bar can be lifted by verified starters...
+    const nearBar = C.highDataQuality - 0.02;
+    expect(confidenceTier({ probability: C.highProb, dq: nearBar, confirmed: true, cfg: CFG })).toBe('High');
+    // ...and stays lower when they are not verified (the production case).
+    expect(confidenceTier({ probability: C.highProb, dq: nearBar, confirmed: false, cfg: CFG })).toBe('Medium');
+  });
+
+  test('missing inputs degrade to Low instead of throwing', () => {
+    expect(confidenceTier({ probability: null, dq: null, confirmed: false, cfg: CFG })).toBe('Low');
+    expect(confidenceTier({ probability: undefined, dq: undefined, cfg: CFG })).toBe('Low');
+  });
+
+  test('High is reachable end-to-end without any lineup source', () => {
+    const projection = { total: 218.4, margin: 7.2, sigmaTotal: 17.6, sigmaMargin: 11.8 };
+    const lines = { total: [{ line: 208.5, aOdds: 1.85, bOdds: 1.95, isMain: true }], spread: [] };
+    const out = selectPicks({
+      projection, lines,
+      ctx: { cfg: CFG, dataQuality: 0.84, confirmed: false, homeTeamName: 'A', awayTeamName: 'B' },
+    });
+    expect(out.picks[0].probability).toBeGreaterThan(CFG.selection.confidence.highProb);
+    expect(out.picks[0].confidence).toBe('High');
+  });
+});
+
+describe('Selection gates (R11)', () => {
+  const projection = { total: 218.4, margin: 7.2, sigmaTotal: 17.6, sigmaMargin: 11.8 };
+  const lines = { total: [{ line: 208.5, aOdds: 1.85, bOdds: 1.95, isMain: true }], spread: [] };
+  const baseCtx = { cfg: CFG, dataQuality: 0.84, confirmed: false, homeTeamName: 'A', awayTeamName: 'B' };
+
+  test('the shipping thresholds are permissive: every line passes and carries no fail reasons', () => {
+    const out = selectPicks({ projection, lines, ctx: baseCtx });
+    expect(out.evaluated.total.every(c => c.passes)).toBe(true);
+    expect(out.evaluated.total.every(c => c.failReasons.length === 0)).toBe(true);
+    expect(out.flags).toEqual([]);
+  });
+
+  test('a tightened gate records why, without hiding the line', () => {
+    const cfg = {
+      ...CFG,
+      selection: { ...CFG.selection, mainMinProb: 0.9, minEdge: 0.5, minDataQuality: 0.99 },
+    };
+    const out = selectPicks({ projection, lines, ctx: { ...baseCtx, cfg } });
+
+    // Nothing is suppressed...
+    expect(out.noPick).toBe(false);
+    expect(out.picks.length).toBe(1);
+    // ...but every missed gate is reported, on the candidate and on the pick.
+    const candidate = out.evaluated.total[0];
+    expect(candidate.passes).toBe(false);
+    expect(candidate.failReasons.length).toBe(3);
+    expect(candidate.failReasons.join(' | ')).toMatch(/probability/);
+    expect(candidate.failReasons.join(' | ')).toMatch(/edge/);
+    expect(candidate.failReasons.join(' | ')).toMatch(/data quality/);
+    expect(out.flags.length).toBe(3);
+    expect(out.flags[0]).toMatch(/Total Points Over 208\.5:/);
+  });
+
+  test('a passing candidate is ranked ahead of an equal-probability failing one by score, not by gating', () => {
+    // bestOf deliberately ignores `passes`; the flags are the honest signal.
+    const out = bestOf([{ passes: false, score: 0.3, selection: 'a' }, { passes: true, score: 0.7, selection: 'b' }]);
+    expect(out.selection).toBe('b');
   });
 });

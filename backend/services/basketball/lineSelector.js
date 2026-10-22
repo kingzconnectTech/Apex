@@ -61,15 +61,35 @@ function scoreCandidate({ probability, ev, cfg }) {
 }
 
 /**
- * Confidence tier. High requires confirmed lineups (rare with ESPN's summary);
- * borderline data quality yields Low.
+ * Confidence tier, derived from the pick's own probability AND the data quality
+ * behind it. Probability alone is not enough: a 62% read off a thin sample is a
+ * weaker claim than a 62% read off a verified one, so both bars must be cleared.
+ * Nothing here is padded to reach a tier.
+ *
+ * `confirmed` (a real lineup source) is a small credit on the data-quality term
+ * and can never carry a tier on its own. Verified against ESPN: the pre-game
+ * core roster returns the squad but no `starter`/`active` flags, so it is false
+ * in production.
+ *
+ * @param {Object} params
+ * @param {number} params.probability - the pick's stated probability (0..1)
+ * @param {number} params.dq          - data quality score (0..1)
+ * @param {boolean} [params.confirmed] - verified starters for both teams
+ * @param {Object} params.cfg
  */
-function confidenceTier({ dq, confirmed, cfg }) {
-  const s = cfg.selection;
-  const highDQ = s.confidence?.highDataQuality ?? 0.85;
-  const minDQ = s.minDataQuality ?? 0.7;
-  if (dq >= highDQ && confirmed) return 'High';
-  if (dq >= minDQ + 0.05) return 'Medium';
+function confidenceTier({ probability, dq, confirmed, cfg }) {
+  const c = cfg.selection?.confidence || {};
+  const highProb = c.highProb ?? 0.62;
+  const mediumProb = c.mediumProb ?? 0.55;
+  const highDQ = c.highDataQuality ?? 0.70;
+  const mediumDQ = c.mediumDataQuality ?? 0.45;
+
+  const p = Number.isFinite(probability) ? probability : 0;
+  const credit = confirmed ? (c.confirmedLineupsDqCredit ?? 0.05) : 0;
+  const effectiveDQ = clamp((Number.isFinite(dq) ? dq : 0) + credit, 0, 1);
+
+  if (p >= highProb && effectiveDQ >= highDQ) return 'High';
+  if (p >= mediumProb && effectiveDQ >= mediumDQ) return 'Medium';
   return 'Low';
 }
 
@@ -156,8 +176,20 @@ function evaluateTwoWayMarket({ lines, probFn, nameFn, market, sigma, ctx }) {
         : (isMain ? (cfg.selection.mainMinProb ?? 0.0) : (cfg.selection.alternateMinProb ?? 0.0));
 
       const failReasons = [];
-      // No threshold filtering - all candidates pass
-      const passes = true;
+      // Real gates. With the shipping config these are permissive (all zero), so
+      // every line passes and nothing is hidden; a line that misses a tightened
+      // gate is still returned, but labelled with why it missed.
+      if (effectiveMinDQ > 0 && (dataQuality ?? 0) < effectiveMinDQ) {
+        failReasons.push(`data quality ${round(dataQuality, 3)} below ${effectiveMinDQ}`);
+      }
+      if (minProb > 0 && p < minProb) {
+        failReasons.push(`probability ${round(p, 4)} below ${minProb}`);
+      }
+      const minEdge = cfg?.selection?.minEdge ?? 0;
+      if (minEdge > 0 && edge < minEdge) {
+        failReasons.push(`edge ${round(edge, 4)} below ${minEdge}`);
+      }
+      const passes = failReasons.length === 0;
       const score = scoreCandidate({ probability: p, ev, cfg });
 
       const baseSelection = nameFn ? nameFn(side, line, ctx) : `${side} ${line}`;
@@ -180,7 +212,7 @@ function evaluateTwoWayMarket({ lines, probFn, nameFn, market, sigma, ctx }) {
         sigma,
         passes,
         failReasons,
-        confidence: confidenceTier({ dq: dataQuality, confirmed, cfg }),
+        confidence: confidenceTier({ probability: p, dq: dataQuality, confirmed, cfg }),
       });
     });
   });
@@ -189,7 +221,13 @@ function evaluateTwoWayMarket({ lines, probFn, nameFn, market, sigma, ctx }) {
 }
 
 /**
- * Select the best candidate for a market (no threshold filtering).
+ * Select the best candidate for a market.
+ *
+ * Deliberately does NOT filter on `passes`: the product policy is to publish
+ * every evaluated line with an honest label rather than hide a low-signal one.
+ * `passes`/`failReasons` ride along on the returned pick so the caller can
+ * label or flag it.
+ *
  * @returns {Object|null}
  */
 function bestOf(candidates) {
@@ -201,8 +239,8 @@ function bestOf(candidates) {
  * Full selection for one game.
  *
  * Prioritizes markets according to the configured marketPriority array.
- * All predictions are shown regardless of confidence threshold.
- * No straight-winner or moneyline fallback is allowed.
+ * Every evaluated line is returned; confidence is labelled honestly rather than
+ * used to suppress a pick. No straight-winner or moneyline fallback is allowed.
  *
  * @param {Object} params
  * @param {Object} params.projection - adjusted projection ({ total, margin }) plus sigma
@@ -271,18 +309,23 @@ function selectPicks({ projection, lines, ctx }) {
   };
 
   const picks = [];
+  const gateFlags = [];
   const marketPriority = cfg.selection?.marketPriority || ['Total Points'];
 
   // Process markets in priority order
   // Primary markets: Total Points, Spread
   // Secondary markets (Team Total, First-Half, Quarter) are prepared for future data availability
   marketPriority.forEach(market => {
+    const add = (pick) => {
+      if (!pick) return;
+      // A published pick that missed a gate says so instead of hiding it.
+      (pick.failReasons || []).forEach(r => gateFlags.push(`${market} ${pick.selection}: ${r}`));
+      picks.push(pick);
+    };
     if (market === 'Total Points') {
-      const totalPick = applyPolicy(bestOf(totalCandidates), 'Total Points');
-      if (totalPick) picks.push(totalPick);
+      add(applyPolicy(bestOf(totalCandidates), 'Total Points'));
     } else if (market === 'Spread') {
-      const spreadPick = applyPolicy(bestOf(spreadCandidates), 'Spread');
-      if (spreadPick) picks.push(spreadPick);
+      add(applyPolicy(bestOf(spreadCandidates), 'Spread'));
     }
     // Secondary markets would be added here when period-level data becomes available
     // Example for Team Total (when data is available):
@@ -300,7 +343,7 @@ function selectPicks({ projection, lines, ctx }) {
     picks,
     noPick: picks.length === 0,
     noPickLabel: cfg.selection.noPickLabel || 'No confident pick',
-    flags: [...consistencyFlags, ...policyFlags],
+    flags: [...consistencyFlags, ...policyFlags, ...gateFlags],
     policy: policy || null,
     evaluated: { total: totalCandidates, spread: spreadCandidates },
   };

@@ -9,11 +9,16 @@
  * Doc id:     `${gameId}_${marketSlug}_${selectionSlug}` (stable, so re-runs update
  *             in place rather than duplicating). A document is only rewritten when
  *             its prediction actually changed.
+ *
+ * Collection: `basketball_calibrators` (one doc per league; see
+ *             buildCalibratorDoc / loadCalibrator)
  */
 
-const { brierScore, logLoss, calibrationCurve } = require('./calibration');
+const { brierScore, logLoss, calibrationCurve, Calibrator, CALIBRATOR_VERSION } = require('./calibration');
 
 const COLLECTION = 'basketball_predictions';
+/** One document per league holding its validated calibrator (see buildCalibratorDoc). */
+const CALIBRATION_COLLECTION = 'basketball_calibrators';
 
 function _slug(s) {
   return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -287,8 +292,98 @@ function deriveMarketPolicy(report, cfg = null) {
   return { enabled, status, reasons };
 }
 
+// --------------------------------------------------------------------------
+// Persisted calibrators
+// --------------------------------------------------------------------------
+
+/**
+ * Build the document that stores one league's fitted calibrator, together with
+ * the evidence that justifies applying it. Only models that passed the holdout
+ * gate against the identity are described by `accepted: true`; anything else is
+ * written as `accepted: false` and will be ignored on load.
+ *
+ * @param {Object} params
+ * @param {string} params.league
+ * @param {Object} params.calibrator - calibration.Calibrator (already fitted)
+ * @param {Object} params.validation - per-market validateAgainstIdentity output
+ * @param {string[]} params.markets
+ * @param {string} [params.oddsSource] - 'book' | 'model' (how lines were valued)
+ * @param {Object} [params.training]   - { rows, from, to, seasons }
+ * @returns {Object}
+ */
+function buildCalibratorDoc({
+  league, calibrator, validation = {}, markets = [], oddsSource = null, training = {}, version = CALIBRATOR_VERSION,
+} = {}) {
+  const accepted = markets.filter(m => validation[m]?.improved === true && calibrator?.has(league, m));
+  const models = {};
+  accepted.forEach(m => {
+    const entry = calibrator.entry(league, m);
+    if (entry) models[`${league}|${m}`] = entry;
+  });
+
+  return {
+    id: String(league),
+    league: String(league),
+    version,
+    accepted: accepted.length > 0,
+    shadow: true, // R4: logged, not displayed, until the shadow report is approved
+    oddsSource,
+    markets: accepted,
+    models,
+    validation,
+    training: {
+      rows: training.rows ?? null,
+      from: training.from ?? null,
+      to: training.to ?? null,
+      seasons: training.seasons ?? null,
+    },
+    fittedAt: new Date().toISOString(),
+  };
+}
+
+/** Persist a calibrator document (one per league). */
+async function saveCalibrator(admin, doc) {
+  if (!doc?.league) return null;
+  await admin.firestore().collection(CALIBRATION_COLLECTION).doc(String(doc.league)).set(doc);
+  return doc;
+}
+
+/** Load a league's calibrator doc, or null when none was accepted. */
+async function loadCalibratorDoc(admin, league) {
+  if (!league) return null;
+  const snap = await admin.firestore().collection(CALIBRATION_COLLECTION).doc(String(league)).get();
+  if (!snap?.exists) return null;
+  const data = typeof snap.data === 'function' ? snap.data() : snap.data;
+  return data?.accepted === true && data?.models ? data : null;
+}
+
+/**
+ * Load every accepted calibrator into one Calibrator instance for the engine.
+ * Returns null when nothing was accepted, so callers pass null and the engine
+ * uses raw probabilities — an unvalidated calibrator is never applied.
+ */
+async function loadCalibrator(admin, cfg = null) {
+  const config = cfg || require('./config');
+  if (config.calibration?.enabled === false) return null;
+  let snap;
+  try {
+    snap = await admin.firestore().collection(CALIBRATION_COLLECTION).get();
+  } catch (err) {
+    return null;
+  }
+  const merged = {};
+  (snap?.docs || []).forEach(d => {
+    const data = typeof d.data === 'function' ? d.data() : d.data;
+    if (data?.accepted !== true || !data.models) return;
+    Object.assign(merged, data.models);
+  });
+  if (!Object.keys(merged).length) return null;
+  return Calibrator.fromJSON(config, merged);
+}
+
 module.exports = {
   COLLECTION,
+  CALIBRATION_COLLECTION,
   settleOne,
   profit,
   saveBasketballPredictions,
@@ -297,4 +392,8 @@ module.exports = {
   summarisePerformance,
   deriveMarketPolicy,
   getBasketballPerformance,
+  buildCalibratorDoc,
+  saveCalibrator,
+  loadCalibratorDoc,
+  loadCalibrator,
 };

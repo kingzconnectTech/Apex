@@ -11,8 +11,15 @@
  * `calibration.minSamples` out-of-sample rows, apply() falls back to the identity
  * (raw probability unchanged) rather than pretending to calibrate.
  *
+ * Two-way markets are fitted on a FIXED side (Over for totals, home for spreads)
+ * and the other side is derived as the complement, so P(Over) + P(Under) === 1.
+ * See canonicalizeRow().
+ *
  * Push rows (y === null) are excluded from fitting — they are not wins or losses.
  */
+
+/** Stamped into the persisted model document so a fitted artifact is traceable. */
+const CALIBRATOR_VERSION = 'bb-cal-1.0.0';
 
 function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
@@ -123,6 +130,35 @@ function applyPlatt(model, p) {
   return sigmoid(model.a * logit(p) + model.b);
 }
 
+/** Apply whichever model shape was fitted (no-op for a null model). */
+function applyModel(model, p) {
+  if (!model || !Number.isFinite(p)) return p;
+  return model.method === 'platt' ? applyPlatt(model, p) : applyIsotonic(model, p);
+}
+
+/**
+ * Is the fitted curve monotone non-decreasing in the raw probability?
+ *
+ * Isotonic regression is monotone by construction, so a non-monotone `values`
+ * array can only come from a corrupt or hand-edited model. A Platt curve is
+ * monotone exactly while its slope `a` is positive — a negative slope means the
+ * fit inverted the signal and must never be applied.
+ *
+ * @param {Object} model
+ * @param {number} [tolerance] - slack for floating-point noise
+ * @returns {boolean}
+ */
+function isMonotone(model, tolerance = 1e-9) {
+  if (!model) return false;
+  if (model.method === 'platt') return Number.isFinite(model.a) && model.a > 0;
+  const values = model.values;
+  if (!Array.isArray(values) || !values.length) return false;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] < values[i - 1] - tolerance) return false;
+  }
+  return true;
+}
+
 // --- Metric functions (used by the backtester and performance dashboard) ---
 
 /** Brier score; rows with y === null (pushes) are ignored. */
@@ -165,6 +201,99 @@ function calibrationCurve(rows, edges = [0.55, 0.6, 0.65, 0.7, 1.01]) {
   return buckets;
 }
 
+// --- Two-way (fixed-side) canonicalisation ---
+
+/**
+ * A two-way market must calibrate as ONE probability, not two independent ones:
+ * P(Over) + P(Under) has to stay exactly 1, otherwise the two sides of the same
+ * line can both claim an edge. Every pick is therefore collapsed onto the
+ * canonical side — 'a' (Over for totals, home for spreads) — before fitting, and
+ * the complement is derived from the fitted curve afterwards:
+ *
+ *   side 'a': P_cal = f(p)
+ *   side 'b': P_cal = 1 - f(1 - p)
+ *
+ * @param {Object} row - { p, y, side } with side 'a' (canonical) or 'b'
+ * @returns {Object} { p, y } expressed on the canonical side
+ */
+function canonicalizeRow(row) {
+  const flip = row?.side === 'b';
+  const p = Number(row?.p);
+  const y = row?.y;
+  return {
+    p: flip && Number.isFinite(p) ? 1 - p : p,
+    y: (y === 0 || y === 1) ? (flip ? 1 - y : y) : null,
+  };
+}
+
+/** Canonicalise a batch of side-tagged rows. */
+function canonicalizeRows(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map(canonicalizeRow)
+    .filter(r => Number.isFinite(r.p));
+}
+
+/**
+ * Score a fitted model against the identity (raw probability, uncalibrated) on
+ * held-out rows. This is the validation gate: a calibrator is only worth saving
+ * when it beats doing nothing on data it has not seen — by a margin large enough
+ * not to be noise.
+ *
+ * A fit must clear ALL of:
+ *   - at least `minSamples` graded holdout rows (below that: no verdict),
+ *   - a monotone non-decreasing curve (see isMonotone),
+ *   - `minImprovementBrier` better Brier than identity, AND
+ *   - `minImprovementLogLoss` better log loss than identity.
+ *
+ * Evaluated canonical-side, which covers both sides of the market at once.
+ *
+ * @param {Object} params
+ * @param {Array} params.rows       - held-out side-tagged rows ({ p, y, side })
+ * @param {Object} params.model     - fitted model (isotonic/platt)
+ * @param {number} [params.minSamples] - minimum graded holdout rows to judge
+ * @param {number} [params.minImprovementBrier]
+ * @param {number} [params.minImprovementLogLoss]
+ * @param {boolean} [params.requireMonotone]
+ * @returns {Object} { n, graded, judged, monotone, brierGain, logLossGain, before, after, improved }
+ */
+function validateAgainstIdentity({
+  rows, model, minSamples = 150,
+  minImprovementBrier = 0.002, minImprovementLogLoss = 0.002, requireMonotone = true,
+} = {}) {
+  const canonical = canonicalizeRows(rows).filter(r => r.y === 0 || r.y === 1);
+  const n = canonical.length;
+  const before = { brier: brierScore(canonical), logLoss: logLoss(canonical) };
+  const monotone = isMonotone(model);
+  const scored = Boolean(model) && n >= minSamples;
+  const after = scored
+    ? {
+      brier: brierScore(canonical.map(r => ({ p: applyModel(model, r.p), y: r.y }))),
+      logLoss: logLoss(canonical.map(r => ({ p: applyModel(model, r.p), y: r.y }))),
+    }
+    : { brier: null, logLoss: null };
+
+  const brierGain = scored ? before.brier - after.brier : null;
+  const logLossGain = scored ? before.logLoss - after.logLoss : null;
+  const judged = scored && (!requireMonotone || monotone);
+
+  return {
+    n,
+    graded: n,
+    judged,
+    monotone,
+    brierGain,
+    logLossGain,
+    minSamples,
+    minImprovementBrier,
+    minImprovementLogLoss,
+    before,
+    after,
+    improved: judged
+      && brierGain >= minImprovementBrier
+      && logLossGain >= minImprovementLogLoss,
+  };
+}
+
 // --- Calibrator registry ---
 
 function _key(league, market) {
@@ -193,18 +322,49 @@ class Calibrator {
     return model;
   }
 
-  /** Apply the stored calibrator, or the identity when none is trusted. */
-  apply(league, market, p) {
+  /**
+   * Fit a two-way market on its canonical side so the complement stays exact.
+   *
+   * `rows` must be side-tagged ({ p, y, side }): both sides' observations are
+   * pooled into one monotone curve on the canonical side, instead of fitting the
+   * Over and Under picks independently (which lets both sides claim >50%).
+   *
+   * @param {string} league
+   * @param {string} market - 'Total Points' | 'Spread'
+   * @param {Array} rows    - [{ p, y, side }]
+   */
+  fitTwoWay(league, market, rows, opts = {}) {
+    return this.fit(league, market, canonicalizeRows(rows), opts);
+  }
+
+  /**
+   * Apply the stored calibrator, or the identity when none is trusted.
+   *
+   * @param {string} league
+   * @param {string} market
+   * @param {number} p
+   * @param {'a'|'b'} [side='a'] - 'a' is the canonical side (Over / home)
+   */
+  apply(league, market, p, side = 'a') {
     const eps = this.cfg?.calibration?.epsilon ?? 0.001;
     if (!Number.isFinite(p)) return p;
     const entry = this.models.get(_key(league, market));
     if (!entry) return clampProb(p, eps);
-    const out = entry.method === 'platt' ? applyPlatt(entry.model, p) : applyIsotonic(entry.model, p);
+    // The complement is derived, never fitted separately: 1 - f(1 - p) keeps
+    // P(a) + P(b) === 1 by construction.
+    const out = side === 'b'
+      ? 1 - applyModel(entry.model, 1 - p)
+      : applyModel(entry.model, p);
     return clampProb(out, eps);
   }
 
   has(league, market) {
     return this.models.has(_key(league, market));
+  }
+
+  /** Metadata for one fitted key (samples, method, training time). */
+  entry(league, market) {
+    return this.models.get(_key(league, market)) || null;
   }
 
   toJSON() {
@@ -221,10 +381,16 @@ class Calibrator {
 }
 
 module.exports = {
+  CALIBRATOR_VERSION,
   fitIsotonic,
   applyIsotonic,
   fitPlatt,
   applyPlatt,
+  applyModel,
+  isMonotone,
+  canonicalizeRow,
+  canonicalizeRows,
+  validateAgainstIdentity,
   brierScore,
   logLoss,
   calibrationCurve,

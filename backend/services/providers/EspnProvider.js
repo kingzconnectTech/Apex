@@ -1,4 +1,4 @@
-const { ESPN_BASE, PROVIDERS, TTL } = require('./config');
+const { ESPN_BASE, ESPN_CORE_BASE, PROVIDERS, TTL } = require('./config');
 const { sharedCache } = require('./cache');
 const {
   normalizeLeagueESPN,
@@ -27,8 +27,8 @@ class EspnProvider {
     return `espn:${method}:${JSON.stringify(args)}`;
   }
 
-  async _request(relativePath, { ttl = TTL.DEFAULT, cache = true, traceId = null } = {}) {
-    const url = `${this.baseUrl}/${relativePath}`;
+  async _request(relativePath, { ttl = TTL.DEFAULT, cache = true, traceId = null, base = this.baseUrl } = {}) {
+    const url = `${base}/${relativePath}`;
     const cacheKey = `espn:req:${url}`;
 
     if (cache) {
@@ -137,10 +137,58 @@ class EspnProvider {
     return normalizeTeamESPN(data, sport, league);
   }
 
-  async getTeamSchedule(sport, league, teamId, { traceId = null } = {}) {
-    return this._request(`${sport}/${league}/teams/${teamId}/schedule`, {
+  async getTeamSchedule(sport, league, teamId, { traceId = null, season = null } = {}) {
+    // `season` uses ESPN's ENDING-year labelling (2026 => the 2025-26 season) and
+    // is required to read a COMPLETED season — without it ESPN returns the
+    // in-progress season, whose aggregate does not exist yet.
+    const qs = season != null ? `?season=${encodeURIComponent(season)}` : '';
+    return this._request(`${sport}/${league}/teams/${teamId}/schedule${qs}`, {
       ttl: TTL.FIXTURES_SCHEDULED, traceId,
     });
+  }
+
+  /**
+   * Fetch a completed season's team aggregate from ESPN's core API and flatten it
+   * to `{ [statName]: number }`. ESPN publishes this as season TOTALS (e.g.
+   * points, possessions, fieldGoalsAttempted) plus a per-game `paceFactor`.
+   *
+   * The site API has no equivalent (site standings 404, `season/{current}`
+   * statistics 404 until games have been played), so this is the only source of
+   * a real prior-season baseline. Returns null when the season has no aggregate.
+   *
+   * @param {string} sport
+   * @param {string} league
+   * @param {number|string} seasonYear - ESPN ending year (2026 => 2025-26 season)
+   * @param {string} teamId
+   */
+  async getTeamSeasonStatistics(sport, league, seasonYear, teamId, { traceId = null } = {}) {
+    const data = await this._request(
+      `${sport}/leagues/${league}/seasons/${seasonYear}/types/2/teams/${teamId}/statistics`,
+      { ttl: TTL.SEASON_STATS, traceId, base: ESPN_CORE_BASE },
+    );
+    const categories = data?.splits?.categories;
+    if (!Array.isArray(categories)) return null;
+
+    const out = {};
+    categories.forEach(cat => {
+      (cat?.stats || []).forEach(s => {
+        if (!s?.name) return;
+        const raw = s.value ?? s.displayValue;
+        const num = parseFloat(raw);
+        if (!Number.isNaN(num)) out[s.name] = num;
+      });
+    });
+    return Object.keys(out).length > 0 ? out : null;
+  }
+
+  /**
+   * Fetch a completed season's game results for one team (site API, `?season=`).
+   * Used for points-allowed, which the NBA aggregate does not expose.
+   *
+   * @returns {Promise<Object|null>} the raw ESPN schedule payload ({ events })
+   */
+  async getTeamSeasonSchedule(sport, league, seasonYear, teamId, { traceId = null } = {}) {
+    return this.getTeamSchedule(sport, league, teamId, { traceId, season: seasonYear });
   }
 
   async getTeamStats(sport, league, teamId, { traceId = null } = {}) {
@@ -210,18 +258,55 @@ class EspnProvider {
   }
 
   /**
+   * Split ESPN's compound made-attempted statistic.
+   *
+   * ESPN sends shooting pairs in two different shapes:
+   *   - as separate stats: `fieldGoalsMade` + `fieldGoalsAttempted`
+   *   - as ONE compound stat whose value is "made-attempted", e.g.
+   *     name "fieldGoalsMade-fieldGoalsAttempted", label "FG", displayValue "38-92"
+   *
+   * The compound form has `value: undefined`, so only `displayValue` can be
+   * parsed. Returns null for anything that is not a "made-attempted" pair.
+   */
+  static splitPairStat(stat) {
+    if (!stat) return null;
+    const raw = stat.displayValue ?? stat.value;
+    if (raw === undefined || raw === null || raw === '') return null;
+    const parts = String(raw).split('-');
+    if (parts.length !== 2) return null;
+    const made = parseFloat(parts[0]);
+    const attempted = parseFloat(parts[1]);
+    if (Number.isNaN(made) || Number.isNaN(attempted)) return null;
+    return { made, attempted };
+  }
+
+  /** Find a compound made-attempted stat by its `name` (or `label`). */
+  static findStatPair(competitor, names) {
+    if (!competitor?.statistics) return null;
+    const s = competitor.statistics.find(item => names.includes(item.name) || names.includes(item.label));
+    return EspnProvider.splitPairStat(s);
+  }
+
+  /**
    * Extract a basketball box score for both teams.
    * Returns null for any stat the provider does not supply.
    */
   static extractBasketballBoxScore(teamComp, oppComp) {
     const find = (c, names) => EspnProvider.findStatValue(c, names);
+    const pair = (c, names) => EspnProvider.findStatPair(c, names);
 
-    const fgm = find(teamComp, ['fieldGoalsMade', 'field_goals_made', 'fgMade']);
-    const fga = find(teamComp, ['fieldGoalsAttempted', 'field_goals_attempted', 'fgAttempted']);
-    const tpm = find(teamComp, ['threePointFieldGoalsMade', 'three_point_field_goals_made', 'threePointersMade', 'threeMade']);
-    const tpa = find(teamComp, ['threePointFieldGoalsAttempted', 'three_point_field_goals_attempted', 'threePointersAttempted', 'threeAttempted']);
-    const ftm = find(teamComp, ['freeThrowsMade', 'free_throws_made', 'ftMade']);
-    const fta = find(teamComp, ['freeThrowsAttempted', 'free_throws_attempted', 'ftAttempted']);
+    // Shooting lines arrive either as separate made/attempted stats or as one
+    // compound "made-attempted" stat (the summary endpoint's shape).
+    const fg = pair(teamComp, ['fieldGoalsMade-fieldGoalsAttempted']);
+    const tp = pair(teamComp, ['threePointFieldGoalsMade-threePointFieldGoalsAttempted']);
+    const ft = pair(teamComp, ['freeThrowsMade-freeThrowsAttempted']);
+
+    const fgm = find(teamComp, ['fieldGoalsMade', 'field_goals_made', 'fgMade']) ?? fg?.made ?? null;
+    const fga = find(teamComp, ['fieldGoalsAttempted', 'field_goals_attempted', 'fgAttempted']) ?? fg?.attempted ?? null;
+    const tpm = find(teamComp, ['threePointFieldGoalsMade', 'three_point_field_goals_made', 'threePointersMade', 'threeMade']) ?? tp?.made ?? null;
+    const tpa = find(teamComp, ['threePointFieldGoalsAttempted', 'three_point_field_goals_attempted', 'threePointersAttempted', 'threeAttempted']) ?? tp?.attempted ?? null;
+    const ftm = find(teamComp, ['freeThrowsMade', 'free_throws_made', 'ftMade']) ?? ft?.made ?? null;
+    const fta = find(teamComp, ['freeThrowsAttempted', 'free_throws_attempted', 'ftAttempted']) ?? ft?.attempted ?? null;
     const orb = find(teamComp, ['offensiveRebounds', 'offensive_rebounds', 'offRebounds']);
     const drb = find(teamComp, ['defensiveRebounds', 'defensive_rebounds', 'defRebounds']);
     const trb = find(teamComp, ['totalRebounds', 'total_rebounds', 'rebounds']);
@@ -231,11 +316,13 @@ class EspnProvider {
     const blk = find(teamComp, ['blocks', 'block']);
     const pf = find(teamComp, ['fouls', 'foul', 'personalFouls', 'personal_fouls']);
 
-    const oppFgm = find(oppComp, ['fieldGoalsMade', 'field_goals_made', 'fgMade']);
-    const oppFga = find(oppComp, ['fieldGoalsAttempted', 'field_goals_attempted', 'fgAttempted']);
+    const oppFg = pair(oppComp, ['fieldGoalsMade-fieldGoalsAttempted']);
+    const oppFt = pair(oppComp, ['freeThrowsMade-freeThrowsAttempted']);
+    const oppFgm = find(oppComp, ['fieldGoalsMade', 'field_goals_made', 'fgMade']) ?? oppFg?.made ?? null;
+    const oppFga = find(oppComp, ['fieldGoalsAttempted', 'field_goals_attempted', 'fgAttempted']) ?? oppFg?.attempted ?? null;
     const oppOrb = find(oppComp, ['offensiveRebounds', 'offensive_rebounds', 'offRebounds']);
     const oppTov = find(oppComp, ['turnovers', 'turnover']);
-    const oppFta = find(oppComp, ['freeThrowsAttempted', 'free_throws_attempted', 'ftAttempted']);
+    const oppFta = find(oppComp, ['freeThrowsAttempted', 'free_throws_attempted', 'ftAttempted']) ?? oppFt?.attempted ?? null;
 
     return {
       fgm, fga, tpm, tpa, ftm, fta, orb, drb, trb, ast, tov, stl, blk, pf,

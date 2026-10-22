@@ -180,6 +180,53 @@ function aggregateGames(games) {
 }
 
 /**
+ * Build a REAL prior-season rating baseline from ESPN's prior-season team
+ * aggregate (core API, season totals) plus the prior-season game log.
+ *
+ * Verified ESPN fields — core `seasons/{year}/types/2/teams/{id}/statistics` →
+ * `splits.categories[].stats[]`: `gamesPlayed`, `points`, `possessions` (season
+ * TOTALS) and `paceFactor` (per game). The NBA aggregate exposes no
+ * points-allowed, so DRtg is derived from the prior-season schedule's real
+ * scores.
+ *
+ * Everything is converted with the SAME possession maths as the current season
+ * (`ortg = points / possessions * 100`), so prior and current ratings are
+ * directly comparable. Returns null — never a guess — when the aggregate lacks
+ * what is needed to derive a rating.
+ *
+ * @param {Object} params
+ * @param {Object} params.stats      - flattened core-API aggregate ({ [name]: number })
+ * @param {Array}  [params.games]    - prior-season log ({ pf, pa }), newest-first
+ * @param {Object} params.leagueCfg
+ * @returns {Object|null} { ortg, drtg, pace, avgPoints, avgPointsAllowed, gamesPlayed, source }
+ */
+function buildPriorRatings({ stats, games, leagueCfg } = {}) {
+  if (!stats) return null;
+  const played = toNum(stats.gamesPlayed);
+  const points = toNum(stats.points);
+  const possessions = toNum(stats.possessions);
+  if (!played || played <= 0 || points == null || possessions == null || possessions <= 0) return null;
+
+  const r2 = v => (v == null || !Number.isFinite(v) ? null : Number(v.toFixed(2)));
+
+  const pace = possessions / played;
+  const ortg = (points / possessions) * 100;
+  const paPerGame = mean((Array.isArray(games) ? games : []).map(g => toNum(g?.pa)));
+  const drtg = (paPerGame != null && pace > 0) ? (paPerGame / pace) * 100 : null;
+  if (drtg == null) return null;
+
+  return {
+    ortg: r2(ortg),
+    drtg: r2(drtg),
+    pace: r2(pace),
+    avgPoints: r2(points / played),
+    avgPointsAllowed: r2(paPerGame),
+    gamesPlayed: played,
+    source: 'prior-season',
+  };
+}
+
+/**
  * Build last-5 / last-10 / season and home/away form from a derived game log.
  * Game log must be newest-first.
  *
@@ -221,6 +268,13 @@ function splitInjuriesByTeam(injuries, homeTeamId, awayTeamId) {
 /**
  * Build lineups. ESPN's summary has no `rosters` array, so projected starters are
  * unavailable — we return confirmed:false with the injured players we do know about.
+ *
+ * VERIFIED (core API probe): `events/{e}/competitions/{c}/competitors/{t}/roster`
+ * returns 200 pre-game with the full squad, but every entry has `starter`,
+ * `active` and `didNotPlay` unset — the flags only appear once the game is
+ * under way. There is therefore NO honest pre-game lineup confirmation, and we
+ * never synthesize one; `confirmed` stays false so the confidence tier has to
+ * earn itself from probability and data quality alone.
  */
 function buildLineups(injuriesByTeam) {
   return {
@@ -285,6 +339,7 @@ module.exports = {
   normalizeBoxScore,
   deriveGameMetrics,
   aggregateGames,
+  buildPriorRatings,
   buildTeamForm,
   splitInjuriesByTeam,
   buildLineups,

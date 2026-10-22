@@ -10,6 +10,7 @@
 
 const { EspnProvider } = require('../providers/EspnProvider');
 const { getLeagueConfig, listLeagues } = require('./leagues');
+const { buildPriorRatings } = require('./normalize');
 const { analyzeGame, formatPrediction } = require('./index');
 const CONFIG = require('./config');
 
@@ -40,6 +41,26 @@ function espnPaths(leagueCfg) {
 function sameDay(iso, dateStr) {
   if (!iso || !dateStr) return true;
   return String(iso).slice(0, 10) === String(dateStr).slice(0, 10);
+}
+
+/**
+ * ESPN labels a basketball season by its ENDING year: the 2026-27 season is
+ * `2027`, the 2025-26 season is `2026`. Verified against the core API, where
+ * `seasons/2027/.../statistics` 404s (season in progress) while `seasons/2026/...`
+ * returns the completed aggregate.
+ *
+ * Seasons that begin Aug-Dec end in year+1; Jan-Jul belongs to the season ending
+ * in the current year. Falls back to "now" when the date is unreadable.
+ *
+ * @param {string|number|null} date - ISO date of the game
+ * @returns {number}
+ */
+function espnSeasonYear(date = null) {
+  let d = date ? new Date(date) : new Date();
+  if (Number.isNaN(d.getTime())) d = new Date();
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + 1;
+  return month >= 8 ? year + 1 : year;
 }
 
 /** Error codes returned by getGamePrediction() so callers can map a status. */
@@ -141,10 +162,27 @@ async function processFixture({ sportsData, leagueCfg, fixture, traceId = null, 
     return { error: `Missing fixture data: eventId=${eventId}, homeId=${homeId}, awayId=${awayId}` };
   }
 
-  const [summary, homeSched, awaySched] = await Promise.all([
+  // A real prior-season baseline: the completed season's team aggregate (core
+  // API) plus its game results (for points-allowed, which the NBA aggregate does
+  // not expose). Both are real ESPN values; the prior is dropped entirely when
+  // either is unavailable, so nothing is ever fabricated.
+  const priorSeasonYear = espnSeasonYear(fixture?.fixture?.date) - 1;
+  const priorFor = async (teamId) => {
+    if (typeof espn.getTeamSeasonStatistics !== 'function') return null;
+    const [stats, sched] = await Promise.all([
+      Promise.resolve(espn.getTeamSeasonStatistics(sport, league, priorSeasonYear, teamId, { traceId })).catch(() => null),
+      Promise.resolve(espn.getTeamSeasonSchedule(sport, league, priorSeasonYear, teamId, { traceId })).catch(() => null),
+    ]);
+    const games = espn.processBasketballScheduleForTeam(sched?.events || [], teamId);
+    return buildPriorRatings({ stats, games, leagueCfg });
+  };
+
+  const [summary, homeSched, awaySched, homePrior, awayPrior] = await Promise.all([
     espn.getMatchSummary(sport, league, eventId, { traceId }),
     espn.getTeamSchedule(sport, league, homeId, { traceId }),
     espn.getTeamSchedule(sport, league, awayId, { traceId }),
+    priorFor(homeId),
+    priorFor(awayId),
   ]);
 
   const odds = EspnProvider.extractBasketballOdds(summary);
@@ -164,6 +202,8 @@ async function processFixture({ sportsData, leagueCfg, fixture, traceId = null, 
       eloRatings,
       calibrator,
       marketPolicy,
+      homePrior,
+      awayPrior,
       cfg,
     });
     if (!result) {
@@ -335,6 +375,7 @@ async function getFinishedGames({ sportsData, leagues = null, date = null, trace
 module.exports = {
   mapLimit,
   sameDay,
+  espnSeasonYear,
   fixtureFromSummary,
   ERROR_CODES,
   fetchFixtures,

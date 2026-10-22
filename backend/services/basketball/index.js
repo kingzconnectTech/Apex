@@ -88,12 +88,15 @@ function buildLines(odds, projection = null, cfg = CONFIG) {
  * @param {Object} [params.context]      - { travelKm, altitudeMeters, motivation }
  * @param {Object} [params.eloRatings]   - league-wide { teamId: elo }
  * @param {Object} [params.calibrator]   - calibration.Calibrator
+ * @param {Object} [params.homePrior]    - real prior-season baseline for the home team
+ * @param {Object} [params.awayPrior]    - real prior-season baseline for the away team
  * @param {Object} [params.cfg]
  * @returns {Object|null}
  */
 function analyzeGame({
   fixture, odds = null, injuries = [], homeLog = [], awayLog = [],
-  league, context = null, eloRatings = null, calibrator = null, marketPolicy = null, cfg = CONFIG,
+  league, context = null, eloRatings = null, calibrator = null, marketPolicy = null,
+  homePrior = null, awayPrior = null, cfg = CONFIG,
 }) {
   if (!fixture) return null;
 
@@ -119,8 +122,8 @@ function analyzeGame({
 
     const game = normalizeGame({ fixture, odds, injuries, league, h2hLog });
 
-    const homeRatings = computeTeamRatings(homeDerived, leagueCfg, cfg, { isHomeContext: true });
-    const awayRatings = computeTeamRatings(awayDerived, leagueCfg, cfg, { isHomeContext: false });
+    const homeRatings = computeTeamRatings(homeDerived, leagueCfg, cfg, { isHomeContext: true, prior: homePrior });
+    const awayRatings = computeTeamRatings(awayDerived, leagueCfg, cfg, { isHomeContext: false, prior: awayPrior });
 
     const homeForm = buildTeamForm(homeDerived, { isHomeContext: true });
     const awayForm = buildTeamForm(awayDerived, { isHomeContext: false });
@@ -156,11 +159,12 @@ function analyzeGame({
       leagueCfg, cfg,
     });
 
+    // Sigma is a property of the game, not of how much we know about it — no
+    // data-quality input here. Data quality flows to the confidence tier below.
     const sigma = estimateSigma({
       projTotal: projection.total,
       projMargin: projection.margin,
       expectedPossessions: projection.expectedPossessions,
-      dataQuality: dataQuality.score,
       leagueCfg,
       cfg,
     });

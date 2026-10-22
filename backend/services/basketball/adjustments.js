@@ -314,10 +314,20 @@ function computeDataQuality({ homeRatings, awayRatings, homeForm, awayForm, inju
   const penalties = [];
 
   const minGames = dqc.minGamesPerTeam ?? 5;
+  // A team we only know from its prior-season baseline is a REAL input, just at a
+  // reduced weight — so an early-season game carries a much smaller penalty than
+  // one whose ratings fell back to the league mean.
+  const priorWeight = dqc.priorSmallSamplePenalty ?? 0.1;
   [['home', homeRatings], ['away', awayRatings]].forEach(([side, r]) => {
     const g = r?.gamesPlayed ?? 0;
     if (g < minGames) {
-      penalties.push({ reason: `${side} small sample (${g}/${minGames} games)`, value: ((minGames - g) / minGames) * 0.3 });
+      const weight = r?.realPrior ? priorWeight : 0.3;
+      penalties.push({
+        reason: r?.realPrior
+          ? `${side} early season (${g}/${minGames} games, prior-season baseline)`
+          : `${side} small sample (${g}/${minGames} games)`,
+        value: ((minGames - g) / minGames) * weight,
+      });
     }
   });
 

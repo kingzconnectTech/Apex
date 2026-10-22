@@ -7,7 +7,10 @@
  *   P(Home covers S) = 1 - Phi((-S - proj_margin) / sigma_margin)
  *
  * Sigma is never hardcoded: it starts from the league base (leagues.js) and is
- * nudged by pace, projected total size and data quality, then clamped.
+ * nudged by pace and projected total size, then clamped. It does NOT respond to
+ * data quality — uncertainty about the projection and uncertainty about the data
+ * behind it are different quantities, and a thin sample must lower the
+ * confidence label rather than mechanically widen sigma toward a coin flip.
  *
  * Whole-number lines are handled with a continuity correction so the push
  * probability is explicit; half-point lines have no push.
@@ -123,19 +126,21 @@ function leagueMeanTotal(leagueCfg) {
 /**
  * Estimate sigma_total and sigma_margin for a specific game.
  *
+ * Deliberately takes no data-quality input: sigma describes how the actual
+ * score can deviate from the projection, which is a property of the sport, not
+ * of how much we happen to know. Data quality is handled by the confidence tier.
+ *
  * @param {Object} params
  * @param {number} params.projTotal
  * @param {number} params.projMargin
  * @param {number} [params.expectedPossessions]
- * @param {number} [params.dataQuality] - 0..1
  * @param {Object} params.leagueCfg
  * @param {Object} params.cfg
  * @returns {Object} { total, margin, terms }
  */
-function estimateSigma({ projTotal, projMargin, expectedPossessions, dataQuality = 1, leagueCfg, cfg }) {
+function estimateSigma({ projTotal, projMargin, expectedPossessions, leagueCfg, cfg }) {
   const s = cfg.sigma;
   const base = leagueCfg?.sigma || {};
-  const dq = Math.min(1, Math.max(0, Number.isFinite(dataQuality) ? dataQuality : 1));
 
   const meanTotal = leagueMeanTotal(leagueCfg);
   const totalDev = (Number.isFinite(projTotal) && Number.isFinite(meanTotal)) ? Math.abs(projTotal - meanTotal) : 0;
@@ -145,11 +150,9 @@ function estimateSigma({ projTotal, projMargin, expectedPossessions, dataQuality
 
   const sizeTerm = (s.totalSizeCoef ?? 0) * totalDev;
   const paceTerm = (s.paceCoef ?? 0) * paceDev;
-  const dqTermTotal = (s.dqPenaltyTotal ?? 0) * (1 - dq);
-  const dqTermMargin = (s.dqPenaltyMargin ?? 0) * (1 - dq);
 
-  const total = clamp((base.total ?? 17.5) + sizeTerm + paceTerm + dqTermTotal, s.minTotal ?? 12, s.maxTotal ?? 26);
-  const margin = clamp((base.margin ?? 11.5) + sizeTerm * 0.5 + paceTerm * 0.5 + dqTermMargin, s.minMargin ?? 8, s.maxMargin ?? 18);
+  const total = clamp((base.total ?? 17.5) + sizeTerm + paceTerm, s.minTotal ?? 12, s.maxTotal ?? 26);
+  const margin = clamp((base.margin ?? 11.5) + sizeTerm * 0.5 + paceTerm * 0.5, s.minMargin ?? 8, s.maxMargin ?? 18);
 
   return {
     total: round(total, 2),
@@ -157,7 +160,6 @@ function estimateSigma({ projTotal, projMargin, expectedPossessions, dataQuality
     terms: {
       baseTotal: base.total, baseMargin: base.margin,
       sizeTerm: round(sizeTerm, 2), paceTerm: round(paceTerm, 2),
-      dqTermTotal: round(dqTermTotal, 2), dqTermMargin: round(dqTermMargin, 2),
       totalDev: round(totalDev, 2), paceDev: round(paceDev, 2),
     },
   };
