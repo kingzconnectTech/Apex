@@ -12,6 +12,10 @@
  *
  * Collection: `basketball_calibrators` (one doc per league; see
  *             buildCalibratorDoc / loadCalibrator)
+ *
+ * Collection: `basketball_line_snapshots` (Step D; see saveLineSnapshots) — the
+ *             book line/odds the engine saw at each capture window, so future
+ *             calibration can be anchored to real pre-tip prices.
  */
 
 const { brierScore, logLoss, calibrationCurve, Calibrator, CALIBRATOR_VERSION } = require('./calibration');
@@ -19,6 +23,8 @@ const { brierScore, logLoss, calibrationCurve, Calibrator, CALIBRATOR_VERSION } 
 const COLLECTION = 'basketball_predictions';
 /** One document per league holding its validated calibrator (see buildCalibratorDoc). */
 const CALIBRATION_COLLECTION = 'basketball_calibrators';
+/** Step D: one document per game per capture window (see saveLineSnapshots). */
+const SNAPSHOT_COLLECTION = 'basketball_line_snapshots';
 
 function _slug(s) {
   return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -128,6 +134,101 @@ async function saveBasketballPredictions(admin, predictions, { logger = null } =
 
   logger?.log?.('info', '[BASKETBALL] predictions persisted', { collection: COLLECTION, written, skipped, errors: errors.length });
   return { written, skipped, errors };
+}
+
+/** Minutes from `now` to a prediction's tip-off, or null when unusable. */
+function minutesToTip(pred, now) {
+  const tipMs = new Date(pred?.tipoff).getTime();
+  if (!Number.isFinite(tipMs)) return null;
+  return (tipMs - now) / 60000;
+}
+
+/** True when the game tips off soon enough (and has not already started) to snapshot. */
+function withinHorizon(pred, now, ls = {}) {
+  const mins = minutesToTip(pred, now);
+  if (mins == null) return false;
+  return mins > -5 && mins <= (ls.maxHoursBeforeTip ?? 36) * 60;
+}
+
+/**
+ * Group live predictions into the anchored capture windows they currently fall
+ * inside (`minutesBeforeTip ± toleranceMinutes`). The 'morning' window has no tip
+ * anchor and is handled by the morning run instead.
+ *
+ * @returns {Map<string, Array>} window label -> predictions
+ */
+function resolveSnapshotWindows(predictions, now, ls = {}) {
+  const byLabel = new Map();
+  for (const pred of predictions || []) {
+    if (!withinHorizon(pred, now, ls)) continue;
+    const mins = minutesToTip(pred, now);
+    for (const w of ls.windows || []) {
+      if (w.minutesBeforeTip == null) continue;
+      const tol = w.toleranceMinutes ?? 10;
+      if (Math.abs(mins - w.minutesBeforeTip) <= tol) {
+        if (!byLabel.has(w.label)) byLabel.set(w.label, []);
+        byLabel.get(w.label).push(pred);
+      }
+    }
+  }
+  return byLabel;
+}
+
+/**
+ * Step D: record the book line and odds the engine saw for every live
+ * prediction at each capture window, together with the capture timestamp and how
+ * many minutes before tip it was taken.
+ *
+ * One document per game per window (`${gameId}_${window}`), so a re-run inside
+ * the same window updates in place rather than duplicating. A game with no
+ * market line is still snapshotted (`marketLine: false`): that absence is itself
+ * the record that the game was excluded from pick statistics.
+ *
+ * @param {Object} admin
+ * @param {Array} predictions - formatted predictions (see index.formatPrediction)
+ * @param {Object} opts
+ * @param {string} opts.label - window label ('morning' | 't90' | 't15' | …)
+ * @param {string} [opts.at]  - capture time (ISO); defaults to now
+ * @returns {Object} { written, errors }
+ */
+async function saveLineSnapshots(admin, predictions, { label, at = null, logger = null } = {}) {
+  const db = admin.firestore();
+  const capturedAt = at || new Date().toISOString();
+  const capturedMs = new Date(capturedAt).getTime();
+  let written = 0;
+  const errors = [];
+
+  for (const pred of predictions || []) {
+    if (!pred?.gameId) continue;
+    const tipMs = new Date(pred.tipoff).getTime();
+    const minutesToTip = Number.isFinite(tipMs) ? Math.round((tipMs - capturedMs) / 60000) : null;
+    const id = `${_slug(pred.gameId)}_${_slug(label || 'snapshot')}`;
+    try {
+      await db.collection(SNAPSHOT_COLLECTION).doc(id).set({
+        gameId: pred.gameId,
+        game: pred.game,
+        league: pred.leagueKey || pred.league,
+        leagueLabel: pred.league,
+        tipoff: pred.tipoff,
+        window: label || null,
+        capturedAt,
+        minutesToTip,
+        marketLine: pred.marketLine !== false,
+        marketOdds: pred.marketOdds || null,
+        projection: pred.projection || null,
+        picks: (pred.picks || []).map(p => ({
+          market: p.market, selection: p.selection, line: p.line, side: p.side, odds: p.odds, probability: p.probability,
+        })),
+        modelVersion: pred.modelVersion || null,
+      }, { merge: true });
+      written++;
+    } catch (err) {
+      errors.push({ id, error: err?.message || String(err) });
+    }
+  }
+
+  logger?.log?.('info', '[BASKETBALL] line snapshots saved', { collection: SNAPSHOT_COLLECTION, window: label, written, errors: errors.length });
+  return { written, errors };
 }
 
 /**
@@ -384,9 +485,14 @@ async function loadCalibrator(admin, cfg = null) {
 module.exports = {
   COLLECTION,
   CALIBRATION_COLLECTION,
+  SNAPSHOT_COLLECTION,
   settleOne,
   profit,
   saveBasketballPredictions,
+  saveLineSnapshots,
+  minutesToTip,
+  withinHorizon,
+  resolveSnapshotWindows,
   settleBasketballPredictions,
   loadSettled,
   summarisePerformance,

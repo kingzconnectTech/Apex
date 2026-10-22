@@ -242,17 +242,28 @@ function bestOf(candidates) {
  * Every evaluated line is returned; confidence is labelled honestly rather than
  * used to suppress a pick. No straight-winner or moneyline fallback is allowed.
  *
+ * R6 — a pick is only ever published against a REAL bookmaker line. Model lines
+ * are still evaluated (they ride back in `evaluated` so the callers can show the
+ * model's read) but never become picks: with no market line there is no fair
+ * price to beat, so publishing an "edge" against an assumed 50% would be a claim
+ * we cannot back. Those games get a projection and `noPickLabel: 'no market
+ * line'`, and because no pick is produced nothing is persisted, which keeps them
+ * out of the hit-rate and calibration statistics.
+ *
  * @param {Object} params
  * @param {Object} params.projection - adjusted projection ({ total, margin }) plus sigma
  * @param {Object} params.lines      - { total:[...], spread:[...] }
  * @param {Object} params.ctx        - { cfg, dataQuality, confirmed, homeTeamName, awayTeamName, calibrate, marketPolicy }
- * @returns {Object} { picks, noPick, noPickLabel, flags, policy, evaluated }
+ * @returns {Object} { picks, noPick, noPickLabel, hasMarketLine, flags, policy, evaluated }
  */
 function selectPicks({ projection, lines, ctx }) {
   const { cfg } = ctx;
   const calibrate = typeof ctx.calibrate === 'function' ? ctx.calibrate : (m, p) => p;
   const policy = ctx.marketPolicy || null;
   const policyFlags = [];
+  const pickPolicy = cfg?.pickPolicy || {};
+  const requireMarketLine = pickPolicy.requireMarketLine !== false;
+  const noMarketLineLabel = pickPolicy.noMarketLineLabel || 'no market line';
 
   const sigmaTotal = projection.sigmaTotal;
   const sigmaMargin = projection.sigmaMargin;
@@ -312,15 +323,39 @@ function selectPicks({ projection, lines, ctx }) {
   const gateFlags = [];
   const marketPriority = cfg.selection?.marketPriority || ['Total Points'];
 
+  // Did the game have ANY real bookmaker line to pick against? Model-generated
+  // lines are excluded: they are a projection read, not a market.
+  const evaluated = { total: totalCandidates, spread: spreadCandidates };
+  const hasMarketLine = [...totalCandidates, ...spreadCandidates].some(c => !c.isModelLine);
+
+  // Item 6 (flag): until the ship gate has passed out of sample, a pick carries
+  // its probability but NOT a tier claim we cannot yet back. The real tier rides
+  // along as `confidenceRaw` for the shadow report; only 'Low' is displayed.
+  const shipGatePassed = cfg?.shipGate?.passed === true;
+  const hiddenTiers = pickPolicy.hideTiersUntilShipGate === false
+    ? []
+    : (pickPolicy.hiddenTiers || []);
+  const maskTier = (pick) => {
+    if (!pick || shipGatePassed || !hiddenTiers.includes(pick.confidence)) return pick;
+    return { ...pick, confidenceRaw: pick.confidence, confidence: 'Low', tierHeld: true };
+  };
+
   // Process markets in priority order
   // Primary markets: Total Points, Spread
   // Secondary markets (Team Total, First-Half, Quarter) are prepared for future data availability
   marketPriority.forEach(market => {
     const add = (pick) => {
       if (!pick) return;
+      // R6: no real bookmaker line -> no pick. Nothing is published and, because
+      // publication is what persists, the game never enters hit-rate or
+      // calibration statistics.
+      if (requireMarketLine && pick.isModelLine) {
+        gateFlags.push(`${market}: ${noMarketLineLabel}`);
+        return;
+      }
       // A published pick that missed a gate says so instead of hiding it.
       (pick.failReasons || []).forEach(r => gateFlags.push(`${market} ${pick.selection}: ${r}`));
-      picks.push(pick);
+      picks.push(maskTier(pick));
     };
     if (market === 'Total Points') {
       add(applyPolicy(bestOf(totalCandidates), 'Total Points'));
@@ -342,10 +377,15 @@ function selectPicks({ projection, lines, ctx }) {
   return {
     picks,
     noPick: picks.length === 0,
-    noPickLabel: cfg.selection.noPickLabel || 'No confident pick',
+    // A game with no bookmaker line at all says exactly that, rather than the
+    // generic label: the absence of a market is the reason, not weak confidence.
+    noPickLabel: picks.length === 0 && !hasMarketLine
+      ? noMarketLineLabel
+      : (cfg.selection.noPickLabel || 'No confident pick'),
+    hasMarketLine,
     flags: [...consistencyFlags, ...policyFlags, ...gateFlags],
     policy: policy || null,
-    evaluated: { total: totalCandidates, spread: spreadCandidates },
+    evaluated,
   };
 }
 

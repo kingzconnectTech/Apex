@@ -109,9 +109,9 @@ describe('Basketball pipeline', () => {
     });
   });
 
-  test('a model-line pick is generated when no bookmaker line is available', () => {
-    // No usable bookmaker prices; model lines step a half point off the projection
-    // so a clearly labelled pick is still returned (never fabricated prices).
+  test('no bookmaker line yields the projection and no pick (R6)', () => {
+    // No usable bookmaker prices anywhere -> there is no market line to beat, so
+    // nothing is published; the projection still comes back for context.
     const evenFixture = mkFixture();
     const result = analyzeGame({
       fixture: evenFixture,
@@ -120,16 +120,17 @@ describe('Basketball pipeline', () => {
       awayLog: mkLog(10, { isHome: false }),
       league: 'nba',
     });
-    expect(result.selection.noPick).toBe(false);
-    expect(result.selection.picks.length).toBe(2);
-    result.selection.picks.forEach(p => {
-      expect(p.isModelLine).toBe(true);
-      expect(p.odds).toBeNull();
-      expect(p.selection).toContain('(Model Line)');
-    });
+    expect(result.selection.hasMarketLine).toBe(false);
+    expect(result.selection.noPick).toBe(true);
+    expect(result.selection.picks).toEqual([]);
+    expect(result.selection.noPickLabel).toBe('no market line');
+    expect(Number.isFinite(result.projection.total)).toBe(true);
+    // The model's read is still evaluated (for context), just never published.
+    const evaluated = [...result.selection.evaluated.total, ...result.selection.evaluated.spread];
+    expect(evaluated.length).toBeGreaterThan(0);
   });
 
-  test('missing odds still yields model-line picks plus an odds data-quality penalty', () => {
+  test('missing odds still yields the projection, no pick, and an odds data-quality penalty', () => {
     const out = predictGame({
       fixture: mkFixture(),
       odds: null,
@@ -138,13 +139,12 @@ describe('Basketball pipeline', () => {
       league: 'nba',
     });
     expect(Number.isFinite(out.projection.total)).toBe(true);
-    expect(out.picks.length).toBe(2);
-    expect(out.noPick).toBe(false);
-    out.picks.forEach(p => {
-      expect(p.isModelLine).toBe(true);
-      expect(p.odds).toBeNull();
-    });
-    // The missing odds show up as a data-quality penalty rather than a forced pick.
+    // R6: with no bookmaker line nothing is published...
+    expect(out.marketLine).toBe(false);
+    expect(out.picks).toEqual([]);
+    expect(out.noPick).toBe(true);
+    expect(out.noPickLabel).toBe('no market line');
+    // ...and the missing odds show up as a data-quality penalty rather than a forced pick.
     expect(out.data_quality_penalties.some(p => /odds/i.test(p.reason))).toBe(true);
   });
 

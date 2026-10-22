@@ -9,8 +9,9 @@
 
 const CONFIG = require('../services/basketball/config');
 const {
-  COLLECTION, saveBasketballPredictions, settleBasketballPredictions,
-  loadSettled, summarisePerformance, deriveMarketPolicy, getBasketballPerformance,
+  COLLECTION, saveBasketballPredictions, saveLineSnapshots, resolveSnapshotWindows,
+  settleBasketballPredictions, loadSettled, summarisePerformance, deriveMarketPolicy,
+  getBasketballPerformance,
 } = require('../services/basketball/persistence');
 const { selectPicks } = require('../services/basketball/lineSelector');
 
@@ -163,12 +164,15 @@ describe('auto-downgrade policy (TR-22.2)', () => {
   });
 
   test('the selector drops a disabled market and steps a downgraded market down a tier', () => {
+    // Tiers are held back until the ship gate passes (item 6), so the tier-stepping
+    // behaviour is asserted with the gate open.
+    const openCfg = { ...CONFIG, shipGate: { ...CONFIG.shipGate, passed: true } };
     const projection = { total: 230, margin: 8, sigmaTotal: 17, sigmaMargin: 11 };
     const lines = {
       total: [{ line: 220.5, aOdds: -110, bOdds: -110, isMain: true }],
       spread: [{ line: -4.5, aOdds: -110, bOdds: -110, isMain: true }],
     };
-    const baseCtx = { cfg: CONFIG, dataQuality: 0.9, confirmed: true, homeTeamName: 'Home', awayTeamName: 'Away' };
+    const baseCtx = { cfg: openCfg, dataQuality: 0.9, confirmed: true, homeTeamName: 'Home', awayTeamName: 'Away' };
 
     const noPolicy = selectPicks({ projection, lines, ctx: baseCtx });
     expect(noPolicy.picks.map(p => p.market).sort()).toEqual(['Spread', 'Total Points']);
@@ -204,5 +208,67 @@ describe('auto-downgrade policy (TR-22.2)', () => {
     expect(sel.picks).toEqual([]);
     expect(sel.noPick).toBe(true);
     expect(sel.noPickLabel).toBe(CONFIG.selection.noPickLabel);
+  });
+});
+
+describe('Step D pre-tip line snapshots', () => {
+  test('records the market the engine saw, with a capture time and minutes to tip', async () => {
+    const admin = makeAdmin();
+    const capturedAt = '2026-01-20T22:00:00.000Z';
+    const prediction = {
+      gameId: 'g-snap',
+      game: 'Home vs Away',
+      leagueKey: 'nba',
+      league: 'NBA',
+      tipoff: '2026-01-20T23:00:00.000Z',
+      marketLine: true,
+      marketOdds: { total: { line: 220.5, aOdds: -110, bOdds: -110 }, spread: null },
+      projection: { total: 221, margin: 4 },
+      picks: [{ market: 'Total Points', selection: 'Over 220.5', line: 220.5, side: 'a', odds: 1.909, probability: 0.55 }],
+      modelVersion: 'bb-1.0.0',
+    };
+
+    const res = await saveLineSnapshots(admin, [prediction], { label: 't90', at: capturedAt });
+    expect(res.written).toBe(1);
+
+    const doc = [...admin._docs.values()][0];
+    expect(doc.window).toBe('t90');
+    expect(doc.capturedAt).toBe(capturedAt);
+    expect(doc.minutesToTip).toBe(60);
+    expect(doc.marketLine).toBe(true);
+    expect(doc.marketOdds.total.line).toBe(220.5);
+    expect(doc.picks[0].selection).toBe('Over 220.5');
+  });
+
+  test('a game with no market line is still recorded as such', async () => {
+    const admin = makeAdmin();
+    await saveLineSnapshots(admin, [
+      { gameId: 'g-none', tipoff: '2026-01-20T23:00:00.000Z', marketLine: false, marketOdds: null },
+    ], { label: 'morning' });
+
+    const doc = [...admin._docs.values()][0];
+    expect(doc.marketLine).toBe(false);
+    expect(doc.marketOdds).toBeNull();
+  });
+
+  test('resolveSnapshotWindows captures only games inside each anchored window', () => {
+    const now = Date.parse('2026-01-20T20:00:00.000Z');
+    const at = (mins) => new Date(now + mins * 60000).toISOString();
+    const ls = CONFIG.lineSnapshots;
+
+    const predictions = [
+      { gameId: 't90', tipoff: at(88) },   // inside 90 ± 10
+      { gameId: 't15', tipoff: at(12) },   // inside 15 ± 10
+      { gameId: 'mid', tipoff: at(45) },   // between windows
+      { gameId: 'far', tipoff: at(48 * 60) }, // beyond the horizon
+      { gameId: 'started', tipoff: at(-30) },
+    ];
+
+    const byLabel = resolveSnapshotWindows(predictions, now, ls);
+    expect((byLabel.get('t90') || []).map(p => p.gameId)).toEqual(['t90']);
+    expect((byLabel.get('t15') || []).map(p => p.gameId)).toEqual(['t15']);
+    expect(byLabel.has('mid')).toBe(false);
+    // 'morning' has no tip anchor and is handled by the morning run, not here.
+    expect(byLabel.has('morning')).toBe(false);
   });
 });

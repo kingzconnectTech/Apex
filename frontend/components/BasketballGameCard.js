@@ -97,7 +97,9 @@ export default function BasketballGameCard({ prediction, onPress }) {
       <View key={market} style={styles.pickRow}>
         <View style={styles.pickHeaderRow}>
           <Text style={styles.marketLabel}>{market.toUpperCase()}</Text>
-          <Text style={styles.lineKind}>{pick.isModelLine ? 'MODEL LINE' : (pick.isMain ? 'MAIN LINE' : 'ALTERNATE')}</Text>
+          {/* R6: model-line picks are never published, so only real book lines
+              (main or alternate) can appear here. */}
+          <Text style={styles.lineKind}>{pick.isMain ? 'MAIN LINE' : 'ALTERNATE'}</Text>
         </View>
 
         <View style={styles.selectionRow}>

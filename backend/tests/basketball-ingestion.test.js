@@ -429,22 +429,20 @@ describe('basketball ingestion — partial data and independent markets', () => 
     expect(out.selection.flags.join(' ')).toMatch(/Spread pick withheld/);
   });
 
-  test('synthesises clearly-labelled model lines when ESPN has no bookmaker odds', async () => {
+  test('no bookmaker odds yields the projection and no pick (R6)', async () => {
     const provider = mkProvider({ summary: summaryPayload({ withOdds: false }) });
     const out = await callGame(provider);
 
     expect(out.error).toBeUndefined();
-    const markets = out.formatted.picks.map(p => p.market);
-    expect(markets).toContain('Total Points');
-    expect(markets).toContain('Spread');
-    out.formatted.picks.forEach(p => {
-      expect(p.isModelLine).toBe(true);
-      expect(p.selection).toMatch(/\(Model Line\)$/);
-      expect(p.odds).toBeNull();
-    });
+    // R6: no real market line -> nothing is published, but the projection remains.
+    expect(out.formatted.marketLine).toBe(false);
+    expect(out.formatted.picks).toEqual([]);
+    expect(out.formatted.noPick).toBe(true);
+    expect(out.formatted.noPickLabel).toBe('no market line');
+    expect(Number.isFinite(out.formatted.projection.total)).toBe(true);
   });
 
-  test('with no odds and model lines disabled it returns an explicit no-pick, not a fabricated one', async () => {
+  test('with no odds it returns an explicit "no market line" no-pick, not a fabricated one', async () => {
     const provider = mkProvider({ summary: summaryPayload({ withOdds: false }) });
     const cfg = { ...CONFIG, modelLines: { ...CONFIG.modelLines, enabled: false } };
 
@@ -452,7 +450,7 @@ describe('basketball ingestion — partial data and independent markets', () => 
     expect(out.error).toBeUndefined();
     expect(out.formatted.picks).toEqual([]);
     expect(out.formatted.noPick).toBe(true);
-    expect(out.formatted.noPickLabel).toBe('No confident pick');
+    expect(out.formatted.noPickLabel).toBe('no market line');
   });
 
   test('missing historical statistics still produce a flagged, low-quality result', async () => {

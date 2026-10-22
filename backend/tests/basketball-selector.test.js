@@ -134,7 +134,7 @@ describe('Pick selection', () => {
     expect(bestOf([])).toBeNull();
   });
 
-  test('model lines evaluate with null odds and no fabricated bookmaker prices', () => {
+  test('model lines are evaluated but never published as picks (R6)', () => {
     // Model projected total is 230, model line is at 218.5 (Over should be > 0.65)
     const projection = { total: 230.0, margin: 12.0, sigmaTotal: 17.6, sigmaMargin: 11.8 };
     const lines = {
@@ -142,30 +142,33 @@ describe('Pick selection', () => {
       spread: [{ line: -5.5, aOdds: null, bOdds: null, isMain: true, isModelLine: true }],
     };
     const out = selectPicks({ projection, lines, ctx: { ...ctx, dataQuality: 0.85 } });
-    expect(out.picks.length).toBe(2);
-    const totalPick = out.picks.find(p => p.market === 'Total Points');
-    expect(totalPick.isModelLine).toBe(true);
-    expect(totalPick.odds).toBeNull();
-    expect(totalPick.ev).toBeNull();
-    expect(totalPick.selection).toContain('(Model Line)');
-    expect(totalPick.probability).toBeGreaterThanOrEqual(0.65);
 
-    const spreadPick = out.picks.find(p => p.market === 'Spread');
-    expect(spreadPick.isModelLine).toBe(true);
-    expect(spreadPick.odds).toBeNull();
-    expect(spreadPick.probability).toBeGreaterThanOrEqual(0.65);
+    // No real bookmaker line -> nothing is published...
+    expect(out.hasMarketLine).toBe(false);
+    expect(out.noPick).toBe(true);
+    expect(out.picks).toEqual([]);
+    expect(out.noPickLabel).toBe('no market line');
+
+    // ...but the model's read is still evaluated and returned for context, with
+    // no fabricated bookmaker prices.
+    const totalCand = out.evaluated.total.find(c => c.isModelLine);
+    expect(totalCand.odds).toBeNull();
+    expect(totalCand.ev).toBeNull();
+    expect(totalCand.selection).toContain('(Model Line)');
+    expect(totalCand.probability).toBeGreaterThanOrEqual(0.65);
+    expect(out.flags.join(' | ')).toMatch(/no market line/);
   });
 
-  test('model lines evaluate at any data quality (no model-line data-quality floor)', () => {
+  test('model lines are never published at any data quality (R6)', () => {
     const projection = { total: 230.0, margin: 12.0, sigmaTotal: 17.6, sigmaMargin: 11.8 };
     const lines = {
       total: [{ line: 218.5, aOdds: null, bOdds: null, isMain: true, isModelLine: true }],
     };
     const out = selectPicks({ projection, lines, ctx: { ...ctx, dataQuality: 0.5 } });
-    expect(out.noPick).toBe(false);
-    expect(out.picks.length).toBe(1);
-    expect(out.picks[0].isModelLine).toBe(true);
-    expect(out.picks[0].selection).toContain('(Model Line)');
+    expect(out.noPick).toBe(true);
+    expect(out.picks).toEqual([]);
+    expect(out.hasMarketLine).toBe(false);
+    expect(out.evaluated.total[0].isModelLine).toBe(true);
   });
 });
 
@@ -200,7 +203,7 @@ describe('Confidence tiers (R12)', () => {
     expect(confidenceTier({ probability: undefined, dq: undefined, cfg: CFG })).toBe('Low');
   });
 
-  test('High is reachable end-to-end without any lineup source', () => {
+  test('High is computed end-to-end but held back until the ship gate passes', () => {
     const projection = { total: 218.4, margin: 7.2, sigmaTotal: 17.6, sigmaMargin: 11.8 };
     const lines = { total: [{ line: 208.5, aOdds: 1.85, bOdds: 1.95, isMain: true }], spread: [] };
     const out = selectPicks({
@@ -208,7 +211,24 @@ describe('Confidence tiers (R12)', () => {
       ctx: { cfg: CFG, dataQuality: 0.84, confirmed: false, homeTeamName: 'A', awayTeamName: 'B' },
     });
     expect(out.picks[0].probability).toBeGreaterThan(CFG.selection.confidence.highProb);
+    // The real tier is computed and preserved for the shadow report...
+    expect(out.picks[0].confidenceRaw).toBe('High');
+    // ...but only 'Low' is displayed while the ship gate is open (item 6).
+    expect(CFG.shipGate.passed).toBe(false);
+    expect(out.picks[0].confidence).toBe('Low');
+    expect(out.picks[0].tierHeld).toBe(true);
+  });
+
+  test('the real tier is displayed once the ship gate has passed', () => {
+    const projection = { total: 218.4, margin: 7.2, sigmaTotal: 17.6, sigmaMargin: 11.8 };
+    const lines = { total: [{ line: 208.5, aOdds: 1.85, bOdds: 1.95, isMain: true }], spread: [] };
+    const cfg = { ...CFG, shipGate: { ...CFG.shipGate, passed: true } };
+    const out = selectPicks({
+      projection, lines,
+      ctx: { cfg, dataQuality: 0.84, confirmed: false, homeTeamName: 'A', awayTeamName: 'B' },
+    });
     expect(out.picks[0].confidence).toBe('High');
+    expect(out.picks[0].tierHeld).toBeUndefined();
   });
 });
 

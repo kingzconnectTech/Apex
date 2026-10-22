@@ -44,6 +44,57 @@ const CONFIG = {
     paceBlendWeight: 0.55,
   },
 
+  // --- Fitted per-league parameters (params.js + scripts/fit-basketball-params.js) ---
+  // The values themselves live in params.js; everything about HOW they are used
+  // (caps, blend rates, minimum samples) lives here.
+  params: {
+    // Use the fitted block in params.js where a league has one. A league with no
+    // fitted block falls back to the structural constants in leagues.js.
+    enabled: true,
+
+    // League means are rebuilt from the most recent COMPLETED season's real
+    // per-team possessions / ORtg / DRtg, extrapolated forward by a CAPPED
+    // season-over-season drift, then blended quickly toward the current
+    // season's observed league means.
+    leagueMean: {
+      // Hard cap on the extrapolated drift, in points (ORtg/DRtg) and
+      // possessions. A scoring-environment jump larger than this is treated as
+      // a regime change we do not chase, not as a trend to extrapolate.
+      driftCapPoints: 1.5,
+      driftCapPossessions: 1.5,
+      // How many seasons of history the drift is averaged over.
+      driftSeasons: 2,
+      // Current-season blend: w = games / (games + currentBlendM). A small m
+      // adopts the current season quickly; 8 team-games is deliberately fast
+      // because the opening month is where a stale league mean hurts most.
+      currentBlendM: 8,
+      // Team-games of current-season play required before the observed mean is
+      // used at all (below this it is noise, not signal).
+      minObservedTeamGames: 20,
+    },
+
+    // Home court is fitted per league from TRAIN margin residuals only — the
+    // holdout is never used to choose it.
+    homeCourt: {
+      enabled: true,
+      // Keep the fitted value inside a sane band around the structural default.
+      minPoints: 0.5,
+      maxPoints: 5.0,
+    },
+
+    // Margin sigma learned from market-anchored residuals.
+    // R5 still holds: this is a property of the game, never of data quality.
+    learnedSigma: {
+      enabled: true,
+      // Residual sample required before the learned value is trusted at all.
+      minSamples: 150,
+      // Blend weight = n / (n + blendM), capped at maxWeight so the structural
+      // base is never fully displaced by one season.
+      blendM: 400,
+      maxWeight: 0.85,
+    },
+  },
+
   // --- Bounded adjustments (each capped; see caps) ---
   adjustments: {
     // Rest / fatigue (applied mainly to margin, smaller effect on total).
@@ -120,6 +171,11 @@ const CONFIG = {
   calibration: {
     enabled: true,
     method: 'isotonic', // 'isotonic' | 'platt'
+    // R4/R6: the fitted calibrators were validated against the RAW model's
+    // probabilities, not the market-anchored ones. Until the anchored model is
+    // refit on real pre-tip lines, a calibrated number is logged for the shadow
+    // report only and is NEVER applied to a displayed probability.
+    wireForDisplay: false,
     // Minimum out-of-sample samples required before a calibrator is fitted/trusted.
     minSamples: 150,
     // Minimum GRADED holdout rows before the validation gate may return a verdict.
@@ -223,6 +279,62 @@ const CONFIG = {
     impliedProb: 0.50,
     // No data quality threshold - show all model line predictions
     minDataQuality: 0.0,
+  },
+
+  // --- Pick policy (R6) ---
+  pickPolicy: {
+    // A pick is only ever published against a REAL bookmaker line. When ESPN
+    // supplies no market line there is no fair price to beat, so the game gets a
+    // projection and the label below and NOTHING is persisted — which is what
+    // keeps these games out of the hit-rate and calibration statistics.
+    requireMarketLine: true,
+    noMarketLineLabel: 'no market line',
+    // Hold back the High/Medium tiers until the ship gate has passed: a pick may
+    // still carry its probability, it just does not carry a claim we cannot yet
+    // back out of sample. Low keeps its meaning (a weak read).
+    hideTiersUntilShipGate: true,
+    hiddenTiers: ['High', 'Medium'],
+  },
+
+  // --- Ship gate ---
+  // `passed` is set only by a full out-of-sample evaluation on REAL pre-tip
+  // lines (see scripts/fit-basketball-params.js). While it is false the engine
+  // publishes no tier above `pickPolicy.hiddenTiers` and applies no raw-model
+  // calibrator to a displayed probability.
+  shipGate: {
+    passed: false,
+    // Out-of-sample requirement: at least one full season of pre-tip lines and
+    // this many graded picks PER MARKET.
+    minSeasons: 1,
+    minSamplesPerMarket: 500,
+    // The anchored model must beat the de-vigged line on BOTH metrics.
+    minBrierGain: 0.002,
+    minLogLossGain: 0.002,
+    // ...and the hit rate at the chosen threshold must clear break-even with the
+    // lower bound of its 95% CI above it. 52.4% is break-even at -110.
+    breakEven: 0.524,
+    requireCiLowerAboveBreakEven: true,
+  },
+
+  // --- Pre-tip line snapshots (Step D) ---
+  // Every live prediction gets its line + odds recorded at fixed offsets before
+  // tip-off, with the capture timestamp and minutes-to-tip, so calibration can
+  // later be judged against the number that was actually available.
+  lineSnapshots: {
+    enabled: true,
+    collection: 'basketball_line_snapshots',
+    // A window is captured when the run lands inside
+    // `minutesBeforeTip ± toleranceMinutes`. The morning run has no tip anchor
+    // (it may be many hours out) and is captured once per game per day.
+    windows: [
+      { label: 'morning', minutesBeforeTip: null, toleranceMinutes: null },
+      { label: 't90', minutesBeforeTip: 90, toleranceMinutes: 10 },
+      { label: 't15', minutesBeforeTip: 15, toleranceMinutes: 10 },
+    ],
+    // How often the pre-tip refresh (which carries the snapshots) runs.
+    refreshCron: '*/5 * * * *',
+    // Games further than this from tip are ignored by the anchored windows.
+    maxHoursBeforeTip: 36,
   },
 
   // --- Data quality ---

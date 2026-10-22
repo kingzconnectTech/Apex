@@ -16,6 +16,9 @@
  *   espnPath           ESPN url segment for the scoreboard/summary endpoints
  */
 
+const CONFIG = require('./config');
+const { applyParams } = require('./params');
+
 const LEAGUES = {
   nba: {
     key: 'nba',
@@ -109,10 +112,18 @@ function resolveLeagueKey(league) {
  * Get a league's configuration by key/alias.
  * Throws when the league is unknown or disabled rather than silently using NBA defaults.
  *
+ * The structural constants above are overlaid with the values fitted from real
+ * data (scripts/fit-basketball-params.js) via params.applyParams — home court,
+ * league mean + capped drift, prior-season baseline and learned sigma. A league
+ * with no fitted block is returned unchanged, so this is a no-op until a fit
+ * has been written.
+ *
  * @param {string} league
+ * @param {Object} [opts]
+ * @param {Object|null} [opts.observed] - observedLeagueMean() for the current season
  * @returns {Object}
  */
-function getLeagueConfig(league) {
+function getLeagueConfig(league, opts = null) {
   const key = resolveLeagueKey(league);
   if (!key) {
     throw new Error(
@@ -123,7 +134,7 @@ function getLeagueConfig(league) {
   if (!cfg.enabled) {
     throw new Error(`Basketball league "${key}" is disabled.`);
   }
-  return cfg;
+  return applyParams(cfg, CONFIG, opts || {});
 }
 
 /**

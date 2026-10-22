@@ -37,6 +37,8 @@ const {
 const { Calibrator, brierScore, logLoss, calibrationCurve } = require('./calibration');
 const { toDecimal, removeVig } = require('./lineSelector');
 const { settleOne, profit } = require('./persistence');
+const { deriveGameMetrics } = require('./normalize');
+const { observedLeagueMean } = require('./params');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_WINDOWS = { train: [0, 0.6], validation: [0.6, 0.8], test: [0.8, 1.0] };
@@ -72,9 +74,27 @@ function mergeDeep(base, patch) {
   return out;
 }
 
+/**
+ * ESPN labels a basketball season by its ENDING year, exactly as
+ * services/basketball/ingestion.js does (2026 = the 2025-26 season).
+ *
+ * Used here only to scope the observed league-mean pool to the CURRENT season.
+ * params.resolveLeagueMean blends the fitted league mean toward "the current
+ * season's observed means, quickly", so a pool that spanned every season in the
+ * dataset would defeat the point: it would converge on the all-time average
+ * instead of the live scoring environment.
+ */
+function seasonYearOf(tipoff) {
+  const d = new Date(tipoff);
+  if (Number.isNaN(d.getTime())) return null;
+  const year = d.getUTCFullYear();
+  return (d.getUTCMonth() + 1) >= 8 ? year + 1 : year;
+}
+
 function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
 }
+
 
 function num(v) {
   return v === undefined || v === null || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
@@ -361,6 +381,17 @@ function evaluate(dataset, opts = {}) {
   const calibrator = new Calibrator(calCfg);
   const calibRows = new Map(); // `${league}|${key}` -> [{p,y}]
 
+  // Current-season league means, accumulated league-wide as the walk advances and
+  // keyed by league + season so the pool RESETS each season. Only games that have
+  // ALREADY been analysed feed the pool, so the observed mean a game sees is built
+  // purely from strictly earlier games of the same season.
+  const gameEntries = new Map();
+  byTeam.forEach(arr => arr.forEach(e => {
+    if (!gameEntries.has(e.eventId)) gameEntries.set(e.eventId, []);
+    gameEntries.get(e.eventId).push(e);
+  }));
+  const observedPools = new Map(); // `${league}|${seasonYear}` -> derived per-team-game metrics
+
   const rows = [];
   const gameRows = [];
   const residualTotal = [];
@@ -373,6 +404,7 @@ function evaluate(dataset, opts = {}) {
   games.forEach((g, i) => {
     const ts = new Date(g.tipoff).getTime();
     const league = g.league;
+    const poolKey = `${league}|${seasonYearOf(g.tipoff)}`;
 
     let leagueCfg;
     try {
@@ -396,12 +428,22 @@ function evaluate(dataset, opts = {}) {
         league,
         context: g.context || null,
         calibrator: calibrateEnabled ? calibrator : null,
+        observed: observedLeagueMean(observedPools.get(poolKey) || []),
         cfg,
       });
     } catch (err) {
       failures.push({ gameId: g.gameId, reason: `analysis failed: ${err?.message || err}` });
       return;
     }
+
+    // Feed this game into the league-wide observed pool AFTER it has been analysed.
+    (gameEntries.get(String(g.gameId)) || []).forEach(e => {
+      const d = deriveGameMetrics(e, leagueCfg);
+      if (!d) return;
+      const pool = observedPools.get(poolKey) || [];
+      pool.push(d);
+      observedPools.set(poolKey, pool);
+    });
     if (!result) {
       failures.push({ gameId: g.gameId, reason: 'insufficient data for a projection' });
       return;

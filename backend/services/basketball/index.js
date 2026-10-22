@@ -90,18 +90,19 @@ function buildLines(odds, projection = null, cfg = CONFIG) {
  * @param {Object} [params.calibrator]   - calibration.Calibrator
  * @param {Object} [params.homePrior]    - real prior-season baseline for the home team
  * @param {Object} [params.awayPrior]    - real prior-season baseline for the away team
+ * @param {Object} [params.observed]     - observedLeagueMean() for the current season (opt.)
  * @param {Object} [params.cfg]
  * @returns {Object|null}
  */
 function analyzeGame({
   fixture, odds = null, injuries = [], homeLog = [], awayLog = [],
   league, context = null, eloRatings = null, calibrator = null, marketPolicy = null,
-  homePrior = null, awayPrior = null, cfg = CONFIG,
+  homePrior = null, awayPrior = null, observed = null, cfg = CONFIG,
 }) {
   if (!fixture) return null;
 
   try {
-    const leagueCfg = getLeagueConfig(league);
+    const leagueCfg = getLeagueConfig(league, observed ? { observed } : null);
 
     const homeDerived = (homeLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
     const awayDerived = (awayLog || []).map(g => deriveGameMetrics(g, leagueCfg)).filter(Boolean);
@@ -267,6 +268,38 @@ function buildReasoning(pick, result) {
 }
 
 /**
+ * The raw two-way book prices for a game, both sides, as ESPN supplied them.
+ *
+ * Totals:  a = Over,  b = Under
+ * Spread:  a = home handicap, b = away handicap (the mirrored number)
+ *
+ * Kept separate from `picks` so a pre-tip snapshot can record the whole market
+ * (and de-vig it later) even when no pick was published for it.
+ *
+ * @param {Object|null} odds - EspnProvider.extractBasketballOdds output
+ * @returns {Object|null} { total, spread } each null when that market has no line
+ */
+function buildMarketOdds(odds) {
+  if (!odds) return null;
+  const total = Number.isFinite(Number(odds.overUnder))
+    ? {
+      line: Number(odds.overUnder),
+      aOdds: odds.overOdds ?? null,
+      bOdds: odds.underOdds ?? null,
+    }
+    : null;
+  const spread = Number.isFinite(Number(odds.spread))
+    ? {
+      line: Number(odds.spread),
+      aOdds: odds.homeSpreadOdds ?? null,
+      bOdds: odds.awaySpreadOdds ?? null,
+    }
+    : null;
+  if (!total && !spread) return null;
+  return { total, spread };
+}
+
+/**
  * Format the analysis into the spec's JSON output shape.
  */
 function formatPrediction(result) {
@@ -306,6 +339,13 @@ function formatPrediction(result) {
     },
     score: pointsFromTotalMargin(projection.total, projection.margin),
     picks,
+    // R6: false when the game had no bookmaker line at all, so the caller can
+    // render the projection with the "no market line" label and no pick.
+    marketLine: selection.hasMarketLine !== false,
+    // Step D: the raw book prices the engine saw, both sides, so a pre-tip line
+    // snapshot can record the de-viggable market rather than only the side the
+    // engine happened to pick. Null when ESPN supplied no line.
+    marketOdds: buildMarketOdds(game.odds),
     noPick: selection.noPick,
     noPickLabel: selection.noPick ? selection.noPickLabel : null,
     key_factors: keyFactors(result),

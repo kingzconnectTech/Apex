@@ -61,17 +61,27 @@ describe('Per-game sigma estimation', () => {
   });
 
   test('sigma still responds to the inputs it is meant to model', () => {
-    const slow = estimateSigma({ projTotal: 225, projMargin: 3, expectedPossessions: 92, leagueCfg: NBA, cfg: CFG });
-    const fast = estimateSigma({ projTotal: 225, projMargin: 3, expectedPossessions: 108, leagueCfg: NBA, cfg: CFG });
-    expect(fast.total).toBeGreaterThan(slow.total);
-    const huge = estimateSigma({ projTotal: 260, projMargin: 3, expectedPossessions: 99.5, leagueCfg: NBA, cfg: CFG });
-    const normal = estimateSigma({ projTotal: 220, projMargin: 3, expectedPossessions: 99.5, leagueCfg: NBA, cfg: CFG });
+    // Sigma grows with how far the game sits from the league's own means (both
+    // of which now come from the FITTED params block rather than fixed
+    // constants), so the probes are anchored to those means.
+    const lm = NBA.leagueMean;
+    const mean = leagueMeanTotal(NBA);
+    const atMean = estimateSigma({ projTotal: mean, projMargin: 3, expectedPossessions: lm.possessions, leagueCfg: NBA, cfg: CFG });
+    const offPace = estimateSigma({ projTotal: mean, projMargin: 3, expectedPossessions: lm.possessions + 12, leagueCfg: NBA, cfg: CFG });
+    expect(offPace.total).toBeGreaterThan(atMean.total);
+    const huge = estimateSigma({ projTotal: mean + 30, projMargin: 3, expectedPossessions: lm.possessions, leagueCfg: NBA, cfg: CFG });
+    const normal = estimateSigma({ projTotal: mean - 10, projMargin: 3, expectedPossessions: lm.possessions, leagueCfg: NBA, cfg: CFG });
     expect(huge.total).toBeGreaterThan(normal.total);
   });
 
   test('league mean total is the pace * combined efficiency', () => {
-    const mt = leagueMeanTotal(NBA);
-    expect(mt).toBeCloseTo(99.5 * (114 + 114) / 100, 1);
+    // The formula itself, on explicit numbers...
+    expect(leagueMeanTotal({ leagueMean: { possessions: 99.5, ortg: 114, drtg: 114 } }))
+      .toBeCloseTo(99.5 * (114 + 114) / 100, 1);
+    // ...and applied to whatever the shipped NBA config actually holds (now a
+    // FITTED league mean, not the structural constant).
+    const lm = NBA.leagueMean;
+    expect(leagueMeanTotal(NBA)).toBeCloseTo(lm.possessions * (lm.ortg + lm.drtg) / 100, 1);
   });
 });
 
