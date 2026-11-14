@@ -1,0 +1,235 @@
+﻿# Live Phase 10 (round E) report — 2026-11-12T14:59:30.984Z
+historical dataset: 15686 games (11518 soccer / 4168 basketball)
+sliding holdout:    20261001-20261112 — 1252 games (918 soccer / 334 basketball) — NOT "fresh" (see ledger)
+absolute calibration: bucket >= 300 rows, tolerance 0.05
+
+evaluation ledger — every window with how many times it has been SCORED:
+  [seen]   historical test (frac 0.80-1.00)                 scored 3×  — Phase 8 sweep, Phase 9 report, Phase 10 report — scored 3×, no longer a clean holdout.
+  [seen]   sliding holdout 20261001-20261112                scored 2×  — Round C item 4 (basketball logistic + soccer table); earlier round (frozen production vs logistic). A SLIDING window — it overlaps the prior window, so most of its games were already scored.
+  [unseen] confirmation dataset (shadow rows after freeze)  scored 0×  — Scored 0× so far — evaluated ONCE per sport when it holds >= 500 settled GAMES (waiting on basketball 0/500, soccer 0/500).
+
+FREEZE BOUNDARY (item 1):
+  artifact shadow-candidates-1.0.0 frozen at 2026-11-12T13:53:48Z (ms 1794491628000)
+  rows in data/live-forward.json: 1; logged on 2026-11-12: 1 — before the freeze 1, after 0; count only rows AFTER it.
+  the one soccer shadow row espn:900 logged 2026-11-12T12:25:19.484Z is BEFORE the freeze → does NOT count as confirmation evidence.
+
+CONFIRMATION DATASET (the only dataset that may decide a release):
+  rule: shadow rows logged after the candidate freeze timestamp, evaluated once — >= 500 settled GAMES per sport.
+  NO PEEKING: until a sport is ready only counts/rates/ETA are shown — no Brier/log loss/calibration.
+    basketball  pre-freeze rows    0 (0 games, already seen) | confirmation rows    0 | settled games 0/500 | ready_to_evaluate no
+                performance: withheld until ready (computed in one pass)
+    soccer      pre-freeze rows    1 (1 games, already seen) | confirmation rows    0 | settled games 0/500 | ready_to_evaluate no
+                performance: withheld until ready (computed in one pass)
+  rollout progress (settled GAMES toward 500, ETA from the observed rate):
+    scope                 settled  target  remaining  rate/day  eta
+    (no settled confirmation games yet — nothing to estimate)
+
+## Item 1. Soccer fit sanity — events vs final scores, per league
+  games 11518   event-final != scoreboard-final: 12   no event log: 0   non-monotone increments: 6
+  per league: games | mismatch | mean goals/match  final (H/A) | events (H/A)
+    ALL      11518        12   1.5519 / 1.2190   1.5515 / 1.2185
+    bra.1      695         1   1.5180 / 1.0302   1.5165 / 1.0288
+    eng.1      760         0   1.5197 / 1.3224   1.5197 / 1.3224
+    eng.2     1114         0   1.4129 / 1.1104   1.4129 / 1.1104
+    esp.1      760         0   1.5132 / 1.1434   1.5132 / 1.1434
+    esp.2      916         1   1.4509 / 1.1266   1.4509 / 1.1255
+    ger.1      612         1   1.7042 / 1.4804   1.7059 / 1.4788
+    ger.2      612         2   1.6340 / 1.3431   1.6307 / 1.3431
+    ita.1      760         0   1.3079 / 1.1855   1.3079 / 1.1855
+    ita.2      777         5   1.4157 / 1.0824   1.4157 / 1.0798
+    mex.1      615         0   1.6423 / 1.1837   1.6423 / 1.1837
+    ned.1      618         0   1.7573 / 1.3333   1.7573 / 1.3333
+    por.1      612         0   1.4493 / 1.1765   1.4493 / 1.1765
+    sco.1      456         1   1.6404 / 1.2303   1.6382 / 1.2281
+    tur.1      646         1   1.5635 / 1.2368   1.5604 / 1.2368
+    uefa.champions   378         0   1.9233 / 1.4444   1.9233 / 1.4444
+    uefa.europa   378         0   1.6243 / 1.2011   1.6243 / 1.2011
+    usa.1      809         0   1.7219 / 1.3350   1.7219 / 1.3350
+  intensities (goals per match per 15-min bin; bins 0-15,15-30,30-45,45-60,60-75,75-90+):
+    from finals   home 0.2051, 0.2195, 0.279, 0.2524, 0.2405, 0.3558  (sum 1.5522)
+                  away 0.1505, 0.1651, 0.221, 0.198, 0.1987, 0.2857  (sum 1.2191)
+    from events   home 0.2051, 0.2195, 0.279, 0.2524, 0.2405, 0.3553  (sum 1.5517)
+                  away 0.1505, 0.1651, 0.221, 0.198, 0.1987, 0.2852  (sum 1.2186)
+  FINDING: swapped labels? no. duplicate events? no. own-goal attribution? corrected (team id = credited side). stoppage-time goals? they fall in the 75-90+ bin.
+  The away side now sums to ~1.2186 goals/match, not 3.44. The retired parametric model's anomaly was a parsing artefact; no parametric conclusion is drawn.
+
+## Item 2. Basketball scoreTime — CORRECTED diagnosis (historical test window)
+  games 833  rows 6486
+  column: Brier 0.1588 [0.1461, 0.1708]  log loss 0.4756 [0.4392, 0.5107]  hit 75.8%
+  calibration: slope 0.6488  intercept 0.1609  max judged-bucket deviation 0.1252 (0.25-0.35)
+  verdict: FAIL — worst judged bucket 0.25-0.35 off by 0.1252 (> 0.05)
+  reliability:
+    0.00-0.25   n   1830  predicted 7.6%  actual 13.9%  dev 0.0634
+    0.25-0.35   n    454  predicted 29.5%  actual 42.1%  dev 0.1252
+    0.35-0.45   n    477  predicted 39.5%  actual 49.1%  dev 0.0958
+    0.45-0.55   n    603  predicted 49.9%  actual 56.9%  dev 0.0700
+    0.55-0.65   n    445  predicted 60.7%  actual 61.8%  dev 0.0114
+    0.65-0.75   n    488  predicted 70.3%  actual 67.6%  dev -0.0262
+    0.75-1.00   n   2189  predicted 92.5%  actual 87.4%  dev -0.0507
+  CORRECTED WORDING: over-confident at the extremes (slope < 1, low bucket realised above its prediction, high bucket below), with the home side under-estimated in the mid-range (positive intercept)
+    low bucket 0.00-0.25: predicted 7.6% -> realised 13.9%
+    high bucket 0.75-1.00: predicted 92.5% -> realised 87.4%
+  by time bucket:
+    early  n   1128  games   377  Brier 0.2249  log loss 0.6406  hit 62.7%
+    mid    n   2860  games   829  Brier 0.1751  log loss 0.5225  hit 73.8%
+    late   n   2498  games   829  Brier 0.1104  log loss 0.3474  hit 84.1%
+  by league:
+    mens-college-basketball  n   2342  games   456  Brier 0.1383  log loss 0.4157  maxDev 0.0386
+    nba                      n   4144  games   377  Brier 0.1704  log loss 0.5095  maxDev 0.0999
+
+## Item 3. Nonparametric / score-and-time-only models (fitted on TRAIN + VALIDATION)
+  soccer empirical table: rows 46075  min cell 30  diff cap ±3
+    cells by fallback level: {"0":61,"1":35,"2":9,"3":0,"4":0}   (legend: 0 exact | 1 (minute,diff) | 2 LOCAL neighbour pool over diff | 3 (minute) only | 4 global)
+    global (no-conditioning) rate: home 0.4442 draw 0.2609 away 0.2950
+    P(home) by minute x capped difference (red state = none) — the monotone-smoothed table:
+      minute      -3    -2    -1     0     1     2     3
+        15    0.00010.06580.20710.42800.68140.85850.9989
+        30    0.00010.05060.18640.40180.69020.87800.9828
+        45    0.00010.02710.14210.35840.71050.90180.9899
+        60    0.00010.01580.08010.32010.73620.93150.9946
+        75    0.00010.00010.03920.24030.80050.96570.9989
+  basketball logistic: rows 29071  x = margin / sqrt(minutes remaining)
+    sport-wide: intercept 0.2362  slope 0.6617  (n 29071)
+    mens-college-basketball  x  0.7909  intercept  0.4934  (n   6766)  league
+    nba                      x  0.6095  intercept  0.1706  (n  15683)  league
+    wnba                     x  0.6644  intercept  0.1789  (n   6622)  league
+    overtime handling: for an OT checkpoint only the current OT period clock is used (remaining = clock minutes).
+
+## Item 4. Soccer empirical table — per-cell n and fallback level (the 15'/30' collapse, and the fix)
+  fit rows 46075  min cell 30  cells by level: {"0":61,"1":35,"2":9,"3":0,"4":0}
+    WHY the 15'/30' cells collapsed: ONLY the extreme diff cells are thin. At 15' the
+    exact (15,'+3') cell has n=10 and at 30' the (30,'-3') cell has n=23, both below
+    minCell, so they fell back to a neighbour/minute estimate. The OLD neighbour pool
+    reached the whole difference axis, so it returned a nonsense value (trailing by 3 at
+    15' scored a HIGHER home rate than trailing by 1), and the isotonic step then merged
+    that value with the direct diff 1/2 cells — flattening "up 1/2/3" onto one number.
+    THE FIX: (a) the neighbour pool is now LOCAL (|k-d| <= 1); (b) the monotone fit runs
+    on the DIRECT cells (levels 0-1) only and the fallback cells are EXTENDED on the
+    curve's local slope, so distinct goal differences keep distinct values.
+    Per-cell audit of the flagged cells (n = raw cell counts; level = fallback used):
+      minute diff | n(cell) n(min,diff) n(min) usedN level dir | pooled P(H/D/A)          | table P(H/D/A)
+         15    1 |    1378       1391   9215   1378     0  D  | 0.6814/0.1872/0.1313     | 0.6814/0.1872/0.1313
+              → exact (minute,diff,red) cell has n=1378 >= minCell
+         15    2 |     106        106   9215    106     0  D  | 0.8585/0.0849/0.0566     | 0.8585/0.0849/0.0566
+              → exact (minute,diff,red) cell has n=106 >= minCell
+         15    3 |      10         10   9215     63     2  F  | 0.8492/0.0873/0.0635     | 0.9989/0.0010/0.0001
+              → exact cell n=10 and (minute,diff) n=10 both < minCell=30; local neighbour pool over goal difference used
+         15    0 |    6556       6614   9215   6556     0  D  | 0.4280/0.2865/0.2855     | 0.4280/0.2865/0.2855
+              → exact (minute,diff,red) cell has n=6556 >= minCell
+         30   -1 |    1470       1494   9215   1470     0  D  | 0.1864/0.2347/0.5789     | 0.1864/0.2347/0.5789
+              → exact (minute,diff,red) cell has n=1470 >= minCell
+         30   -2 |     237        242   9215    237     0  D  | 0.0506/0.0844/0.8650     | 0.0506/0.0844/0.8650
+              → exact (minute,diff,red) cell has n=237 >= minCell
+         30   -3 |      23         23   9215    144     2  F  | 0.0417/0.0764/0.8819     | 0.0001/0.0010/0.9989
+              → exact cell n=23 and (minute,diff) n=23 both < minCell=30; local neighbour pool over goal difference used
+         30    0 |    4861       4980   9215   4861     0  D  | 0.4018/0.3257/0.2726     | 0.4018/0.3257/0.2726
+              → exact (minute,diff,red) cell has n=4861 >= minCell
+    distinct P(home) across up 1/2/3 at 15'? YES (fixed)
+    distinct P(home) across down 1/2/3 at 30'? YES (fixed)
+    Every cell (red state = none); cell = n/level (D = direct level 0-1, F = fallback 2-4):
+      minute          -3         -2         -1          0          1          2          3
+        15          3/2F      76/0D    1009/0D    6556/0D    1378/0D     106/0D      10/2F
+        30         23/2F     237/0D    1470/0D    4861/0D    1982/0D     377/0D      58/0D
+        45        101/0D     406/0D    1612/0D    3538/0D    2221/0D     662/0D     198/0D
+        60        167/0D     569/0D    1561/0D    2880/0D    2115/0D     861/0D     372/0D
+        75        269/0D     584/0D    1529/0D    2443/0D    1980/0D     932/0D     538/0D
+    (the full per-cell audit for every red state is in the JSON under item4_soccerTable.cells)
+
+## Item 5. Soccer multinomial-logistic candidate (fit on TRAIN + VALIDATION; NOT scored on the old holdout)
+  features: goal_diff, remaining_frac, diff_x_sqrt_remaining, red_net, total_goals   L2 0.001   iters 800   fit rows 46075
+  standardiser: mu 0.1542, 0.5000, 0.8837, -0.0036, 1.2211
+                sd 1.1398, 0.2357, 6.5854, 0.2363, 1.2618
+  weights (intercept then one per feature):
+    home    0.3142   1.3623   0.1009  -0.1513  -0.1601   0.0366
+    draw    0.0113  -0.0888  -0.1664   0.0570  -0.0042  -0.1146
+    away   -0.3255  -1.2735   0.0655   0.0943   0.1643   0.0780
+  monotone in goal difference: home YES; away YES  (15 curves)
+  draw curve unimodal (a single peak) on all 15 curves: YES
+  draw peaks at diff = 0 with NO red card: YES
+  draw peaks at diff = 0 under EVERY input (strict): NO (5 curves)
+    the strict metric fails ONLY on the away-red curves (minutes 15, 30, 45, 60, 75): the away side is a man down AND leading, so a draw
+    (a home equaliser) is the single most likely outcome and the draw peak sits at diff = -1 — expected football, not a defect.
+  P(home/draw/away) vs goal difference at minute 30, no reds:
+      diff    P(home)  P(draw)  P(away)
+         -5    0.0000   0.0029   0.9971
+         -4    0.0004   0.0090   0.9906
+         -3    0.0028   0.0279   0.9694
+         -2    0.0201   0.0815   0.8985
+         -1    0.1195   0.1958   0.6848
+          0    0.4178   0.2760   0.3062
+          1    0.7636   0.1600   0.0764
+          2    0.9258   0.0616   0.0127
+          3    0.9776   0.0206   0.0018
+          4    0.9931   0.0066   0.0003
+          5    0.9978   0.0021   0.0000
+
+## Item 3 (holdout). Frozen production model vs the logistic — SAME fresh holdout
+  holdout window 20261001-20261112: basketball 334 games / 3168 rows (soccer NOT re-evaluated here — its candidates go to shadow).
+  production calibrator: fitted on TRAIN+VALIDATION (isotonic, 31562 fit rows).
+
+  --- BASKETBALL (home-win) ---
+    logistic    Brier 0.1489 [0.1337, 0.1650]  logLoss 0.4419 [0.4027, 0.4822]  slope 1.0240  intercept -0.0930  maxDev -0.0370 (0.65-0.75)
+    scoreTime   Brier 0.1541  logLoss 0.4709
+    production  Brier 0.1500 [0.1348, 0.1658]  logLoss 0.4520 [0.4114, 0.4936]  slope 0.9801  intercept -0.0918  maxDev -0.0220
+    production vs scoreTime: Brier 0.0041 [-0.0015, 0.0098]  logLoss 0.0189 [-0.0032, 0.0446]
+    logistic vs production:  Brier 0.0011 [-0.0002, 0.0024]  logLoss 0.0101 [0.0031, 0.0182]  games 334
+    RECOMMENDATION: The logistic matches or beats the production model on the fresh holdout. Recommend simplifying to the logistic.
+    logistic vs scoreTime: Brier 0.0052 [0.0003, 0.0103]  logLoss 0.0290 [0.0077, 0.0542]  games 334
+    absolute-calibration verdict: PASS — worst judged bucket 0.65-0.75 off by -0.037 (<= 0.05)
+    reliability:
+      0.00-0.25   n    507  predicted 11.0%  actual 9.3%  dev -0.0171
+      0.25-0.35   n    221  predicted 30.0%  actual 27.2%  dev -0.0288
+      0.35-0.45   n    298  predicted 39.9%  actual 38.3%  dev -0.0166
+      0.45-0.55   n    347  predicted 50.9%  actual 51.6%  dev 0.0066
+      0.55-0.65   n    297  predicted 60.3%  actual 59.3%  dev -0.0100
+      0.65-0.75   n    335  predicted 69.7%  actual 66.0%  dev -0.0370
+      0.75-1.00   n   1163  predicted 91.9%  actual 91.1%  dev -0.0072
+    by time bucket:
+      early  n    736  games   246  Brier 0.2316  logLoss 0.6546  hit 62.1%
+      mid    n   1246  games   334  Brier 0.1533  logLoss 0.4634  hit 78.0%
+      late   n   1186  games   334  Brier 0.0930  logLoss 0.2873  hit 86.7%
+    by league:
+      mens-college-basketball  n    445  games    89  Brier 0.0354  logLoss 0.1267  maxDev 0.0165  BrierGain 0.0025  LLGain 0.0042  
+      nba                      n   2554  games   230  Brier 0.1664  logLoss 0.4905  maxDev -0.0234  BrierGain 0.0051  LLGain 0.0323  
+      wnba                     n    169  games    15  Brier 0.1832  logLoss 0.5368  maxDev n/a  BrierGain 0.0145  LLGain 0.0455  (unjudged)
+    early/mid/late split (checkpoints per bucket, per league):
+      mens-college-basketball  early n     1/g    1 B 0.0003 L 0.0180 | mid n   266/g   89 B 0.0455 L 0.1660 | late n   178/g   89 B 0.0205 L 0.0687
+      nba                      early n   690/g  230 B 0.2329 L 0.6577 | mid n   920/g  230 B 0.1818 L 0.5423 | late n   944/g  230 B 0.1028 L 0.3178
+      wnba                     early n    45/g   15 B 0.2171 L 0.6210 | mid n    60/g   15 B 0.1942 L 0.5712 | late n    64/g   15 B 0.1490 L 0.4452
+    LABEL-DEPENDENCE test (shuffle game-level labels, 200 draws, game n 334) — labels: home 211 / away 123
+      actual       model Brier 0.1489  logLoss 0.4419   | scoreTime Brier 0.1541  logLoss 0.4709
+      constant0.5  Brier 0.2500  logLoss 0.6931 (no-skill floor)
+      shuffled     model Brier 0.3250 ± 0.0126  logLoss 1.4952   | scoreTime logLoss 2.6853
+      collapsed to no-skill: YES — Shuffling the game-level labels destroys the metric (it returns to the no-skill level): the low error therefore DEPENDS on the true outcome. This is a LABEL-DEPENDENCE test only — it does NOT by itself prove that no leakage is present. Leakage is ruled out directly by the first-checkpoint base-rate check and the post-checkpoint truncation test.
+      WORDING: Label dependence ≠ absence of leakage. This shows the metric needs the true labels; it is silent on whether the model reads future state.
+      mens-college-basketball  game n  89  labels home 80/away 9  actual logLoss 0.1267  shuffled logLoss 1.1327  collapsed YES
+      nba                      game n 230  labels home 120/away 110  actual logLoss 0.4905  shuffled logLoss 1.2401  collapsed YES
+    LEAKAGE CHECK 4(a) — first checkpoint vs home base rate (334 games):
+      mean predicted P(home) 0.6243   vs   home base rate (all checkpoints) 0.5862   gap 0.0381   (realised on these games 0.6317)
+      mens-college-basketball  games   89  meanPred 0.8414  homeRate 0.8989  gap 0.0575
+      nba                      games  230  meanPred 0.5451  homeRate 0.5217  gap -0.0234
+      wnba                     games   15  meanPred 0.5498  homeRate 0.7333  gap 0.1835
+    LEAKAGE CHECK 4(b) — remove events after the checkpoint (3168 checkpoints over 334 games):
+      identical output 3168/3168 (100.0%)   max |Δp| 0.0000
+      sensitivity probe (a genuine LATER event MUST move it): 2606/2609 moved (99.9%) → test is informative
+      The output at a checkpoint is IDENTICAL when every later event is removed from the input; the sensitivity probe shows a genuine later event DOES move it — so no future state is read.
+    constant base-rate predictor, per league (predict the league home rate everywhere) and the model skill vs it:
+      league                     games  H/A     baseRate  constBrier  constLogLoss  modelBrier  modelLogLoss  brierSkill  logLossSkill
+      mens-college-basketball     89   80/9     0.8989      0.0909        0.3275      0.0354        0.1267      0.6106        0.6132  (thin: <100 games — no league params)
+      nba                        230  120/110   0.5217      0.2495        0.6922      0.1664        0.4905      0.3331        0.2913
+      wnba                        15   11/4     0.7333      0.1981        0.5855      0.1832        0.5368      0.0754        0.0832  (thin: <100 games — no league params)
+      NOTE (item 5): the CBB holdout is 80/9 — far too skewed and thin to set parameters from;
+      league-specific parameters are only fitted at >= 100 SETTLED GAMES in the fit window, else the sport-wide parameters are used.
+    fresh-games rule: 334 settled games vs minimum 500 → NOT MET (candidate stays blocked)
+    SHIPS: NO — only 334 fresh settled games (< 500)
+
+NOTHING SHIPS. Manual rough estimate stays blocked for every sport. Shadow, criteria and calibrator ids unchanged.
+Candidate artifact: shadow-candidates-1.0.0 frozen at 2026-11-12T13:53:48Z — every frozen id is labelled:
+    basketball_logistic  33f1a9025999  Basketball home-win logistic — x = margin / sqrt(minutes remaining), per-league periods
+    soccer_table         019d7e0afab3  Soccer empirical table P(home/draw/away | minute, capped diff, red)
+    soccer_mnl           11837341b3fd  Soccer regularised multinomial logistic (primary)
+    soccer_score_time    213f7dd0a1d8  Soccer score-and-time baseline (plain Poisson at global rates) — the release reference
+  logged on every shadow row; confirmation = shadow rows logged strictly AFTER this instant.
+PRIMARY (the only one the release reads, vs scoreTime, game-level CIs): basketball basketball_logistic; soccer soccer_mnl (secondary: soccer_table).
+Near-certain outcomes are clipped to [0.01, 0.99] on every candidate, and any soccer table cell with < 30 raw rows is flagged thin.
+Predictions are statistical estimates, not betting advice.

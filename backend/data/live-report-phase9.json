@@ -1,0 +1,2007 @@
+{
+  "generatedAt": "2026-11-08T04:51:16.171Z",
+  "dataset": {
+    "games": 16703,
+    "checkpoints": 102388
+  },
+  "calibrationGate": {
+    "basketball": {
+      "method": "isotonic",
+      "fitted": true,
+      "trainedOn": 25485,
+      "validatedOn": 11500,
+      "monotone": true,
+      "brierGain": 0.0035,
+      "logLossGain": 0.0273,
+      "minImprovementBrier": 0.002,
+      "minImprovementLogLoss": 0.002,
+      "kept": true,
+      "model": {
+        "method": "isotonic",
+        "xEnds": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.0005,
+          0.0011,
+          0.0021,
+          0.0026,
+          0.0091,
+          0.0115,
+          0.0156,
+          0.0244,
+          0.0425,
+          0.0499,
+          0.0754,
+          0.1006,
+          0.1165,
+          0.1241,
+          0.1542,
+          0.1995,
+          0.2091,
+          0.2217,
+          0.2523,
+          0.3253,
+          0.3524,
+          0.3697,
+          0.4727,
+          0.4759,
+          0.476,
+          0.4991,
+          0.4993,
+          0.5267,
+          0.5747,
+          0.5747,
+          0.5792,
+          0.6348,
+          0.6355,
+          0.6669,
+          0.715,
+          0.715,
+          0.7495,
+          0.7754,
+          0.7984,
+          0.8019,
+          0.8339,
+          0.8632,
+          0.8717,
+          0.8756,
+          0.8823,
+          0.9054,
+          0.9075,
+          0.9079,
+          0.9127,
+          0.921,
+          0.9499,
+          0.9515,
+          0.9721,
+          0.9753,
+          0.9762,
+          0.9801,
+          0.9835,
+          0.9836,
+          0.9903,
+          0.9968,
+          0.9972,
+          0.9973,
+          0.999,
+          0.9998,
+          1,
+          1
+        ],
+        "values": [
+          0,
+          0,
+          0,
+          0.0064516129032258064,
+          0.013953488372093023,
+          0.018361581920903956,
+          0.019230769230769232,
+          0.027210884353741496,
+          0.029411764705882353,
+          0.03197674418604651,
+          0.06896551724137931,
+          0.08264462809917356,
+          0.09375,
+          0.11375661375661375,
+          0.11403508771929824,
+          0.15402843601895735,
+          0.17268041237113402,
+          0.21122112211221122,
+          0.2222222222222222,
+          0.25267665952890794,
+          0.2648578811369509,
+          0.2892561983471074,
+          0.2914572864321608,
+          0.3380281690140845,
+          0.3542168674698795,
+          0.3942505133470226,
+          0.4025974025974026,
+          0.46243654822335023,
+          0.4819277108433735,
+          0.5,
+          0.5116883116883116,
+          0.5172413793103449,
+          0.5365497076023392,
+          0.5435952637244349,
+          0.5714285714285714,
+          0.5775577557755776,
+          0.5982905982905983,
+          0.6,
+          0.6121212121212121,
+          0.6375,
+          0.6666666666666666,
+          0.6772486772486772,
+          0.6829652996845426,
+          0.6911196911196911,
+          0.7272727272727273,
+          0.745945945945946,
+          0.7537537537537538,
+          0.7611940298507462,
+          0.7677419354838709,
+          0.7931034482758621,
+          0.7954911433172303,
+          0.813953488372093,
+          0.8333333333333334,
+          0.851063829787234,
+          0.8729508196721312,
+          0.8899637243047158,
+          0.8947368421052632,
+          0.9113110539845758,
+          0.9166666666666666,
+          0.9166666666666666,
+          0.9230769230769231,
+          0.9428571428571428,
+          0.9473684210526315,
+          0.9662650602409638,
+          0.97,
+          0.971830985915493,
+          0.975,
+          0.978125,
+          0.9869848156182213,
+          0.9904931669637552,
+          0.9935897435897436
+        ],
+        "samples": 25485
+      }
+    },
+    "soccer": {
+      "method": "isotonic",
+      "fitted": true,
+      "trainedOn": 36015,
+      "validatedOn": 9575,
+      "monotone": true,
+      "brierGain": -0.0002,
+      "logLossGain": -0.0005,
+      "minImprovementBrier": 0.002,
+      "minImprovementLogLoss": 0.002,
+      "kept": false,
+      "model": null
+    }
+  },
+  "market": {
+    "scoredOutcome": "home_win (the winner / moneyline market, home side)",
+    "calibKey": "home_win",
+    "modelsExpose": {
+      "basketball": [
+        "home_win",
+        "away_win"
+      ],
+      "soccer": [
+        "home_win",
+        "draw",
+        "away_win"
+      ]
+    },
+    "spread": {
+      "evaluated": false,
+      "available": false,
+      "note": "no spread market is modelled or gated"
+    },
+    "totals": {
+      "evaluated": false,
+      "available": false,
+      "note": "no total-points market is modelled or gated"
+    },
+    "leagueWindowCombos": 58,
+    "windowsPerLeague": 3,
+    "leaguesEvaluated": [
+      "basketball|mens-college-basketball",
+      "basketball|nba",
+      "basketball|wnba",
+      "soccer|bra.1",
+      "soccer|eng.1",
+      "soccer|eng.2",
+      "soccer|esp.1",
+      "soccer|esp.2",
+      "soccer|ger.1",
+      "soccer|ger.2",
+      "soccer|ita.1",
+      "soccer|ita.2",
+      "soccer|mex.1",
+      "soccer|ned.1",
+      "soccer|por.1",
+      "soccer|sco.1",
+      "soccer|tur.1",
+      "soccer|uefa.champions",
+      "soccer|uefa.europa",
+      "soccer|usa.1"
+    ]
+  },
+  "basketballPerLeague": [
+    {
+      "league": "nba",
+      "gamesAvailable": 2466,
+      "checkpoints": 27343,
+      "skipped": 0,
+      "windows": {
+        "train": 16444,
+        "validation": 5473,
+        "test": 5426
+      },
+      "calibrationKept": true,
+      "test": {
+        "games": 493,
+        "rows": 5426,
+        "hitRate": 0.7857,
+        "hitRateCI": {
+          "n": 2000,
+          "lower": 0.7627,
+          "upper": 0.8103
+        },
+        "breakEvenProbability": 0.524,
+        "model": {
+          "n": 5426,
+          "games": 493,
+          "brier": 0.1469,
+          "logLoss": 0.4421,
+          "hitRate": 0.7857,
+          "calibrationGap": 0.2396
+        },
+        "reference": {
+          "n": 5426,
+          "games": 493,
+          "brier": 0.1489,
+          "logLoss": 0.4545,
+          "hitRate": 0.7801,
+          "calibrationGap": 0.2532
+        },
+        "brierGain": 0.002,
+        "logLossGain": 0.0124,
+        "brierGainCI": {
+          "n": 2000,
+          "lower": -0.0019,
+          "upper": 0.006
+        },
+        "logLossGainCI": {
+          "n": 2000,
+          "lower": -0.0036,
+          "upper": 0.0306
+        },
+        "passed": false,
+        "reasons": [
+          "out-of-sample games 493 < 500",
+          "Brier gain 95% CI lower bound -0.0019 <= 0",
+          "log loss gain 95% CI lower bound -0.0036 <= 0"
+        ]
+      }
+    },
+    {
+      "league": "wnba",
+      "gamesAvailable": 598,
+      "checkpoints": 6622,
+      "skipped": 0,
+      "windows": {
+        "train": 3977,
+        "validation": 1328,
+        "test": 1317
+      },
+      "calibrationKept": true,
+      "test": {
+        "games": 119,
+        "rows": 1317,
+        "hitRate": 0.7213,
+        "hitRateCI": {
+          "n": 2000,
+          "lower": 0.6669,
+          "upper": 0.7746
+        },
+        "breakEvenProbability": 0.524,
+        "model": {
+          "n": 1317,
+          "games": 119,
+          "brier": 0.174,
+          "logLoss": 0.5146,
+          "hitRate": 0.7213,
+          "calibrationGap": 0.138
+        },
+        "reference": {
+          "n": 1317,
+          "games": 119,
+          "brier": 0.1762,
+          "logLoss": 0.5275,
+          "hitRate": 0.7259,
+          "calibrationGap": 0.1633
+        },
+        "brierGain": 0.0022,
+        "logLossGain": 0.0129,
+        "brierGainCI": {
+          "n": 2000,
+          "lower": -0.0041,
+          "upper": 0.0085
+        },
+        "logLossGainCI": {
+          "n": 2000,
+          "lower": -0.0075,
+          "upper": 0.0345
+        },
+        "passed": false,
+        "reasons": [
+          "out-of-sample games 119 < 500",
+          "Brier gain 95% CI lower bound -0.0041 <= 0",
+          "log loss gain 95% CI lower bound -0.0075 <= 0"
+        ]
+      }
+    },
+    {
+      "league": "mens-college-basketball",
+      "gamesAvailable": 2121,
+      "checkpoints": 10833,
+      "skipped": 0,
+      "windows": {
+        "train": 6485,
+        "validation": 2178,
+        "test": 2170
+      },
+      "calibrationKept": true,
+      "test": {
+        "games": 424,
+        "rows": 2170,
+        "hitRate": 0.7995,
+        "hitRateCI": {
+          "n": 2000,
+          "lower": 0.7727,
+          "upper": 0.8281
+        },
+        "breakEvenProbability": 0.524,
+        "model": {
+          "n": 2170,
+          "games": 424,
+          "brier": 0.1344,
+          "logLoss": 0.4099,
+          "hitRate": 0.7995,
+          "calibrationGap": 0.1718
+        },
+        "reference": {
+          "n": 2170,
+          "games": 424,
+          "brier": 0.1377,
+          "logLoss": 0.4183,
+          "hitRate": 0.7972,
+          "calibrationGap": 0.2305
+        },
+        "brierGain": 0.0033,
+        "logLossGain": 0.0084,
+        "brierGainCI": {
+          "n": 2000,
+          "lower": -0.0031,
+          "upper": 0.0095
+        },
+        "logLossGainCI": {
+          "n": 2000,
+          "lower": -0.0112,
+          "upper": 0.027
+        },
+        "passed": false,
+        "reasons": [
+          "out-of-sample games 424 < 500",
+          "Brier gain 95% CI lower bound -0.0031 <= 0",
+          "log loss gain 95% CI lower bound -0.0112 <= 0"
+        ]
+      }
+    }
+  ],
+  "soccerScoreTime": {
+    "games": 2400,
+    "rows": 12000,
+    "home": {
+      "n": 12000,
+      "games": 2400,
+      "brier": 0.1807,
+      "logLoss": 0.5412,
+      "hitRate": 0.7323,
+      "curve": [
+        {
+          "range": "0.00-0.25",
+          "n": 3309,
+          "predicted": 0.1019,
+          "actual": 0.1547
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 810,
+          "predicted": 0.2931,
+          "actual": 0.3309
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 3896,
+          "predicted": 0.3963,
+          "actual": 0.4084
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 1511,
+          "predicted": 0.7187,
+          "actual": 0.7042
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 2474,
+          "predicted": 0.8912,
+          "actual": 0.8407
+        }
+      ],
+      "bootstrap": {
+        "iterations": 2000,
+        "games": 2400,
+        "brier": {
+          "n": 2000,
+          "lower": 0.1741,
+          "upper": 0.1875
+        },
+        "logLoss": {
+          "n": 2000,
+          "lower": 0.5232,
+          "upper": 0.561
+        },
+        "hitRate": {
+          "n": 2000,
+          "lower": 0.7192,
+          "upper": 0.7458
+        }
+      }
+    },
+    "draw": {
+      "n": 12000,
+      "games": 2400,
+      "brier": 0.1744,
+      "logLoss": 0.5259,
+      "hitRate": 0.7532,
+      "curve": [
+        {
+          "range": "0.00-0.25",
+          "n": 6604,
+          "predicted": 0.1469,
+          "actual": 0.1669
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 2933,
+          "predicted": 0.296,
+          "actual": 0.2922
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 963,
+          "predicted": 0.3813,
+          "actual": 0.3655
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 810,
+          "predicted": 0.4826,
+          "actual": 0.4198
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 690,
+          "predicted": 0.6613,
+          "actual": 0.5493
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        }
+      ],
+      "bootstrap": {
+        "iterations": 2000,
+        "games": 2400,
+        "brier": {
+          "n": 2000,
+          "lower": 0.1667,
+          "upper": 0.1819
+        },
+        "logLoss": {
+          "n": 2000,
+          "lower": 0.5061,
+          "upper": 0.5452
+        },
+        "hitRate": {
+          "n": 2000,
+          "lower": 0.7385,
+          "upper": 0.7682
+        }
+      }
+    },
+    "away": {
+      "n": 12000,
+      "games": 2400,
+      "brier": 0.1546,
+      "logLoss": 0.4766,
+      "hitRate": 0.7842,
+      "curve": [
+        {
+          "range": "0.00-0.25",
+          "n": 5485,
+          "predicted": 0.0843,
+          "actual": 0.1125
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 3896,
+          "predicted": 0.2867,
+          "actual": 0.2813
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1065,
+          "predicted": 0.6143,
+          "actual": 0.5268
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 417,
+          "predicted": 0.7069,
+          "actual": 0.6283
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1137,
+          "predicted": 0.888,
+          "actual": 0.8083
+        }
+      ],
+      "bootstrap": {
+        "iterations": 2000,
+        "games": 2400,
+        "brier": {
+          "n": 2000,
+          "lower": 0.1468,
+          "upper": 0.162
+        },
+        "logLoss": {
+          "n": 2000,
+          "lower": 0.4544,
+          "upper": 0.4977
+        },
+        "hitRate": {
+          "n": 2000,
+          "lower": 0.7719,
+          "upper": 0.7976
+        }
+      }
+    },
+    "byBucket": {
+      "early": {
+        "n": 2400,
+        "games": 2400,
+        "brier": 0.2321,
+        "logLoss": 0.657,
+        "hitRate": 0.6142,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 292,
+            "predicted": 0.181,
+            "actual": 0.2466
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 1677,
+            "predicted": 0.422,
+            "actual": 0.4335
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 388,
+            "predicted": 0.7004,
+            "actual": 0.6959
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 43,
+            "predicted": 0.8921,
+            "actual": 0.7907
+          }
+        ]
+      },
+      "mid": {
+        "n": 7200,
+        "games": 2400,
+        "brier": 0.1834,
+        "logLoss": 0.5469,
+        "hitRate": 0.7325,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 1670,
+            "predicted": 0.0858,
+            "actual": 0.1407
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 810,
+            "predicted": 0.2931,
+            "actual": 0.3309
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 2219,
+            "predicted": 0.3769,
+            "actual": 0.3894
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 1123,
+            "predicted": 0.7251,
+            "actual": 0.707
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 1378,
+            "predicted": 0.8749,
+            "actual": 0.8331
+          }
+        ]
+      },
+      "late": {
+        "n": 2400,
+        "games": 2400,
+        "brier": 0.1213,
+        "logLoss": 0.4082,
+        "hitRate": 0.85,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 1347,
+            "predicted": 0.1046,
+            "actual": 0.1522
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 1053,
+            "predicted": 0.9126,
+            "actual": 0.8528
+          }
+        ]
+      },
+      "excludingLate": {
+        "n": 9600,
+        "games": 2400,
+        "brier": 0.1955,
+        "logLoss": 0.5744,
+        "hitRate": 0.7029,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 1962,
+            "predicted": 0.1,
+            "actual": 0.1565
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 810,
+            "predicted": 0.2931,
+            "actual": 0.3309
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 3896,
+            "predicted": 0.3963,
+            "actual": 0.4084
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 1511,
+            "predicted": 0.7187,
+            "actual": 0.7042
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 1421,
+            "predicted": 0.8754,
+            "actual": 0.8318
+          }
+        ]
+      }
+    },
+    "byLeague": {
+      "bra.1": {
+        "n": 850,
+        "games": 170,
+        "brier": 0.194,
+        "logLoss": 0.5747,
+        "hitRate": 0.7012,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 198,
+            "predicted": 0.1026,
+            "actual": 0.1566
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 53,
+            "predicted": 0.2931,
+            "actual": 0.3019
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 278,
+            "predicted": 0.3973,
+            "actual": 0.4388
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 137,
+            "predicted": 0.72,
+            "actual": 0.6277
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 184,
+            "predicted": 0.882,
+            "actual": 0.8152
+          }
+        ]
+      },
+      "eng.1": {
+        "n": 730,
+        "games": 146,
+        "brier": 0.1661,
+        "logLoss": 0.4956,
+        "hitRate": 0.763,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 203,
+            "predicted": 0.1001,
+            "actual": 0.0936
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 55,
+            "predicted": 0.2931,
+            "actual": 0.2545
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 247,
+            "predicted": 0.3966,
+            "actual": 0.3482
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 89,
+            "predicted": 0.7188,
+            "actual": 0.6292
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 136,
+            "predicted": 0.8903,
+            "actual": 0.8456
+          }
+        ]
+      },
+      "eng.2": {
+        "n": 1010,
+        "games": 202,
+        "brier": 0.1681,
+        "logLoss": 0.5064,
+        "hitRate": 0.7653,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 274,
+            "predicted": 0.0992,
+            "actual": 0.0839
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 69,
+            "predicted": 0.2931,
+            "actual": 0.2754
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 340,
+            "predicted": 0.3952,
+            "actual": 0.3324
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 124,
+            "predicted": 0.7176,
+            "actual": 0.6694
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 203,
+            "predicted": 0.8811,
+            "actual": 0.798
+          }
+        ]
+      },
+      "esp.1": {
+        "n": 835,
+        "games": 167,
+        "brier": 0.1761,
+        "logLoss": 0.5236,
+        "hitRate": 0.7234,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 219,
+            "predicted": 0.1064,
+            "actual": 0.1553
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 61,
+            "predicted": 0.2931,
+            "actual": 0.3607
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 279,
+            "predicted": 0.3969,
+            "actual": 0.4803
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 102,
+            "predicted": 0.7187,
+            "actual": 0.7549
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 174,
+            "predicted": 0.8895,
+            "actual": 0.908
+          }
+        ]
+      },
+      "esp.2": {
+        "n": 1025,
+        "games": 205,
+        "brier": 0.2006,
+        "logLoss": 0.6015,
+        "hitRate": 0.6937,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 291,
+            "predicted": 0.0992,
+            "actual": 0.2165
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 69,
+            "predicted": 0.2931,
+            "actual": 0.4493
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 327,
+            "predicted": 0.3953,
+            "actual": 0.4557
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 125,
+            "predicted": 0.7187,
+            "actual": 0.744
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 213,
+            "predicted": 0.8773,
+            "actual": 0.8169
+          }
+        ]
+      },
+      "ger.1": {
+        "n": 645,
+        "games": 129,
+        "brier": 0.1768,
+        "logLoss": 0.535,
+        "hitRate": 0.7411,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 179,
+            "predicted": 0.0955,
+            "actual": 0.1117
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 37,
+            "predicted": 0.2931,
+            "actual": 0.2703
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 206,
+            "predicted": 0.3979,
+            "actual": 0.3981
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 72,
+            "predicted": 0.7185,
+            "actual": 0.625
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 151,
+            "predicted": 0.9089,
+            "actual": 0.8146
+          }
+        ]
+      },
+      "ger.2": {
+        "n": 650,
+        "games": 130,
+        "brier": 0.182,
+        "logLoss": 0.5387,
+        "hitRate": 0.7369,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 180,
+            "predicted": 0.1027,
+            "actual": 0.1778
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 40,
+            "predicted": 0.2931,
+            "actual": 0.35
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 198,
+            "predicted": 0.3958,
+            "actual": 0.3838
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 81,
+            "predicted": 0.7169,
+            "actual": 0.7037
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 151,
+            "predicted": 0.8997,
+            "actual": 0.8344
+          }
+        ]
+      },
+      "ita.1": {
+        "n": 785,
+        "games": 157,
+        "brier": 0.1476,
+        "logLoss": 0.4583,
+        "hitRate": 0.7987,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 268,
+            "predicted": 0.1005,
+            "actual": 0.1082
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 53,
+            "predicted": 0.2931,
+            "actual": 0.2453
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 251,
+            "predicted": 0.3963,
+            "actual": 0.3506
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 90,
+            "predicted": 0.7189,
+            "actual": 0.7778
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 123,
+            "predicted": 0.8931,
+            "actual": 0.935
+          }
+        ]
+      },
+      "ita.2": {
+        "n": 860,
+        "games": 172,
+        "brier": 0.2048,
+        "logLoss": 0.6231,
+        "hitRate": 0.6942,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 240,
+            "predicted": 0.1033,
+            "actual": 0.2125
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 67,
+            "predicted": 0.2931,
+            "actual": 0.3731
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 290,
+            "predicted": 0.3964,
+            "actual": 0.4276
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 105,
+            "predicted": 0.719,
+            "actual": 0.6952
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 158,
+            "predicted": 0.8857,
+            "actual": 0.8038
+          }
+        ]
+      },
+      "mex.1": {
+        "n": 685,
+        "games": 137,
+        "brier": 0.1807,
+        "logLoss": 0.5395,
+        "hitRate": 0.7285,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 161,
+            "predicted": 0.1125,
+            "actual": 0.1491
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 50,
+            "predicted": 0.2931,
+            "actual": 0.22
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 237,
+            "predicted": 0.3966,
+            "actual": 0.4304
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 93,
+            "predicted": 0.7213,
+            "actual": 0.6989
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 144,
+            "predicted": 0.8826,
+            "actual": 0.8542
+          }
+        ]
+      },
+      "ned.1": {
+        "n": 640,
+        "games": 128,
+        "brier": 0.1804,
+        "logLoss": 0.534,
+        "hitRate": 0.7312,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 163,
+            "predicted": 0.1046,
+            "actual": 0.135
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 41,
+            "predicted": 0.2931,
+            "actual": 0.3171
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 200,
+            "predicted": 0.3965,
+            "actual": 0.39
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 80,
+            "predicted": 0.7193,
+            "actual": 0.6125
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 156,
+            "predicted": 0.9069,
+            "actual": 0.8205
+          }
+        ]
+      },
+      "por.1": {
+        "n": 660,
+        "games": 132,
+        "brier": 0.1858,
+        "logLoss": 0.5453,
+        "hitRate": 0.7318,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 187,
+            "predicted": 0.1109,
+            "actual": 0.1979
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 60,
+            "predicted": 0.2931,
+            "actual": 0.3167
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 227,
+            "predicted": 0.3937,
+            "actual": 0.3612
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 75,
+            "predicted": 0.7174,
+            "actual": 0.6533
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 111,
+            "predicted": 0.8876,
+            "actual": 0.8829
+          }
+        ]
+      },
+      "sco.1": {
+        "n": 440,
+        "games": 88,
+        "brier": 0.2122,
+        "logLoss": 0.6426,
+        "hitRate": 0.6773,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 124,
+            "predicted": 0.0981,
+            "actual": 0.2339
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 30,
+            "predicted": 0.2931,
+            "actual": 0.3333
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 130,
+            "predicted": 0.3967,
+            "actual": 0.4923
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 71,
+            "predicted": 0.7195,
+            "actual": 0.7183
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 85,
+            "predicted": 0.8757,
+            "actual": 0.7765
+          }
+        ]
+      },
+      "tur.1": {
+        "n": 645,
+        "games": 129,
+        "brier": 0.1763,
+        "logLoss": 0.5291,
+        "hitRate": 0.7287,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 170,
+            "predicted": 0.1004,
+            "actual": 0.1706
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 41,
+            "predicted": 0.2931,
+            "actual": 0.4146
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 231,
+            "predicted": 0.3957,
+            "actual": 0.4545
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 66,
+            "predicted": 0.7182,
+            "actual": 0.8636
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 137,
+            "predicted": 0.8923,
+            "actual": 0.8905
+          }
+        ]
+      },
+      "uefa.champions": {
+        "n": 225,
+        "games": 45,
+        "brier": 0.1368,
+        "logLoss": 0.4232,
+        "hitRate": 0.8044,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 65,
+            "predicted": 0.0909,
+            "actual": 0.1231
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 13,
+            "predicted": 0.2931,
+            "actual": 0.2308
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 66,
+            "predicted": 0.3975,
+            "actual": 0.4242
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 28,
+            "predicted": 0.7197,
+            "actual": 0.9286
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 53,
+            "predicted": 0.9139,
+            "actual": 0.9434
+          }
+        ]
+      },
+      "uefa.europa": {
+        "n": 225,
+        "games": 45,
+        "brier": 0.1374,
+        "logLoss": 0.4078,
+        "hitRate": 0.7822,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 79,
+            "predicted": 0.0844,
+            "actual": 0.0253
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 10,
+            "predicted": 0.2931,
+            "actual": 0.5
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 64,
+            "predicted": 0.3991,
+            "actual": 0.4531
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 24,
+            "predicted": 0.718,
+            "actual": 0.7083
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 48,
+            "predicted": 0.906,
+            "actual": 0.875
+          }
+        ]
+      },
+      "usa.1": {
+        "n": 1090,
+        "games": 218,
+        "brier": 0.1878,
+        "logLoss": 0.5557,
+        "hitRate": 0.7257,
+        "curve": [
+          {
+            "range": "0.00-0.25",
+            "n": 308,
+            "predicted": 0.104,
+            "actual": 0.1916
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 61,
+            "predicted": 0.2931,
+            "actual": 0.4262
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 325,
+            "predicted": 0.397,
+            "actual": 0.3969
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 149,
+            "predicted": 0.718,
+            "actual": 0.7383
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 247,
+            "predicted": 0.9003,
+            "actual": 0.8138
+          }
+        ]
+      }
+    }
+  },
+  "latency": {
+    "basketball": [
+      {
+        "delaySeconds": 0,
+        "games": 940,
+        "brier": 0.145,
+        "logLoss": 0.4401,
+        "hitRate": 0.785,
+        "brierOnTime": 0.1456,
+        "logLossOnTime": 0.444,
+        "meanAbsProbShift": 0.014,
+        "p95AbsProbShift": 0.0488
+      },
+      {
+        "delaySeconds": 30,
+        "games": 940,
+        "brier": 0.145,
+        "logLoss": 0.4405,
+        "hitRate": 0.785,
+        "brierOnTime": 0.1456,
+        "logLossOnTime": 0.444,
+        "meanAbsProbShift": 0.0138,
+        "p95AbsProbShift": 0.0472
+      },
+      {
+        "delaySeconds": 60,
+        "games": 940,
+        "brier": 0.1451,
+        "logLoss": 0.4411,
+        "hitRate": 0.785,
+        "brierOnTime": 0.1456,
+        "logLossOnTime": 0.444,
+        "meanAbsProbShift": 0.0137,
+        "p95AbsProbShift": 0.0455
+      },
+      {
+        "delaySeconds": 90,
+        "games": 940,
+        "brier": 0.1452,
+        "logLoss": 0.4418,
+        "hitRate": 0.785,
+        "brierOnTime": 0.1456,
+        "logLossOnTime": 0.444,
+        "meanAbsProbShift": 0.0135,
+        "p95AbsProbShift": 0.0438
+      }
+    ],
+    "soccer": [
+      {
+        "delaySeconds": 0,
+        "games": 2400,
+        "brier": 0.1807,
+        "logLoss": 0.5412,
+        "hitRate": 0.7323,
+        "brierOnTime": 0.1807,
+        "logLossOnTime": 0.5412,
+        "meanAbsProbShift": 0,
+        "p95AbsProbShift": 0
+      },
+      {
+        "delaySeconds": 30,
+        "games": 2400,
+        "brier": 0.1808,
+        "logLoss": 0.5434,
+        "hitRate": 0.7323,
+        "brierOnTime": 0.1807,
+        "logLossOnTime": 0.5412,
+        "meanAbsProbShift": 0.0014,
+        "p95AbsProbShift": 0.0045
+      },
+      {
+        "delaySeconds": 60,
+        "games": 2400,
+        "brier": 0.181,
+        "logLoss": 0.5442,
+        "hitRate": 0.7323,
+        "brierOnTime": 0.1807,
+        "logLossOnTime": 0.5412,
+        "meanAbsProbShift": 0.0029,
+        "p95AbsProbShift": 0.0092
+      },
+      {
+        "delaySeconds": 90,
+        "games": 2400,
+        "brier": 0.1811,
+        "logLoss": 0.545,
+        "hitRate": 0.7323,
+        "brierOnTime": 0.1807,
+        "logLossOnTime": 0.5412,
+        "meanAbsProbShift": 0.0044,
+        "p95AbsProbShift": 0.014
+      }
+    ]
+  },
+  "productionVsGate": {
+    "basketball": {
+      "calibrationKept": true,
+      "calibrationBrierGain": 0.0035,
+      "calibrationLogLossGain": 0.0273,
+      "shipped": {
+        "games": 940,
+        "rows": 7813,
+        "hitRate": 0.7907,
+        "hitRateLowerBound": 0.772,
+        "breakEvenProbability": 0.524,
+        "minGames": 500,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "referenceKey": "scoreTimeP",
+        "model": {
+          "n": 7813,
+          "games": 940,
+          "brier": 0.1424,
+          "logLoss": 0.4303,
+          "hitRate": 0.7907,
+          "calibrationGap": 0.2237
+        },
+        "reference": {
+          "n": 7813,
+          "games": 940,
+          "brier": 0.1456,
+          "logLoss": 0.444,
+          "hitRate": 0.785,
+          "calibrationGap": 0.2465
+        },
+        "brierGain": 0.0032,
+        "logLossGain": 0.0137,
+        "bootstrap": {
+          "iterations": 2000,
+          "games": 940,
+          "hitRate": {
+            "n": 2000,
+            "lower": 0.772,
+            "upper": 0.8085
+          },
+          "brierGain": {
+            "n": 2000,
+            "lower": 0.0001,
+            "upper": 0.0064
+          },
+          "logLossGain": {
+            "n": 2000,
+            "lower": 0.0015,
+            "upper": 0.027
+          }
+        },
+        "passed": true,
+        "reasons": []
+      },
+      "raw": {
+        "games": 940,
+        "rows": 7813,
+        "hitRate": 0.7889,
+        "hitRateLowerBound": 0.7699,
+        "breakEvenProbability": 0.524,
+        "minGames": 500,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "referenceKey": "scoreTimeP",
+        "model": {
+          "n": 7813,
+          "games": 940,
+          "brier": 0.143,
+          "logLoss": 0.4552,
+          "hitRate": 0.7889,
+          "calibrationGap": 0.224
+        },
+        "reference": {
+          "n": 7813,
+          "games": 940,
+          "brier": 0.1456,
+          "logLoss": 0.444,
+          "hitRate": 0.785,
+          "calibrationGap": 0.2465
+        },
+        "brierGain": 0.0026,
+        "logLossGain": -0.0112,
+        "bootstrap": {
+          "iterations": 2000,
+          "games": 940,
+          "hitRate": {
+            "n": 2000,
+            "lower": 0.7699,
+            "upper": 0.8065
+          },
+          "brierGain": {
+            "n": 2000,
+            "lower": 0.0007,
+            "upper": 0.0046
+          },
+          "logLossGain": {
+            "n": 2000,
+            "lower": -0.0311,
+            "upper": 0.0065
+          }
+        },
+        "passed": false,
+        "reasons": [
+          "log loss gain -0.0112 < 0.002"
+        ]
+      }
+    },
+    "soccer": {
+      "calibrationKept": false,
+      "calibrationBrierGain": -0.0002,
+      "calibrationLogLossGain": -0.0005,
+      "shipped": {
+        "games": 2400,
+        "rows": 12000,
+        "hitRate": 0.7323,
+        "hitRateLowerBound": 0.7192,
+        "breakEvenProbability": 0.524,
+        "minGames": 500,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "referenceKey": "scoreTimeP",
+        "model": {
+          "n": 12000,
+          "games": 2400,
+          "brier": 0.1802,
+          "logLoss": 0.5357,
+          "hitRate": 0.7323,
+          "calibrationGap": 0.2917
+        },
+        "reference": {
+          "n": 12000,
+          "games": 2400,
+          "brier": 0.1807,
+          "logLoss": 0.5412,
+          "hitRate": 0.7323,
+          "calibrationGap": 0.2816
+        },
+        "brierGain": 0.0005,
+        "logLossGain": 0.0055,
+        "bootstrap": {
+          "iterations": 2000,
+          "games": 2400,
+          "hitRate": {
+            "n": 2000,
+            "lower": 0.7192,
+            "upper": 0.7458
+          },
+          "brierGain": {
+            "n": 2000,
+            "lower": -0.0003,
+            "upper": 0.0014
+          },
+          "logLossGain": {
+            "n": 2000,
+            "lower": 0.0021,
+            "upper": 0.0092
+          }
+        },
+        "passed": false,
+        "reasons": [
+          "Brier gain 0.0005 < 0.002"
+        ]
+      },
+      "raw": {
+        "games": 2400,
+        "rows": 12000,
+        "hitRate": 0.7323,
+        "hitRateLowerBound": 0.7192,
+        "breakEvenProbability": 0.524,
+        "minGames": 500,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "referenceKey": "scoreTimeP",
+        "model": {
+          "n": 12000,
+          "games": 2400,
+          "brier": 0.1802,
+          "logLoss": 0.5357,
+          "hitRate": 0.7323,
+          "calibrationGap": 0.2917
+        },
+        "reference": {
+          "n": 12000,
+          "games": 2400,
+          "brier": 0.1807,
+          "logLoss": 0.5412,
+          "hitRate": 0.7323,
+          "calibrationGap": 0.2816
+        },
+        "brierGain": 0.0005,
+        "logLossGain": 0.0055,
+        "bootstrap": {
+          "iterations": 2000,
+          "games": 2400,
+          "hitRate": {
+            "n": 2000,
+            "lower": 0.7192,
+            "upper": 0.7458
+          },
+          "brierGain": {
+            "n": 2000,
+            "lower": -0.0003,
+            "upper": 0.0014
+          },
+          "logLossGain": {
+            "n": 2000,
+            "lower": 0.0021,
+            "upper": 0.0092
+          }
+        },
+        "passed": false,
+        "reasons": [
+          "Brier gain 0.0005 < 0.002"
+        ]
+      }
+    }
+  }
+}

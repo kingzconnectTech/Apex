@@ -1,0 +1,4073 @@
+{
+  "modelVersion": "live-backtest-2.0.0",
+  "generatedAt": "2026-11-07T19:00:16.811Z",
+  "dataset": {
+    "games": 16703,
+    "checkpoints": 102388,
+    "skipped": 0,
+    "missingLine": 11499,
+    "sports": [
+      "basketball",
+      "soccer"
+    ],
+    "from": "2024-05-04T00:00Z",
+    "to": "2026-05-31T23:30Z"
+  },
+  "windows": {
+    "train": [
+      0,
+      0.6
+    ],
+    "validation": [
+      0.6,
+      0.8
+    ],
+    "test": [
+      0.8,
+      1
+    ]
+  },
+  "counts": {
+    "games": 16703,
+    "checkpoints": 102388,
+    "graded": 102388
+  },
+  "overall": {
+    "n": 102388,
+    "games": 16703,
+    "hits": 51793,
+    "hitRate": 0.5059,
+    "avgPredicted": 0.496,
+    "calibrationGap": 0.0098,
+    "brier": 0.1676,
+    "logLoss": 0.5057,
+    "buckets": [
+      {
+        "range": "0.00-0.25",
+        "n": 22710,
+        "predicted": 0.1096,
+        "actual": 0.1252
+      },
+      {
+        "range": "0.25-0.35",
+        "n": 12805,
+        "predicted": 0.3111,
+        "actual": 0.325
+      },
+      {
+        "range": "0.35-0.45",
+        "n": 17597,
+        "predicted": 0.3999,
+        "actual": 0.4118
+      },
+      {
+        "range": "0.45-0.55",
+        "n": 5697,
+        "predicted": 0.4948,
+        "actual": 0.5059
+      },
+      {
+        "range": "0.55-0.65",
+        "n": 7632,
+        "predicted": 0.6107,
+        "actual": 0.6274
+      },
+      {
+        "range": "0.65-0.75",
+        "n": 12797,
+        "predicted": 0.6902,
+        "actual": 0.701
+      },
+      {
+        "range": "0.75-1.00",
+        "n": 23150,
+        "predicted": 0.9057,
+        "actual": 0.9029
+      }
+    ]
+  },
+  "uncalibrated": {
+    "n": 102388,
+    "games": 16703,
+    "hits": 51793,
+    "hitRate": 0.5059,
+    "avgPredicted": 0.4963,
+    "calibrationGap": 0.0095,
+    "brier": 0.1686,
+    "logLoss": 0.5226,
+    "buckets": [
+      {
+        "range": "0.00-0.25",
+        "n": 25066,
+        "predicted": 0.1022,
+        "actual": 0.1397
+      },
+      {
+        "range": "0.25-0.35",
+        "n": 12654,
+        "predicted": 0.3104,
+        "actual": 0.3389
+      },
+      {
+        "range": "0.35-0.45",
+        "n": 17682,
+        "predicted": 0.4032,
+        "actual": 0.4254
+      },
+      {
+        "range": "0.45-0.55",
+        "n": 4015,
+        "predicted": 0.5054,
+        "actual": 0.532
+      },
+      {
+        "range": "0.55-0.65",
+        "n": 5127,
+        "predicted": 0.6134,
+        "actual": 0.629
+      },
+      {
+        "range": "0.65-0.75",
+        "n": 11807,
+        "predicted": 0.6934,
+        "actual": 0.6899
+      },
+      {
+        "range": "0.75-1.00",
+        "n": 26037,
+        "predicted": 0.9155,
+        "actual": 0.8823
+      }
+    ]
+  },
+  "byWindow": {
+    "train": {
+      "n": 61500,
+      "games": 10022,
+      "hits": 30547,
+      "hitRate": 0.4967,
+      "avgPredicted": 0.4893,
+      "calibrationGap": 0.0074,
+      "brier": 0.1698,
+      "logLoss": 0.5163,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 13971,
+          "predicted": 0.1105,
+          "actual": 0.1276
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 8055,
+          "predicted": 0.3121,
+          "actual": 0.3241
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 10689,
+          "predicted": 0.401,
+          "actual": 0.4108
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 2763,
+          "predicted": 0.4847,
+          "actual": 0.4882
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 4742,
+          "predicted": 0.6068,
+          "actual": 0.6137
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 8129,
+          "predicted": 0.6906,
+          "actual": 0.7001
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 13151,
+          "predicted": 0.906,
+          "actual": 0.8982
+        }
+      ]
+    },
+    "validation": {
+      "n": 21075,
+      "games": 3341,
+      "hits": 11277,
+      "hitRate": 0.5351,
+      "avgPredicted": 0.521,
+      "calibrationGap": 0.014,
+      "brier": 0.1636,
+      "logLoss": 0.4856,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 4224,
+          "predicted": 0.1089,
+          "actual": 0.1214
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 2271,
+          "predicted": 0.3094,
+          "actual": 0.3364
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 3390,
+          "predicted": 0.3966,
+          "actual": 0.4136
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 1778,
+          "predicted": 0.503,
+          "actual": 0.5292
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1625,
+          "predicted": 0.6152,
+          "actual": 0.6375
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 2221,
+          "predicted": 0.6887,
+          "actual": 0.6925
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 5566,
+          "predicted": 0.9073,
+          "actual": 0.9132
+        }
+      ]
+    },
+    "test": {
+      "n": 19813,
+      "games": 3340,
+      "hits": 9969,
+      "hitRate": 0.5032,
+      "avgPredicted": 0.4905,
+      "calibrationGap": 0.0127,
+      "brier": 0.1653,
+      "logLoss": 0.4941,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 4515,
+          "predicted": 0.1074,
+          "actual": 0.1214
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 2479,
+          "predicted": 0.3092,
+          "actual": 0.3171
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 3518,
+          "predicted": 0.3995,
+          "actual": 0.413
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 1156,
+          "predicted": 0.5063,
+          "actual": 0.5121
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1265,
+          "predicted": 0.6194,
+          "actual": 0.6656
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 2447,
+          "predicted": 0.6903,
+          "actual": 0.7119
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 4433,
+          "predicted": 0.903,
+          "actual": 0.9037
+        }
+      ]
+    }
+  },
+  "bySport": {
+    "basketball": {
+      "n": 44798,
+      "games": 5185,
+      "hits": 26053,
+      "hitRate": 0.5816,
+      "avgPredicted": 0.5768,
+      "calibrationGap": 0.0048,
+      "brier": 0.1544,
+      "logLoss": 0.4625,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 7741,
+          "predicted": 0.0975,
+          "actual": 0.1043
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 3012,
+          "predicted": 0.3028,
+          "actual": 0.3108
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 3190,
+          "predicted": 0.3839,
+          "actual": 0.3862
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 5697,
+          "predicted": 0.4948,
+          "actual": 0.5059
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 5869,
+          "predicted": 0.6052,
+          "actual": 0.6122
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 4559,
+          "predicted": 0.6896,
+          "actual": 0.692
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 14730,
+          "predicted": 0.9119,
+          "actual": 0.913
+        }
+      ]
+    },
+    "soccer": {
+      "n": 57590,
+      "games": 11518,
+      "hits": 25740,
+      "hitRate": 0.447,
+      "avgPredicted": 0.4332,
+      "calibrationGap": 0.0137,
+      "brier": 0.1779,
+      "logLoss": 0.5392,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 14969,
+          "predicted": 0.1159,
+          "actual": 0.1361
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 9793,
+          "predicted": 0.3136,
+          "actual": 0.3293
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 14407,
+          "predicted": 0.4034,
+          "actual": 0.4174
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1763,
+          "predicted": 0.6289,
+          "actual": 0.6778
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 8238,
+          "predicted": 0.6906,
+          "actual": 0.706
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 8420,
+          "predicted": 0.8949,
+          "actual": 0.8852
+        }
+      ]
+    }
+  },
+  "byCheckpoint": {
+    "basketball|p1_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p1_3min_left",
+      "belowMinSamples": false,
+      "n": 5184,
+      "games": 5184,
+      "hits": 3132,
+      "hitRate": 0.6042,
+      "avgPredicted": 0.5943,
+      "calibrationGap": 0.0099,
+      "brier": 0.1958,
+      "logLoss": 0.5685,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 285,
+          "predicted": 0.17,
+          "actual": 0.1754
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 384,
+          "predicted": 0.3109,
+          "actual": 0.3255
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 511,
+          "predicted": 0.3821,
+          "actual": 0.3894
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 920,
+          "predicted": 0.4909,
+          "actual": 0.5033
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1063,
+          "predicted": 0.607,
+          "actual": 0.6284
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 741,
+          "predicted": 0.6885,
+          "actual": 0.6896
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1280,
+          "predicted": 0.8677,
+          "actual": 0.8719
+        }
+      ]
+    },
+    "basketball|p1_6min_left": {
+      "sport": "basketball",
+      "checkpoint": "p1_6min_left",
+      "belowMinSamples": false,
+      "n": 5184,
+      "games": 5184,
+      "hits": 3132,
+      "hitRate": 0.6042,
+      "avgPredicted": 0.5925,
+      "calibrationGap": 0.0117,
+      "brier": 0.2042,
+      "logLoss": 0.589,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 170,
+          "predicted": 0.1788,
+          "actual": 0.1529
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 277,
+          "predicted": 0.3115,
+          "actual": 0.3357
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 463,
+          "predicted": 0.3882,
+          "actual": 0.3866
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 1164,
+          "predicted": 0.4948,
+          "actual": 0.5052
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1309,
+          "predicted": 0.6034,
+          "actual": 0.615
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 837,
+          "predicted": 0.6887,
+          "actual": 0.6977
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 964,
+          "predicted": 0.8637,
+          "actual": 0.889
+        }
+      ]
+    },
+    "basketball|p1_end": {
+      "sport": "basketball",
+      "checkpoint": "p1_end",
+      "belowMinSamples": false,
+      "n": 5182,
+      "games": 5182,
+      "hits": 3131,
+      "hitRate": 0.6042,
+      "avgPredicted": 0.5963,
+      "calibrationGap": 0.0079,
+      "brier": 0.1836,
+      "logLoss": 0.5369,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 453,
+          "predicted": 0.163,
+          "actual": 0.1545
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 419,
+          "predicted": 0.3092,
+          "actual": 0.3079
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 462,
+          "predicted": 0.3888,
+          "actual": 0.4134
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 787,
+          "predicted": 0.4909,
+          "actual": 0.5057
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 879,
+          "predicted": 0.6047,
+          "actual": 0.6212
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 690,
+          "predicted": 0.6901,
+          "actual": 0.7043
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1492,
+          "predicted": 0.88,
+          "actual": 0.8787
+        }
+      ]
+    },
+    "basketball|p2_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p2_3min_left",
+      "belowMinSamples": false,
+      "n": 5181,
+      "games": 5181,
+      "hits": 3130,
+      "hitRate": 0.6041,
+      "avgPredicted": 0.6037,
+      "calibrationGap": 0.0005,
+      "brier": 0.1332,
+      "logLoss": 0.4005,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 942,
+          "predicted": 0.0947,
+          "actual": 0.0924
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 353,
+          "predicted": 0.3022,
+          "actual": 0.3031
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 298,
+          "predicted": 0.3802,
+          "actual": 0.3725
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 599,
+          "predicted": 0.4942,
+          "actual": 0.5109
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 458,
+          "predicted": 0.6072,
+          "actual": 0.5742
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 442,
+          "predicted": 0.6913,
+          "actual": 0.7081
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 2089,
+          "predicted": 0.9281,
+          "actual": 0.9301
+        }
+      ]
+    },
+    "basketball|p2_6min_left": {
+      "sport": "basketball",
+      "checkpoint": "p2_6min_left",
+      "belowMinSamples": false,
+      "n": 5181,
+      "games": 5181,
+      "hits": 3130,
+      "hitRate": 0.6041,
+      "avgPredicted": 0.602,
+      "calibrationGap": 0.0022,
+      "brier": 0.1477,
+      "logLoss": 0.4385,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 824,
+          "predicted": 0.1116,
+          "actual": 0.1007
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 346,
+          "predicted": 0.3035,
+          "actual": 0.3613
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 394,
+          "predicted": 0.3805,
+          "actual": 0.3782
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 652,
+          "predicted": 0.4998,
+          "actual": 0.5
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 511,
+          "predicted": 0.6084,
+          "actual": 0.5949
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 512,
+          "predicted": 0.6878,
+          "actual": 0.6934
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1942,
+          "predicted": 0.9181,
+          "actual": 0.9207
+        }
+      ]
+    },
+    "basketball|p2_end": {
+      "sport": "basketball",
+      "checkpoint": "p2_end",
+      "belowMinSamples": false,
+      "n": 3157,
+      "games": 3157,
+      "hits": 1737,
+      "hitRate": 0.5502,
+      "avgPredicted": 0.5525,
+      "calibrationGap": -0.0023,
+      "brier": 0.1762,
+      "logLoss": 0.5225,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 522,
+          "predicted": 0.1384,
+          "actual": 0.1418
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 251,
+          "predicted": 0.2953,
+          "actual": 0.2908
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 304,
+          "predicted": 0.385,
+          "actual": 0.3684
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 402,
+          "predicted": 0.5001,
+          "actual": 0.495
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 460,
+          "predicted": 0.5998,
+          "actual": 0.6174
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 351,
+          "predicted": 0.6879,
+          "actual": 0.6581
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 867,
+          "predicted": 0.8796,
+          "actual": 0.8812
+        }
+      ]
+    },
+    "basketball|p3_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p3_3min_left",
+      "belowMinSamples": false,
+      "n": 3157,
+      "games": 3157,
+      "hits": 1737,
+      "hitRate": 0.5502,
+      "avgPredicted": 0.5494,
+      "calibrationGap": 0.0008,
+      "brier": 0.1433,
+      "logLoss": 0.4556,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 791,
+          "predicted": 0.0961,
+          "actual": 0.1138
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 257,
+          "predicted": 0.2981,
+          "actual": 0.3074
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 196,
+          "predicted": 0.3801,
+          "actual": 0.3622
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 250,
+          "predicted": 0.4925,
+          "actual": 0.52
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 265,
+          "predicted": 0.6056,
+          "actual": 0.6151
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 254,
+          "predicted": 0.6914,
+          "actual": 0.685
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1144,
+          "predicted": 0.9163,
+          "actual": 0.9003
+        }
+      ]
+    },
+    "basketball|p3_6min_left": {
+      "sport": "basketball",
+      "checkpoint": "p3_6min_left",
+      "belowMinSamples": false,
+      "n": 3060,
+      "games": 3060,
+      "hits": 1686,
+      "hitRate": 0.551,
+      "avgPredicted": 0.5527,
+      "calibrationGap": -0.0017,
+      "brier": 0.1519,
+      "logLoss": 0.4595,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 700,
+          "predicted": 0.1191,
+          "actual": 0.1171
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 230,
+          "predicted": 0.303,
+          "actual": 0.2609
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 205,
+          "predicted": 0.3833,
+          "actual": 0.4146
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 302,
+          "predicted": 0.493,
+          "actual": 0.5099
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 319,
+          "predicted": 0.6098,
+          "actual": 0.6301
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 288,
+          "predicted": 0.692,
+          "actual": 0.6979
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1016,
+          "predicted": 0.9023,
+          "actual": 0.8888
+        }
+      ]
+    },
+    "basketball|p3_end": {
+      "sport": "basketball",
+      "checkpoint": "p3_end",
+      "belowMinSamples": false,
+      "n": 3075,
+      "games": 3075,
+      "hits": 1693,
+      "hitRate": 0.5506,
+      "avgPredicted": 0.5507,
+      "calibrationGap": -0.0002,
+      "brier": 0.1249,
+      "logLoss": 0.3845,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 849,
+          "predicted": 0.0888,
+          "actual": 0.1001
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 206,
+          "predicted": 0.2952,
+          "actual": 0.3155
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 153,
+          "predicted": 0.3827,
+          "actual": 0.3203
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 225,
+          "predicted": 0.4882,
+          "actual": 0.4844
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 282,
+          "predicted": 0.6128,
+          "actual": 0.5993
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 194,
+          "predicted": 0.69,
+          "actual": 0.6856
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1166,
+          "predicted": 0.9281,
+          "actual": 0.9288
+        }
+      ]
+    },
+    "basketball|p4_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p4_3min_left",
+      "belowMinSamples": false,
+      "n": 3075,
+      "games": 3075,
+      "hits": 1693,
+      "hitRate": 0.5506,
+      "avgPredicted": 0.5424,
+      "calibrationGap": 0.0082,
+      "brier": 0.0733,
+      "logLoss": 0.2373,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1118,
+          "predicted": 0.044,
+          "actual": 0.0608
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 121,
+          "predicted": 0.2835,
+          "actual": 0.2397
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 72,
+          "predicted": 0.3803,
+          "actual": 0.4306
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 143,
+          "predicted": 0.4975,
+          "actual": 0.5734
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 108,
+          "predicted": 0.5966,
+          "actual": 0.5093
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 116,
+          "predicted": 0.692,
+          "actual": 0.6724
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1397,
+          "predicted": 0.9601,
+          "actual": 0.9664
+        }
+      ]
+    },
+    "basketball|p4_6min_left": {
+      "sport": "basketball",
+      "checkpoint": "p4_6min_left",
+      "belowMinSamples": false,
+      "n": 3060,
+      "games": 3060,
+      "hits": 1686,
+      "hitRate": 0.551,
+      "avgPredicted": 0.5414,
+      "calibrationGap": 0.0096,
+      "brier": 0.0929,
+      "logLoss": 0.2937,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1025,
+          "predicted": 0.0627,
+          "actual": 0.0751
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 168,
+          "predicted": 0.2945,
+          "actual": 0.3036
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 130,
+          "predicted": 0.3843,
+          "actual": 0.4231
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 137,
+          "predicted": 0.4909,
+          "actual": 0.4599
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 164,
+          "predicted": 0.6081,
+          "actual": 0.6402
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 134,
+          "predicted": 0.6913,
+          "actual": 0.6642
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1302,
+          "predicted": 0.9473,
+          "actual": 0.957
+        }
+      ]
+    },
+    "basketball|p4_end": {
+      "sport": "basketball",
+      "checkpoint": "p4_end",
+      "belowMinSamples": false,
+      "n": 136,
+      "games": 136,
+      "hits": 76,
+      "hitRate": 0.5588,
+      "avgPredicted": 0.5406,
+      "calibrationGap": 0.0183,
+      "brier": 0.2461,
+      "logLoss": 0.6853,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 1,
+          "predicted": 0.4497,
+          "actual": 0
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 92,
+          "predicted": 0.5326,
+          "actual": 0.5652
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 43,
+          "predicted": 0.5597,
+          "actual": 0.5581
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        }
+      ]
+    },
+    "basketball|p5_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p5_3min_left",
+      "belowMinSamples": false,
+      "n": 136,
+      "games": 136,
+      "hits": 76,
+      "hitRate": 0.5588,
+      "avgPredicted": 0.5443,
+      "calibrationGap": 0.0145,
+      "brier": 0.2363,
+      "logLoss": 1.2929,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 53,
+          "predicted": 0.001,
+          "actual": 0.2642
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 13,
+          "predicted": 0.5265,
+          "actual": 0.5385
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 5,
+          "predicted": 0.5598,
+          "actual": 0.8
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 65,
+          "predicted": 0.9896,
+          "actual": 0.7846
+        }
+      ]
+    },
+    "basketball|p5_end": {
+      "sport": "basketball",
+      "checkpoint": "p5_end",
+      "belowMinSamples": true,
+      "n": 15,
+      "games": 15,
+      "hits": 7,
+      "hitRate": 0.4667,
+      "avgPredicted": 0.5343,
+      "calibrationGap": -0.0677,
+      "brier": 0.2507,
+      "logLoss": 0.6945,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 1,
+          "predicted": 0.4497,
+          "actual": 0
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 11,
+          "predicted": 0.5364,
+          "actual": 0.4545
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 3,
+          "predicted": 0.555,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        }
+      ]
+    },
+    "basketball|p6_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p6_3min_left",
+      "belowMinSamples": true,
+      "n": 15,
+      "games": 15,
+      "hits": 7,
+      "hitRate": 0.4667,
+      "avgPredicted": 0.3976,
+      "calibrationGap": 0.0691,
+      "brier": 0.0666,
+      "logLoss": 0.4641,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 9,
+          "predicted": 0.001,
+          "actual": 0.1111
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 6,
+          "predicted": 0.9925,
+          "actual": 1
+        }
+      ]
+    },
+    "soccer|m15": {
+      "sport": "soccer",
+      "checkpoint": "m15",
+      "belowMinSamples": false,
+      "n": 11518,
+      "games": 11518,
+      "hits": 5148,
+      "hitRate": 0.447,
+      "avgPredicted": 0.4337,
+      "calibrationGap": 0.0133,
+      "brier": 0.2313,
+      "logLoss": 0.6586,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 106,
+          "predicted": 0.1481,
+          "actual": 0.1415
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 1268,
+          "predicted": 0.2617,
+          "actual": 0.2271
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 8227,
+          "predicted": 0.4154,
+          "actual": 0.4281
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1763,
+          "predicted": 0.6289,
+          "actual": 0.6778
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 154,
+          "predicted": 0.7869,
+          "actual": 0.8312
+        }
+      ]
+    },
+    "soccer|m30": {
+      "sport": "soccer",
+      "checkpoint": "m30",
+      "belowMinSamples": false,
+      "n": 11518,
+      "games": 11518,
+      "hits": 5148,
+      "hitRate": 0.447,
+      "avgPredicted": 0.4309,
+      "calibrationGap": 0.0161,
+      "brier": 0.2108,
+      "logLoss": 0.6153,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 2221,
+          "predicted": 0.1944,
+          "actual": 0.1824
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 6180,
+          "predicted": 0.3874,
+          "actual": 0.4032
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 2525,
+          "predicted": 0.6509,
+          "actual": 0.6859
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 592,
+          "predicted": 0.8332,
+          "actual": 0.8767
+        }
+      ]
+    },
+    "soccer|m45": {
+      "sport": "soccer",
+      "checkpoint": "m45",
+      "belowMinSamples": false,
+      "n": 11518,
+      "games": 11518,
+      "hits": 5148,
+      "hitRate": 0.447,
+      "avgPredicted": 0.4329,
+      "calibrationGap": 0.0141,
+      "brier": 0.1806,
+      "logLoss": 0.5499,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 2827,
+          "predicted": 0.1295,
+          "actual": 0.1319
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 4646,
+          "predicted": 0.3484,
+          "actual": 0.361
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 2879,
+          "predicted": 0.6828,
+          "actual": 0.7061
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1166,
+          "predicted": 0.8878,
+          "actual": 0.9134
+        }
+      ]
+    },
+    "soccer|m60": {
+      "sport": "soccer",
+      "checkpoint": "m60",
+      "belowMinSamples": false,
+      "n": 11518,
+      "games": 11518,
+      "hits": 5148,
+      "hitRate": 0.447,
+      "avgPredicted": 0.4344,
+      "calibrationGap": 0.0126,
+      "brier": 0.1512,
+      "logLoss": 0.4795,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 3115,
+          "predicted": 0.069,
+          "actual": 0.0796
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 3879,
+          "predicted": 0.2889,
+          "actual": 0.3248
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 2834,
+          "predicted": 0.7339,
+          "actual": 0.7237
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1690,
+          "predicted": 0.9395,
+          "actual": 0.9402
+        }
+      ]
+    },
+    "soccer|m75": {
+      "sport": "soccer",
+      "checkpoint": "m75",
+      "belowMinSamples": false,
+      "n": 11518,
+      "games": 11518,
+      "hits": 5148,
+      "hitRate": 0.447,
+      "avgPredicted": 0.4345,
+      "calibrationGap": 0.0125,
+      "brier": 0.1157,
+      "logLoss": 0.3928,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 6700,
+          "predicted": 0.1054,
+          "actual": 0.1487
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 4818,
+          "predicted": 0.892,
+          "actual": 0.8618
+        }
+      ]
+    }
+  },
+  "byLeague": {
+    "basketball|mens-college-basketball": {
+      "n": 10833,
+      "games": 2121,
+      "hits": 7340,
+      "hitRate": 0.6776,
+      "avgPredicted": 0.6618,
+      "calibrationGap": 0.0158,
+      "brier": 0.1195,
+      "logLoss": 0.3736,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1585,
+          "predicted": 0.0899,
+          "actual": 0.0871
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 433,
+          "predicted": 0.3011,
+          "actual": 0.2933
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 548,
+          "predicted": 0.3828,
+          "actual": 0.3796
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 981,
+          "predicted": 0.4984,
+          "actual": 0.5321
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 993,
+          "predicted": 0.6036,
+          "actual": 0.6536
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 1023,
+          "predicted": 0.6918,
+          "actual": 0.7419
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 5270,
+          "predicted": 0.9279,
+          "actual": 0.9368
+        }
+      ]
+    },
+    "basketball|nba": {
+      "n": 27343,
+      "games": 2466,
+      "hits": 15019,
+      "hitRate": 0.5493,
+      "avgPredicted": 0.5463,
+      "calibrationGap": 0.003,
+      "brier": 0.1643,
+      "logLoss": 0.4869,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 5030,
+          "predicted": 0.1005,
+          "actual": 0.107
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 2053,
+          "predicted": 0.3022,
+          "actual": 0.3069
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 2164,
+          "predicted": 0.3819,
+          "actual": 0.3868
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 3743,
+          "predicted": 0.4948,
+          "actual": 0.5009
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 4048,
+          "predicted": 0.6045,
+          "actual": 0.6028
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 2807,
+          "predicted": 0.6886,
+          "actual": 0.6865
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 7498,
+          "predicted": 0.9007,
+          "actual": 0.9032
+        }
+      ]
+    },
+    "basketball|wnba": {
+      "n": 6622,
+      "games": 598,
+      "hits": 3694,
+      "hitRate": 0.5578,
+      "avgPredicted": 0.5635,
+      "calibrationGap": -0.0056,
+      "brier": 0.1706,
+      "logLoss": 0.5074,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1126,
+          "predicted": 0.0943,
+          "actual": 0.1163
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 526,
+          "predicted": 0.3063,
+          "actual": 0.3403
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 478,
+          "predicted": 0.3944,
+          "actual": 0.3912
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 973,
+          "predicted": 0.4913,
+          "actual": 0.4985
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 828,
+          "predicted": 0.6104,
+          "actual": 0.6087
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 729,
+          "predicted": 0.6899,
+          "actual": 0.6433
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1962,
+          "predicted": 0.9119,
+          "actual": 0.8863
+        }
+      ]
+    },
+    "soccer|bra.1": {
+      "n": 3475,
+      "games": 695,
+      "hits": 1710,
+      "hitRate": 0.4921,
+      "avgPredicted": 0.461,
+      "calibrationGap": 0.0311,
+      "brier": 0.1843,
+      "logLoss": 0.5421,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 770,
+          "predicted": 0.1238,
+          "actual": 0.1455
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 562,
+          "predicted": 0.3168,
+          "actual": 0.3505
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 889,
+          "predicted": 0.4033,
+          "actual": 0.4657
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 131,
+          "predicted": 0.6289,
+          "actual": 0.6565
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 564,
+          "predicted": 0.6912,
+          "actual": 0.7181
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 559,
+          "predicted": 0.8905,
+          "actual": 0.8873
+        }
+      ]
+    },
+    "soccer|eng.1": {
+      "n": 3800,
+      "games": 760,
+      "hits": 1585,
+      "hitRate": 0.4171,
+      "avgPredicted": 0.4321,
+      "calibrationGap": -0.015,
+      "brier": 0.1734,
+      "logLoss": 0.514,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1020,
+          "predicted": 0.1126,
+          "actual": 0.1235
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 605,
+          "predicted": 0.3123,
+          "actual": 0.2975
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 923,
+          "predicted": 0.4036,
+          "actual": 0.3608
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 124,
+          "predicted": 0.6289,
+          "actual": 0.6935
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 595,
+          "predicted": 0.6892,
+          "actual": 0.6588
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 533,
+          "predicted": 0.896,
+          "actual": 0.878
+        }
+      ]
+    },
+    "soccer|eng.2": {
+      "n": 5570,
+      "games": 1114,
+      "hits": 2430,
+      "hitRate": 0.4363,
+      "avgPredicted": 0.4317,
+      "calibrationGap": 0.0046,
+      "brier": 0.1737,
+      "logLoss": 0.5152,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1441,
+          "predicted": 0.1173,
+          "actual": 0.1298
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 972,
+          "predicted": 0.3138,
+          "actual": 0.3056
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 1384,
+          "predicted": 0.4034,
+          "actual": 0.401
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 178,
+          "predicted": 0.6289,
+          "actual": 0.6573
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 800,
+          "predicted": 0.689,
+          "actual": 0.6963
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 795,
+          "predicted": 0.8919,
+          "actual": 0.9019
+        }
+      ]
+    },
+    "soccer|esp.1": {
+      "n": 3800,
+      "games": 760,
+      "hits": 1775,
+      "hitRate": 0.4671,
+      "avgPredicted": 0.4359,
+      "calibrationGap": 0.0312,
+      "brier": 0.1811,
+      "logLoss": 0.5342,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 911,
+          "predicted": 0.1203,
+          "actual": 0.1328
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 690,
+          "predicted": 0.3138,
+          "actual": 0.3478
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 1008,
+          "predicted": 0.403,
+          "actual": 0.4583
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 107,
+          "predicted": 0.6289,
+          "actual": 0.6355
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 547,
+          "predicted": 0.6917,
+          "actual": 0.7294
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 537,
+          "predicted": 0.8907,
+          "actual": 0.9032
+        }
+      ]
+    },
+    "soccer|esp.2": {
+      "n": 4580,
+      "games": 916,
+      "hits": 2080,
+      "hitRate": 0.4541,
+      "avgPredicted": 0.4285,
+      "calibrationGap": 0.0257,
+      "brier": 0.1935,
+      "logLoss": 0.571,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1160,
+          "predicted": 0.1189,
+          "actual": 0.1767
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 823,
+          "predicted": 0.3154,
+          "actual": 0.3584
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 1194,
+          "predicted": 0.4034,
+          "actual": 0.4238
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 131,
+          "predicted": 0.6289,
+          "actual": 0.6565
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 660,
+          "predicted": 0.6911,
+          "actual": 0.7076
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 612,
+          "predicted": 0.8901,
+          "actual": 0.8513
+        }
+      ]
+    },
+    "soccer|ger.1": {
+      "n": 3060,
+      "games": 612,
+      "hits": 1260,
+      "hitRate": 0.4118,
+      "avgPredicted": 0.418,
+      "calibrationGap": -0.0062,
+      "brier": 0.1625,
+      "logLoss": 0.7064,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 921,
+          "predicted": 0.1009,
+          "actual": 0.1086
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 470,
+          "predicted": 0.3117,
+          "actual": 0.2723
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 736,
+          "predicted": 0.4036,
+          "actual": 0.394
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 79,
+          "predicted": 0.6289,
+          "actual": 0.6329
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 359,
+          "predicted": 0.6882,
+          "actual": 0.6852
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 495,
+          "predicted": 0.9007,
+          "actual": 0.901
+        }
+      ]
+    },
+    "soccer|ger.2": {
+      "n": 3060,
+      "games": 612,
+      "hits": 1325,
+      "hitRate": 0.433,
+      "avgPredicted": 0.4304,
+      "calibrationGap": 0.0026,
+      "brier": 0.1877,
+      "logLoss": 0.5467,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 810,
+          "predicted": 0.1191,
+          "actual": 0.1519
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 543,
+          "predicted": 0.3134,
+          "actual": 0.3554
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 744,
+          "predicted": 0.4032,
+          "actual": 0.4059
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 101,
+          "predicted": 0.6289,
+          "actual": 0.6535
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 417,
+          "predicted": 0.6925,
+          "actual": 0.6187
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 445,
+          "predicted": 0.8948,
+          "actual": 0.8607
+        }
+      ]
+    },
+    "soccer|ita.1": {
+      "n": 3800,
+      "games": 760,
+      "hits": 1495,
+      "hitRate": 0.3934,
+      "avgPredicted": 0.4022,
+      "calibrationGap": -0.0087,
+      "brier": 0.1659,
+      "logLoss": 0.4984,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1102,
+          "predicted": 0.1165,
+          "actual": 0.108
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 690,
+          "predicted": 0.3142,
+          "actual": 0.2942
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 983,
+          "predicted": 0.4032,
+          "actual": 0.3652
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 117,
+          "predicted": 0.6289,
+          "actual": 0.6838
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 480,
+          "predicted": 0.6922,
+          "actual": 0.7188
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 428,
+          "predicted": 0.89,
+          "actual": 0.9089
+        }
+      ]
+    },
+    "soccer|ita.2": {
+      "n": 3885,
+      "games": 777,
+      "hits": 1665,
+      "hitRate": 0.4286,
+      "avgPredicted": 0.4187,
+      "calibrationGap": 0.0099,
+      "brier": 0.1811,
+      "logLoss": 0.5408,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1018,
+          "predicted": 0.1226,
+          "actual": 0.1336
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 717,
+          "predicted": 0.314,
+          "actual": 0.3347
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 1048,
+          "predicted": 0.4033,
+          "actual": 0.4027
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 91,
+          "predicted": 0.6289,
+          "actual": 0.7033
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 523,
+          "predicted": 0.6929,
+          "actual": 0.7266
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 488,
+          "predicted": 0.8898,
+          "actual": 0.8668
+        }
+      ]
+    },
+    "soccer|mex.1": {
+      "n": 3075,
+      "games": 615,
+      "hits": 1470,
+      "hitRate": 0.478,
+      "avgPredicted": 0.4487,
+      "calibrationGap": 0.0293,
+      "brier": 0.1836,
+      "logLoss": 0.5423,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 723,
+          "predicted": 0.1191,
+          "actual": 0.1549
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 534,
+          "predicted": 0.3137,
+          "actual": 0.3296
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 780,
+          "predicted": 0.4033,
+          "actual": 0.4615
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 87,
+          "predicted": 0.6289,
+          "actual": 0.6552
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 462,
+          "predicted": 0.692,
+          "actual": 0.7143
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 489,
+          "predicted": 0.894,
+          "actual": 0.8896
+        }
+      ]
+    },
+    "soccer|ned.1": {
+      "n": 3090,
+      "games": 618,
+      "hits": 1400,
+      "hitRate": 0.4531,
+      "avgPredicted": 0.4505,
+      "calibrationGap": 0.0026,
+      "brier": 0.1704,
+      "logLoss": 0.5051,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 794,
+          "predicted": 0.1136,
+          "actual": 0.1222
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 491,
+          "predicted": 0.312,
+          "actual": 0.2953
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 694,
+          "predicted": 0.4035,
+          "actual": 0.4207
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 120,
+          "predicted": 0.6289,
+          "actual": 0.675
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 471,
+          "predicted": 0.6889,
+          "actual": 0.6879
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 520,
+          "predicted": 0.9014,
+          "actual": 0.8865
+        }
+      ]
+    },
+    "soccer|por.1": {
+      "n": 3060,
+      "games": 612,
+      "hits": 1290,
+      "hitRate": 0.4216,
+      "avgPredicted": 0.4295,
+      "calibrationGap": -0.0079,
+      "brier": 0.1742,
+      "logLoss": 0.5172,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 788,
+          "predicted": 0.1149,
+          "actual": 0.1041
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 546,
+          "predicted": 0.3134,
+          "actual": 0.3187
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 782,
+          "predicted": 0.403,
+          "actual": 0.3951
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 90,
+          "predicted": 0.6289,
+          "actual": 0.6889
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 404,
+          "predicted": 0.6915,
+          "actual": 0.6807
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 450,
+          "predicted": 0.8921,
+          "actual": 0.8622
+        }
+      ]
+    },
+    "soccer|sco.1": {
+      "n": 2280,
+      "games": 456,
+      "hits": 1050,
+      "hitRate": 0.4605,
+      "avgPredicted": 0.434,
+      "calibrationGap": 0.0266,
+      "brier": 0.1842,
+      "logLoss": 0.5502,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 621,
+          "predicted": 0.1154,
+          "actual": 0.1594
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 360,
+          "predicted": 0.3114,
+          "actual": 0.3389
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 559,
+          "predicted": 0.4042,
+          "actual": 0.4401
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 55,
+          "predicted": 0.6289,
+          "actual": 0.6727
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 338,
+          "predicted": 0.6892,
+          "actual": 0.7426
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 347,
+          "predicted": 0.8994,
+          "actual": 0.8501
+        }
+      ]
+    },
+    "soccer|tur.1": {
+      "n": 3230,
+      "games": 646,
+      "hits": 1470,
+      "hitRate": 0.4551,
+      "avgPredicted": 0.4296,
+      "calibrationGap": 0.0255,
+      "brier": 0.1836,
+      "logLoss": 0.5457,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 834,
+          "predicted": 0.1184,
+          "actual": 0.1619
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 566,
+          "predicted": 0.3126,
+          "actual": 0.3357
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 825,
+          "predicted": 0.4033,
+          "actual": 0.4182
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 89,
+          "predicted": 0.6289,
+          "actual": 0.7753
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 471,
+          "predicted": 0.6917,
+          "actual": 0.7155
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 445,
+          "predicted": 0.8929,
+          "actual": 0.8854
+        }
+      ]
+    },
+    "soccer|uefa.champions": {
+      "n": 1890,
+      "games": 378,
+      "hits": 955,
+      "hitRate": 0.5053,
+      "avgPredicted": 0.4527,
+      "calibrationGap": 0.0526,
+      "brier": 0.1715,
+      "logLoss": 0.5104,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 492,
+          "predicted": 0.1047,
+          "actual": 0.1606
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 280,
+          "predicted": 0.3122,
+          "actual": 0.35
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 431,
+          "predicted": 0.404,
+          "actual": 0.4733
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 63,
+          "predicted": 0.6289,
+          "actual": 0.7143
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 294,
+          "predicted": 0.6885,
+          "actual": 0.7483
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 330,
+          "predicted": 0.9107,
+          "actual": 0.9364
+        }
+      ]
+    },
+    "soccer|uefa.europa": {
+      "n": 1890,
+      "games": 378,
+      "hits": 950,
+      "hitRate": 0.5026,
+      "avgPredicted": 0.4385,
+      "calibrationGap": 0.0642,
+      "brier": 0.169,
+      "logLoss": 0.5002,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 515,
+          "predicted": 0.1095,
+          "actual": 0.1282
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 286,
+          "predicted": 0.3151,
+          "actual": 0.4266
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 453,
+          "predicted": 0.4037,
+          "actual": 0.479
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 59,
+          "predicted": 0.6289,
+          "actual": 0.7458
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 273,
+          "predicted": 0.6906,
+          "actual": 0.7875
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 304,
+          "predicted": 0.9002,
+          "actual": 0.9408
+        }
+      ]
+    },
+    "soccer|usa.1": {
+      "n": 4045,
+      "games": 809,
+      "hits": 1830,
+      "hitRate": 0.4524,
+      "avgPredicted": 0.4413,
+      "calibrationGap": 0.0111,
+      "brier": 0.1778,
+      "logLoss": 0.5282,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1049,
+          "predicted": 0.1146,
+          "actual": 0.1316
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 658,
+          "predicted": 0.3131,
+          "actual": 0.3419
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 974,
+          "predicted": 0.4034,
+          "actual": 0.4086
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 141,
+          "predicted": 0.6289,
+          "actual": 0.6879
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 580,
+          "predicted": 0.6893,
+          "actual": 0.7155
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 643,
+          "predicted": 0.8979,
+          "actual": 0.8663
+        }
+      ]
+    }
+  },
+  "coverage": {
+    "basketball": {
+      "games": 5185,
+      "seasons": {
+        "2024": {
+          "games": 275,
+          "from": "2024-05-04T00:00Z",
+          "to": "2024-10-21T00:00Z",
+          "leagues": {
+            "wnba": {
+              "games": 275,
+              "from": "2024-05-04T00:00Z",
+              "to": "2024-10-21T00:00Z"
+            }
+          }
+        },
+        "2025": {
+          "games": 323,
+          "from": "2025-05-02T23:00Z",
+          "to": "2025-10-01T01:30Z",
+          "leagues": {
+            "wnba": {
+              "games": 323,
+              "from": "2025-05-02T23:00Z",
+              "to": "2025-10-01T01:30Z"
+            }
+          }
+        },
+        "2024-25": {
+          "games": 2199,
+          "from": "2024-10-22T23:30Z",
+          "to": "2025-04-13T19:30Z",
+          "leagues": {
+            "nba": {
+              "games": 1231,
+              "from": "2024-10-22T23:30Z",
+              "to": "2025-04-13T19:30Z"
+            },
+            "mens-college-basketball": {
+              "games": 968,
+              "from": "2024-11-05T00:00Z",
+              "to": "2025-04-08T00:50Z"
+            }
+          }
+        },
+        "2025-26": {
+          "games": 2388,
+          "from": "2025-10-21T23:30Z",
+          "to": "2026-04-13T00:30Z",
+          "leagues": {
+            "nba": {
+              "games": 1235,
+              "from": "2025-10-21T23:30Z",
+              "to": "2026-04-13T00:30Z"
+            },
+            "mens-college-basketball": {
+              "games": 1153,
+              "from": "2025-11-03T23:30Z",
+              "to": "2026-04-07T00:50Z"
+            }
+          }
+        }
+      }
+    },
+    "soccer": {
+      "games": 11518,
+      "seasons": {
+        "2024-25": {
+          "games": 5720,
+          "from": "2024-08-02T18:30Z",
+          "to": "2025-06-01T02:30Z",
+          "leagues": {
+            "ger.2": {
+              "games": 306,
+              "from": "2024-08-02T18:30Z",
+              "to": "2025-05-18T13:30Z"
+            },
+            "sco.1": {
+              "games": 228,
+              "from": "2024-08-03T11:30Z",
+              "to": "2025-05-18T14:00Z"
+            },
+            "bra.1": {
+              "games": 293,
+              "from": "2024-08-03T19:00Z",
+              "to": "2025-06-01T00:00Z"
+            },
+            "ned.1": {
+              "games": 309,
+              "from": "2024-08-09T18:00Z",
+              "to": "2025-05-25T16:00Z"
+            },
+            "tur.1": {
+              "games": 340,
+              "from": "2024-08-09T18:00Z",
+              "to": "2025-05-31T16:00Z"
+            },
+            "eng.2": {
+              "games": 557,
+              "from": "2024-08-09T19:00Z",
+              "to": "2025-05-24T14:01Z"
+            },
+            "por.1": {
+              "games": 306,
+              "from": "2024-08-09T19:15Z",
+              "to": "2025-05-17T17:00Z"
+            },
+            "esp.1": {
+              "games": 380,
+              "from": "2024-08-15T17:00Z",
+              "to": "2025-05-25T19:00Z"
+            },
+            "esp.2": {
+              "games": 454,
+              "from": "2024-08-15T18:30Z",
+              "to": "2025-05-31T16:30Z"
+            },
+            "ita.2": {
+              "games": 387,
+              "from": "2024-08-16T18:30Z",
+              "to": "2025-05-29T18:30Z"
+            },
+            "eng.1": {
+              "games": 380,
+              "from": "2024-08-16T19:00Z",
+              "to": "2025-05-25T15:00Z"
+            },
+            "mex.1": {
+              "games": 304,
+              "from": "2024-08-17T01:00Z",
+              "to": "2025-05-26T01:00Z"
+            },
+            "ita.1": {
+              "games": 380,
+              "from": "2024-08-17T16:30Z",
+              "to": "2025-05-25T18:45Z"
+            },
+            "ger.1": {
+              "games": 306,
+              "from": "2024-08-23T18:30Z",
+              "to": "2025-05-17T13:30Z"
+            },
+            "usa.1": {
+              "games": 412,
+              "from": "2024-08-24T22:45Z",
+              "to": "2025-06-01T02:30Z"
+            },
+            "uefa.champions": {
+              "games": 189,
+              "from": "2024-09-17T16:45Z",
+              "to": "2025-05-31T19:00Z"
+            },
+            "uefa.europa": {
+              "games": 189,
+              "from": "2024-09-25T16:45Z",
+              "to": "2025-05-21T19:00Z"
+            }
+          }
+        },
+        "2025-26": {
+          "games": 5798,
+          "from": "2025-08-01T18:30Z",
+          "to": "2026-05-31T23:30Z",
+          "leagues": {
+            "ger.2": {
+              "games": 306,
+              "from": "2025-08-01T18:30Z",
+              "to": "2026-05-17T13:30Z"
+            },
+            "sco.1": {
+              "games": 228,
+              "from": "2025-08-02T14:00Z",
+              "to": "2026-05-17T13:00Z"
+            },
+            "bra.1": {
+              "games": 402,
+              "from": "2025-08-02T19:00Z",
+              "to": "2026-05-31T23:30Z"
+            },
+            "ned.1": {
+              "games": 309,
+              "from": "2025-08-08T18:00Z",
+              "to": "2026-05-24T10:15Z"
+            },
+            "tur.1": {
+              "games": 306,
+              "from": "2025-08-08T18:30Z",
+              "to": "2026-05-17T17:00Z"
+            },
+            "eng.2": {
+              "games": 557,
+              "from": "2025-08-08T19:00Z",
+              "to": "2026-05-23T14:30Z"
+            },
+            "por.1": {
+              "games": 306,
+              "from": "2025-08-08T19:15Z",
+              "to": "2026-05-16T19:30Z"
+            },
+            "mex.1": {
+              "games": 311,
+              "from": "2025-08-09T03:00Z",
+              "to": "2026-05-25T01:00Z"
+            },
+            "usa.1": {
+              "games": 397,
+              "from": "2025-08-09T23:30Z",
+              "to": "2026-05-25T01:15Z"
+            },
+            "esp.1": {
+              "games": 380,
+              "from": "2025-08-15T17:00Z",
+              "to": "2026-05-24T19:00Z"
+            },
+            "eng.1": {
+              "games": 380,
+              "from": "2025-08-15T19:00Z",
+              "to": "2026-05-24T15:00Z"
+            },
+            "esp.2": {
+              "games": 462,
+              "from": "2025-08-15T19:30Z",
+              "to": "2026-05-31T19:00Z"
+            },
+            "ger.1": {
+              "games": 306,
+              "from": "2025-08-22T18:30Z",
+              "to": "2026-05-16T13:30Z"
+            },
+            "ita.2": {
+              "games": 390,
+              "from": "2025-08-22T18:30Z",
+              "to": "2026-05-29T18:00Z"
+            },
+            "ita.1": {
+              "games": 380,
+              "from": "2025-08-23T16:30Z",
+              "to": "2026-05-24T19:45Z"
+            },
+            "uefa.champions": {
+              "games": 189,
+              "from": "2025-09-16T16:45Z",
+              "to": "2026-05-30T16:00Z"
+            },
+            "uefa.europa": {
+              "games": 189,
+              "from": "2025-09-24T16:45Z",
+              "to": "2026-05-20T19:00Z"
+            }
+          }
+        }
+      }
+    }
+  },
+  "baselines": {
+    "test": {
+      "model": {
+        "n": 19813,
+        "games": 3340,
+        "brier": 0.1653,
+        "logLoss": 0.4941,
+        "hitRate": 0.7554,
+        "calibrationGap": 0.2649
+      },
+      "modelUncalibrated": {
+        "n": 19813,
+        "games": 3340,
+        "brier": 0.1655,
+        "logLoss": 0.5039,
+        "hitRate": 0.7547,
+        "calibrationGap": 0.265
+      },
+      "walkForwardCalibrated": {
+        "n": 19813,
+        "games": 3340,
+        "brier": 0.1654,
+        "logLoss": 0.4936,
+        "hitRate": 0.7554,
+        "calibrationGap": 0.2671
+      },
+      "prior": {
+        "n": 19813,
+        "games": 3340,
+        "brier": 0.2473,
+        "logLoss": 0.6878,
+        "hitRate": 0.5521,
+        "calibrationGap": 0.0643
+      },
+      "scoreTime": {
+        "n": 19813,
+        "games": 3340,
+        "brier": 0.1669,
+        "logLoss": 0.5029,
+        "hitRate": 0.7531,
+        "calibrationGap": 0.2678
+      },
+      "pregameLine": {
+        "n": 19734,
+        "games": 3322,
+        "brier": 0.1987,
+        "logLoss": 0.5791,
+        "hitRate": 0.6782,
+        "calibrationGap": 0.1853
+      },
+      "naive": {
+        "n": 19813,
+        "games": 3340,
+        "brier": 0.25,
+        "logLoss": 0.6931,
+        "hitRate": 0.5032,
+        "calibrationGap": 0.0032
+      }
+    },
+    "all": {
+      "model": {
+        "n": 102388,
+        "games": 16703,
+        "brier": 0.1676,
+        "logLoss": 0.5057,
+        "hitRate": 0.7471,
+        "calibrationGap": 0.251
+      },
+      "modelUncalibrated": {
+        "n": 102388,
+        "games": 16703,
+        "brier": 0.1686,
+        "logLoss": 0.5226,
+        "hitRate": 0.7476,
+        "calibrationGap": 0.2513
+      },
+      "walkForwardCalibrated": {
+        "n": 102388,
+        "games": 16703,
+        "brier": 0.1681,
+        "logLoss": 0.5016,
+        "hitRate": 0.7471,
+        "calibrationGap": 0.2558
+      },
+      "prior": {
+        "n": 102388,
+        "games": 16703,
+        "brier": 0.2448,
+        "logLoss": 0.6826,
+        "hitRate": 0.5655,
+        "calibrationGap": 0.0705
+      },
+      "scoreTime": {
+        "n": 102388,
+        "games": 16703,
+        "brier": 0.17,
+        "logLoss": 0.5158,
+        "hitRate": 0.7463,
+        "calibrationGap": 0.2574
+      },
+      "pregameLine": {
+        "n": 32066,
+        "games": 5204,
+        "brier": 0.2013,
+        "logLoss": 0.5847,
+        "hitRate": 0.6756,
+        "calibrationGap": 0.1726
+      },
+      "naive": {
+        "n": 102388,
+        "games": 16703,
+        "brier": 0.25,
+        "logLoss": 0.6931,
+        "hitRate": 0.5059,
+        "calibrationGap": 0.0059
+      }
+    }
+  },
+  "byTimeBucket": {
+    "basketball": {
+      "early": {
+        "n": 2817,
+        "games": 940,
+        "hits": 1630,
+        "hitRate": 0.5786,
+        "avgPredicted": 0.5804,
+        "calibrationGap": -0.0017,
+        "brier": 0.1903,
+        "logLoss": 0.5584,
+        "buckets": [
+          {
+            "range": "0.00-0.25",
+            "n": 181,
+            "predicted": 0.1606,
+            "actual": 0.0994
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 183,
+            "predicted": 0.2979,
+            "actual": 0.2022
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 287,
+            "predicted": 0.3816,
+            "actual": 0.3484
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 630,
+            "predicted": 0.5031,
+            "actual": 0.4937
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 528,
+            "predicted": 0.6142,
+            "actual": 0.6667
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 388,
+            "predicted": 0.6883,
+            "actual": 0.701
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 620,
+            "predicted": 0.8604,
+            "actual": 0.871
+          }
+        ],
+        "reference": {
+          "n": 2817,
+          "games": 940,
+          "brier": 0.1927,
+          "logLoss": 0.5638,
+          "hitRate": 0.7043,
+          "calibrationGap": 0.1708
+        }
+      },
+      "mid": {
+        "n": 2907,
+        "games": 936,
+        "hits": 1657,
+        "hitRate": 0.57,
+        "avgPredicted": 0.5696,
+        "calibrationGap": 0.0004,
+        "brier": 0.1319,
+        "logLoss": 0.4014,
+        "buckets": [
+          {
+            "range": "0.00-0.25",
+            "n": 620,
+            "predicted": 0.1024,
+            "actual": 0.0645
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 162,
+            "predicted": 0.2837,
+            "actual": 0.2593
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 216,
+            "predicted": 0.3785,
+            "actual": 0.3426
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 372,
+            "predicted": 0.5098,
+            "actual": 0.5296
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 235,
+            "predicted": 0.6174,
+            "actual": 0.6553
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 241,
+            "predicted": 0.6874,
+            "actual": 0.7469
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 1061,
+            "predicted": 0.9087,
+            "actual": 0.9142
+          }
+        ],
+        "reference": {
+          "n": 2907,
+          "games": 936,
+          "brier": 0.1366,
+          "logLoss": 0.4238,
+          "hitRate": 0.8043,
+          "calibrationGap": 0.2589
+        }
+      },
+      "late": {
+        "n": 2089,
+        "games": 529,
+        "hits": 1167,
+        "hitRate": 0.5586,
+        "avgPredicted": 0.5457,
+        "calibrationGap": 0.0129,
+        "brier": 0.0922,
+        "logLoss": 0.2978,
+        "buckets": [
+          {
+            "range": "0.00-0.25",
+            "n": 673,
+            "predicted": 0.0578,
+            "actual": 0.0684
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 93,
+            "predicted": 0.2846,
+            "actual": 0.2473
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 82,
+            "predicted": 0.3797,
+            "actual": 0.439
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 154,
+            "predicted": 0.5105,
+            "actual": 0.5455
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 114,
+            "predicted": 0.6152,
+            "actual": 0.5789
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 106,
+            "predicted": 0.7026,
+            "actual": 0.717
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 867,
+            "predicted": 0.9461,
+            "actual": 0.9642
+          }
+        ],
+        "reference": {
+          "n": 2089,
+          "games": 529,
+          "brier": 0.0946,
+          "logLoss": 0.3106,
+          "hitRate": 0.8669,
+          "calibrationGap": 0.3315
+        }
+      },
+      "excludingLate": {
+        "n": 5724,
+        "games": 940,
+        "hits": 3287,
+        "hitRate": 0.5742,
+        "avgPredicted": 0.5749,
+        "calibrationGap": -0.0006,
+        "brier": 0.1607,
+        "logLoss": 0.4786,
+        "buckets": [
+          {
+            "range": "0.00-0.25",
+            "n": 801,
+            "predicted": 0.1155,
+            "actual": 0.0724
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 345,
+            "predicted": 0.2913,
+            "actual": 0.229
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 503,
+            "predicted": 0.3802,
+            "actual": 0.3459
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 1002,
+            "predicted": 0.5056,
+            "actual": 0.507
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 763,
+            "predicted": 0.6152,
+            "actual": 0.6632
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 629,
+            "predicted": 0.688,
+            "actual": 0.7186
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 1681,
+            "predicted": 0.8909,
+            "actual": 0.8983
+          }
+        ]
+      }
+    },
+    "soccer": {
+      "early": {
+        "n": 2400,
+        "games": 2400,
+        "hits": 1103,
+        "hitRate": 0.4596,
+        "avgPredicted": 0.4367,
+        "calibrationGap": 0.0228,
+        "brier": 0.2322,
+        "logLoss": 0.6563,
+        "buckets": [
+          {
+            "range": "0.00-0.25",
+            "n": 24,
+            "predicted": 0.1515,
+            "actual": 0.1667
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 268,
+            "predicted": 0.2617,
+            "actual": 0.2537
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 1677,
+            "predicted": 0.4154,
+            "actual": 0.4335
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 388,
+            "predicted": 0.6289,
+            "actual": 0.6959
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 43,
+            "predicted": 0.7854,
+            "actual": 0.7907
+          }
+        ],
+        "reference": {
+          "n": 2400,
+          "games": 2400,
+          "brier": 0.2321,
+          "logLoss": 0.657,
+          "hitRate": 0.6142,
+          "calibrationGap": 0.1681
+        }
+      },
+      "mid": {
+        "n": 7200,
+        "games": 2400,
+        "hits": 3309,
+        "hitRate": 0.4596,
+        "avgPredicted": 0.4381,
+        "calibrationGap": 0.0215,
+        "brier": 0.1828,
+        "logLoss": 0.5421,
+        "buckets": [
+          {
+            "range": "0.00-0.25",
+            "n": 1670,
+            "predicted": 0.1233,
+            "actual": 0.1407
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 1773,
+            "predicted": 0.3212,
+            "actual": 0.3474
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 1256,
+            "predicted": 0.3874,
+            "actual": 0.4108
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 1712,
+            "predicted": 0.6904,
+            "actual": 0.7091
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 789,
+            "predicted": 0.8999,
+            "actual": 0.9227
+          }
+        ],
+        "reference": {
+          "n": 7200,
+          "games": 2400,
+          "brier": 0.1834,
+          "logLoss": 0.5469,
+          "hitRate": 0.7325,
+          "calibrationGap": 0.2829
+        }
+      },
+      "late": {
+        "n": 2400,
+        "games": 2400,
+        "hits": 1103,
+        "hitRate": 0.4596,
+        "avgPredicted": 0.4521,
+        "calibrationGap": 0.0075,
+        "brier": 0.1203,
+        "logLoss": 0.3958,
+        "buckets": [
+          {
+            "range": "0.00-0.25",
+            "n": 1347,
+            "predicted": 0.1068,
+            "actual": 0.1522
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 1053,
+            "predicted": 0.8938,
+            "actual": 0.8528
+          }
+        ],
+        "reference": {
+          "n": 2400,
+          "games": 2400,
+          "brier": 0.1213,
+          "logLoss": 0.4082,
+          "hitRate": 0.85,
+          "calibrationGap": 0.3909
+        }
+      },
+      "excludingLate": {
+        "n": 9600,
+        "games": 2400,
+        "hits": 4412,
+        "hitRate": 0.4596,
+        "avgPredicted": 0.4377,
+        "calibrationGap": 0.0219,
+        "brier": 0.1951,
+        "logLoss": 0.5706,
+        "buckets": [
+          {
+            "range": "0.00-0.25",
+            "n": 1694,
+            "predicted": 0.1237,
+            "actual": 0.1411
+          },
+          {
+            "range": "0.25-0.35",
+            "n": 2041,
+            "predicted": 0.3134,
+            "actual": 0.3351
+          },
+          {
+            "range": "0.35-0.45",
+            "n": 2933,
+            "predicted": 0.4034,
+            "actual": 0.4238
+          },
+          {
+            "range": "0.45-0.55",
+            "n": 0,
+            "predicted": null,
+            "actual": null
+          },
+          {
+            "range": "0.55-0.65",
+            "n": 388,
+            "predicted": 0.6289,
+            "actual": 0.6959
+          },
+          {
+            "range": "0.65-0.75",
+            "n": 1712,
+            "predicted": 0.6904,
+            "actual": 0.7091
+          },
+          {
+            "range": "0.75-1.00",
+            "n": 832,
+            "predicted": 0.894,
+            "actual": 0.9159
+          }
+        ]
+      }
+    }
+  },
+  "calibration": {
+    "basketball": {
+      "method": "isotonic",
+      "fitted": true,
+      "trainedOn": 25485,
+      "validatedOn": 11500,
+      "monotone": true,
+      "brierGain": 0.0035,
+      "logLossGain": 0.0273,
+      "minImprovementBrier": 0.002,
+      "minImprovementLogLoss": 0.002,
+      "kept": true,
+      "model": {
+        "method": "isotonic",
+        "xEnds": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.0005,
+          0.0011,
+          0.0021,
+          0.0026,
+          0.0091,
+          0.0115,
+          0.0156,
+          0.0244,
+          0.0425,
+          0.0499,
+          0.0754,
+          0.1006,
+          0.1165,
+          0.1241,
+          0.1542,
+          0.1995,
+          0.2091,
+          0.2217,
+          0.2523,
+          0.3253,
+          0.3524,
+          0.3697,
+          0.4727,
+          0.4759,
+          0.476,
+          0.4991,
+          0.4993,
+          0.5267,
+          0.5747,
+          0.5747,
+          0.5792,
+          0.6348,
+          0.6355,
+          0.6669,
+          0.715,
+          0.715,
+          0.7495,
+          0.7754,
+          0.7984,
+          0.8019,
+          0.8339,
+          0.8632,
+          0.8717,
+          0.8756,
+          0.8823,
+          0.9054,
+          0.9075,
+          0.9079,
+          0.9127,
+          0.921,
+          0.9499,
+          0.9515,
+          0.9721,
+          0.9753,
+          0.9762,
+          0.9801,
+          0.9835,
+          0.9836,
+          0.9903,
+          0.9968,
+          0.9972,
+          0.9973,
+          0.999,
+          0.9998,
+          1,
+          1
+        ],
+        "values": [
+          0,
+          0,
+          0,
+          0.0064516129032258064,
+          0.013953488372093023,
+          0.018361581920903956,
+          0.019230769230769232,
+          0.027210884353741496,
+          0.029411764705882353,
+          0.03197674418604651,
+          0.06896551724137931,
+          0.08264462809917356,
+          0.09375,
+          0.11375661375661375,
+          0.11403508771929824,
+          0.15402843601895735,
+          0.17268041237113402,
+          0.21122112211221122,
+          0.2222222222222222,
+          0.25267665952890794,
+          0.2648578811369509,
+          0.2892561983471074,
+          0.2914572864321608,
+          0.3380281690140845,
+          0.3542168674698795,
+          0.3942505133470226,
+          0.4025974025974026,
+          0.46243654822335023,
+          0.4819277108433735,
+          0.5,
+          0.5116883116883116,
+          0.5172413793103449,
+          0.5365497076023392,
+          0.5435952637244349,
+          0.5714285714285714,
+          0.5775577557755776,
+          0.5982905982905983,
+          0.6,
+          0.6121212121212121,
+          0.6375,
+          0.6666666666666666,
+          0.6772486772486772,
+          0.6829652996845426,
+          0.6911196911196911,
+          0.7272727272727273,
+          0.745945945945946,
+          0.7537537537537538,
+          0.7611940298507462,
+          0.7677419354838709,
+          0.7931034482758621,
+          0.7954911433172303,
+          0.813953488372093,
+          0.8333333333333334,
+          0.851063829787234,
+          0.8729508196721312,
+          0.8899637243047158,
+          0.8947368421052632,
+          0.9113110539845758,
+          0.9166666666666666,
+          0.9166666666666666,
+          0.9230769230769231,
+          0.9428571428571428,
+          0.9473684210526315,
+          0.9662650602409638,
+          0.97,
+          0.971830985915493,
+          0.975,
+          0.978125,
+          0.9869848156182213,
+          0.9904931669637552,
+          0.9935897435897436
+        ],
+        "samples": 25485
+      }
+    },
+    "soccer": {
+      "method": "isotonic",
+      "fitted": true,
+      "trainedOn": 36015,
+      "validatedOn": 9575,
+      "monotone": true,
+      "brierGain": -0.0002,
+      "logLossGain": -0.0005,
+      "minImprovementBrier": 0.002,
+      "minImprovementLogLoss": 0.002,
+      "kept": false,
+      "model": null
+    }
+  },
+  "shipGate": {
+    "bySport": {
+      "basketball": {
+        "key": "basketball",
+        "games": 940,
+        "rows": 7813,
+        "hitRate": 0.7907,
+        "hitRateLowerBound": 0.772,
+        "breakEvenProbability": 0.524,
+        "minGames": 500,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "referenceKey": "scoreTimeP",
+        "model": {
+          "n": 7813,
+          "games": 940,
+          "brier": 0.1424,
+          "logLoss": 0.4303,
+          "hitRate": 0.7907,
+          "calibrationGap": 0.2237
+        },
+        "reference": {
+          "n": 7813,
+          "games": 940,
+          "brier": 0.1456,
+          "logLoss": 0.444,
+          "hitRate": 0.785,
+          "calibrationGap": 0.2465
+        },
+        "brierGain": 0.0032,
+        "logLossGain": 0.0137,
+        "bootstrap": {
+          "iterations": 2000,
+          "games": 940,
+          "hitRate": {
+            "n": 2000,
+            "lower": 0.772,
+            "upper": 0.8085
+          },
+          "brierGain": {
+            "n": 2000,
+            "lower": 0.0001,
+            "upper": 0.0064
+          },
+          "logLossGain": {
+            "n": 2000,
+            "lower": 0.0015,
+            "upper": 0.027
+          }
+        },
+        "passed": true,
+        "reasons": [],
+        "leagues": {
+          "basketball|mens-college-basketball": {
+            "sport": "basketball",
+            "league": "mens-college-basketball",
+            "minLeagueGames": 100,
+            "games": 430,
+            "rows": 2200,
+            "judged": true,
+            "brierGain": 0.005,
+            "logLossGain": 0.0137,
+            "hitRate": 0.8045,
+            "blocked": false,
+            "reasons": []
+          },
+          "basketball|nba": {
+            "sport": "basketball",
+            "league": "nba",
+            "minLeagueGames": 100,
+            "games": 510,
+            "rows": 5613,
+            "judged": true,
+            "brierGain": 0.0025,
+            "logLossGain": 0.0137,
+            "hitRate": 0.7853,
+            "blocked": false,
+            "reasons": []
+          }
+        },
+        "blockedLeagues": []
+      },
+      "soccer": {
+        "key": "soccer",
+        "games": 2400,
+        "rows": 12000,
+        "hitRate": 0.7323,
+        "hitRateLowerBound": 0.7192,
+        "breakEvenProbability": 0.524,
+        "minGames": 500,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "referenceKey": "scoreTimeP",
+        "model": {
+          "n": 12000,
+          "games": 2400,
+          "brier": 0.1802,
+          "logLoss": 0.5357,
+          "hitRate": 0.7323,
+          "calibrationGap": 0.2917
+        },
+        "reference": {
+          "n": 12000,
+          "games": 2400,
+          "brier": 0.1807,
+          "logLoss": 0.5412,
+          "hitRate": 0.7323,
+          "calibrationGap": 0.2816
+        },
+        "brierGain": 0.0005,
+        "logLossGain": 0.0055,
+        "bootstrap": {
+          "iterations": 2000,
+          "games": 2400,
+          "hitRate": {
+            "n": 2000,
+            "lower": 0.7192,
+            "upper": 0.7458
+          },
+          "brierGain": {
+            "n": 2000,
+            "lower": -0.0003,
+            "upper": 0.0014
+          },
+          "logLossGain": {
+            "n": 2000,
+            "lower": 0.0021,
+            "upper": 0.0092
+          }
+        },
+        "passed": false,
+        "reasons": [
+          "Brier gain 0.0005 < 0.002"
+        ],
+        "leagues": {
+          "soccer|bra.1": {
+            "sport": "soccer",
+            "league": "bra.1",
+            "minLeagueGames": 100,
+            "games": 170,
+            "rows": 850,
+            "judged": true,
+            "brierGain": 0.0022,
+            "logLossGain": 0.0098,
+            "hitRate": 0.7012,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|eng.1": {
+            "sport": "soccer",
+            "league": "eng.1",
+            "minLeagueGames": 100,
+            "games": 146,
+            "rows": 730,
+            "judged": true,
+            "brierGain": 0.0004,
+            "logLossGain": -0.0008,
+            "hitRate": 0.763,
+            "blocked": true,
+            "reasons": [
+              "log loss worse than the score-and-time baseline by 0.0008"
+            ]
+          },
+          "soccer|eng.2": {
+            "sport": "soccer",
+            "league": "eng.2",
+            "minLeagueGames": 100,
+            "games": 202,
+            "rows": 1010,
+            "judged": true,
+            "brierGain": 0.0008,
+            "logLossGain": 0.0041,
+            "hitRate": 0.7653,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|esp.1": {
+            "sport": "soccer",
+            "league": "esp.1",
+            "minLeagueGames": 100,
+            "games": 167,
+            "rows": 835,
+            "judged": true,
+            "brierGain": -0.0015,
+            "logLossGain": -0.0019,
+            "hitRate": 0.7234,
+            "blocked": true,
+            "reasons": [
+              "Brier worse than the score-and-time baseline by 0.0015",
+              "log loss worse than the score-and-time baseline by 0.0019"
+            ]
+          },
+          "soccer|esp.2": {
+            "sport": "soccer",
+            "league": "esp.2",
+            "minLeagueGames": 100,
+            "games": 205,
+            "rows": 1025,
+            "judged": true,
+            "brierGain": 0.0008,
+            "logLossGain": 0.0114,
+            "hitRate": 0.6937,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|ger.1": {
+            "sport": "soccer",
+            "league": "ger.1",
+            "minLeagueGames": 100,
+            "games": 129,
+            "rows": 645,
+            "judged": true,
+            "brierGain": 0.0017,
+            "logLossGain": 0.011,
+            "hitRate": 0.7411,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|ger.2": {
+            "sport": "soccer",
+            "league": "ger.2",
+            "minLeagueGames": 100,
+            "games": 130,
+            "rows": 650,
+            "judged": true,
+            "brierGain": 0.0019,
+            "logLossGain": 0.0088,
+            "hitRate": 0.7369,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|ita.1": {
+            "sport": "soccer",
+            "league": "ita.1",
+            "minLeagueGames": 100,
+            "games": 157,
+            "rows": 785,
+            "judged": true,
+            "brierGain": -0.0027,
+            "logLossGain": -0.0059,
+            "hitRate": 0.7987,
+            "blocked": true,
+            "reasons": [
+              "Brier worse than the score-and-time baseline by 0.0027",
+              "log loss worse than the score-and-time baseline by 0.0059"
+            ]
+          },
+          "soccer|ita.2": {
+            "sport": "soccer",
+            "league": "ita.2",
+            "minLeagueGames": 100,
+            "games": 172,
+            "rows": 860,
+            "judged": true,
+            "brierGain": 0.0016,
+            "logLossGain": 0.0159,
+            "hitRate": 0.6942,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|mex.1": {
+            "sport": "soccer",
+            "league": "mex.1",
+            "minLeagueGames": 100,
+            "games": 137,
+            "rows": 685,
+            "judged": true,
+            "brierGain": 0.0005,
+            "logLossGain": 0.0042,
+            "hitRate": 0.7285,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|ned.1": {
+            "sport": "soccer",
+            "league": "ned.1",
+            "minLeagueGames": 100,
+            "games": 128,
+            "rows": 640,
+            "judged": true,
+            "brierGain": 0.0036,
+            "logLossGain": 0.0124,
+            "hitRate": 0.7312,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|por.1": {
+            "sport": "soccer",
+            "league": "por.1",
+            "minLeagueGames": 100,
+            "games": 132,
+            "rows": 660,
+            "judged": true,
+            "brierGain": 0.0018,
+            "logLossGain": 0.005,
+            "hitRate": 0.7318,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|sco.1": {
+            "sport": "soccer",
+            "league": "sco.1",
+            "minLeagueGames": 100,
+            "games": 88,
+            "rows": 440,
+            "judged": false,
+            "brierGain": 0.0022,
+            "logLossGain": 0.0215,
+            "hitRate": 0.6773,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|tur.1": {
+            "sport": "soccer",
+            "league": "tur.1",
+            "minLeagueGames": 100,
+            "games": 129,
+            "rows": 645,
+            "judged": true,
+            "brierGain": -0.0025,
+            "logLossGain": -0.0029,
+            "hitRate": 0.7287,
+            "blocked": true,
+            "reasons": [
+              "Brier worse than the score-and-time baseline by 0.0025",
+              "log loss worse than the score-and-time baseline by 0.0029"
+            ]
+          },
+          "soccer|uefa.champions": {
+            "sport": "soccer",
+            "league": "uefa.champions",
+            "minLeagueGames": 100,
+            "games": 45,
+            "rows": 225,
+            "judged": false,
+            "brierGain": -0.005,
+            "logLossGain": -0.0146,
+            "hitRate": 0.8044,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|uefa.europa": {
+            "sport": "soccer",
+            "league": "uefa.europa",
+            "minLeagueGames": 100,
+            "games": 45,
+            "rows": 225,
+            "judged": false,
+            "brierGain": -0.0033,
+            "logLossGain": -0.0141,
+            "hitRate": 0.7822,
+            "blocked": false,
+            "reasons": []
+          },
+          "soccer|usa.1": {
+            "sport": "soccer",
+            "league": "usa.1",
+            "minLeagueGames": 100,
+            "games": 218,
+            "rows": 1090,
+            "judged": true,
+            "brierGain": 0.001,
+            "logLossGain": 0.0065,
+            "hitRate": 0.7257,
+            "blocked": false,
+            "reasons": []
+          }
+        },
+        "blockedLeagues": [
+          "soccer|eng.1",
+          "soccer|esp.1",
+          "soccer|ita.1",
+          "soccer|tur.1"
+        ]
+      }
+    }
+  },
+  "verdict": {
+    "reference": "score-and-time",
+    "beatsScoreTimeBrier": true,
+    "beatsScoreTimeLogLoss": true,
+    "modelBrier": 0.1653,
+    "scoreTimeBrier": 0.1669,
+    "modelLogLoss": 0.4941,
+    "scoreTimeLogLoss": 0.5029,
+    "games": 3340,
+    "shipped": true,
+    "shippedBuckets": [
+      "basketball"
+    ],
+    "failedReasons": [
+      "Brier gain 0.0005 < 0.002"
+    ],
+    "statement": "Gate PASSED for 1 sport bucket(s): the shipped live probability beats the score-and-time baseline on BOTH Brier and log loss (gain interval above zero) with a hit-rate lower bound above break-even."
+  },
+  "failures": [],
+  "failureCount": 0
+}

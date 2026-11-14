@@ -1,0 +1,1427 @@
+{
+  "modelVersion": "live-backtest-1.0.0",
+  "generatedAt": "2026-10-27T16:49:54.281Z",
+  "dataset": {
+    "games": 120,
+    "checkpoints": 970,
+    "skipped": 0,
+    "missingLine": 0,
+    "sports": [
+      "basketball"
+    ],
+    "from": "2026-03-01T18:00Z",
+    "to": "2026-03-13T01:49Z"
+  },
+  "windows": {
+    "train": [
+      0,
+      0.6
+    ],
+    "validation": [
+      0.6,
+      0.8
+    ],
+    "test": [
+      0.8,
+      1
+    ]
+  },
+  "counts": {
+    "games": 120,
+    "checkpoints": 970,
+    "graded": 970
+  },
+  "overall": {
+    "n": 970,
+    "hits": 544,
+    "hitRate": 0.5608,
+    "avgPredicted": 0.5836,
+    "calibrationGap": -0.0228,
+    "brier": 0.1456,
+    "logLoss": 0.4661,
+    "buckets": [
+      {
+        "range": "0.00-0.25",
+        "n": 218,
+        "predicted": 0.0846,
+        "actual": 0.0963
+      },
+      {
+        "range": "0.25-0.35",
+        "n": 62,
+        "predicted": 0.2953,
+        "actual": 0.3387
+      },
+      {
+        "range": "0.35-0.45",
+        "n": 62,
+        "predicted": 0.3963,
+        "actual": 0.4032
+      },
+      {
+        "range": "0.45-0.55",
+        "n": 80,
+        "predicted": 0.5062,
+        "actual": 0.5
+      },
+      {
+        "range": "0.55-0.65",
+        "n": 70,
+        "predicted": 0.6098,
+        "actual": 0.5143
+      },
+      {
+        "range": "0.65-0.75",
+        "n": 87,
+        "predicted": 0.6968,
+        "actual": 0.5977
+      },
+      {
+        "range": "0.75-1.00",
+        "n": 391,
+        "predicted": 0.9231,
+        "actual": 0.8926
+      }
+    ]
+  },
+  "uncalibrated": {
+    "n": 970,
+    "hits": 544,
+    "hitRate": 0.5608,
+    "avgPredicted": 0.5836,
+    "calibrationGap": -0.0228,
+    "brier": 0.1456,
+    "logLoss": 0.4661,
+    "buckets": [
+      {
+        "range": "0.00-0.25",
+        "n": 218,
+        "predicted": 0.0846,
+        "actual": 0.0963
+      },
+      {
+        "range": "0.25-0.35",
+        "n": 62,
+        "predicted": 0.2953,
+        "actual": 0.3387
+      },
+      {
+        "range": "0.35-0.45",
+        "n": 62,
+        "predicted": 0.3963,
+        "actual": 0.4032
+      },
+      {
+        "range": "0.45-0.55",
+        "n": 80,
+        "predicted": 0.5062,
+        "actual": 0.5
+      },
+      {
+        "range": "0.55-0.65",
+        "n": 70,
+        "predicted": 0.6098,
+        "actual": 0.5143
+      },
+      {
+        "range": "0.65-0.75",
+        "n": 87,
+        "predicted": 0.6968,
+        "actual": 0.5977
+      },
+      {
+        "range": "0.75-1.00",
+        "n": 391,
+        "predicted": 0.9231,
+        "actual": 0.8926
+      }
+    ]
+  },
+  "byWindow": {
+    "train": {
+      "n": 648,
+      "hits": 339,
+      "hitRate": 0.5231,
+      "avgPredicted": 0.5463,
+      "calibrationGap": -0.0231,
+      "brier": 0.1476,
+      "logLoss": 0.4772,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 162,
+          "predicted": 0.085,
+          "actual": 0.1049
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 50,
+          "predicted": 0.2968,
+          "actual": 0.32
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 43,
+          "predicted": 0.3947,
+          "actual": 0.3488
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 58,
+          "predicted": 0.5059,
+          "actual": 0.5
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 49,
+          "predicted": 0.6071,
+          "actual": 0.4694
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 54,
+          "predicted": 0.6924,
+          "actual": 0.5556
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 232,
+          "predicted": 0.9134,
+          "actual": 0.9009
+        }
+      ]
+    },
+    "validation": {
+      "n": 170,
+      "hits": 84,
+      "hitRate": 0.4941,
+      "avgPredicted": 0.5909,
+      "calibrationGap": -0.0968,
+      "brier": 0.1907,
+      "logLoss": 0.6013,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 41,
+          "predicted": 0.0901,
+          "actual": 0.0976
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 9,
+          "predicted": 0.2938,
+          "actual": 0.4444
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 9,
+          "predicted": 0.3977,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 10,
+          "predicted": 0.4863,
+          "actual": 0.3
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 12,
+          "predicted": 0.6157,
+          "actual": 0.4167
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 17,
+          "predicted": 0.7085,
+          "actual": 0.5882
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 72,
+          "predicted": 0.9199,
+          "actual": 0.7639
+        }
+      ]
+    },
+    "test": {
+      "n": 152,
+      "hits": 121,
+      "hitRate": 0.7961,
+      "avgPredicted": 0.7345,
+      "calibrationGap": 0.0616,
+      "brier": 0.0869,
+      "logLoss": 0.2678,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 15,
+          "predicted": 0.0651,
+          "actual": 0
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 3,
+          "predicted": 0.2756,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 10,
+          "predicted": 0.4018,
+          "actual": 0.7
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 12,
+          "predicted": 0.5242,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 9,
+          "predicted": 0.6167,
+          "actual": 0.8889
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 16,
+          "predicted": 0.6992,
+          "actual": 0.75
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 87,
+          "predicted": 0.9516,
+          "actual": 0.977
+        }
+      ]
+    }
+  },
+  "bySport": {
+    "basketball": {
+      "n": 970,
+      "hits": 544,
+      "hitRate": 0.5608,
+      "avgPredicted": 0.5836,
+      "calibrationGap": -0.0228,
+      "brier": 0.1456,
+      "logLoss": 0.4661,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 218,
+          "predicted": 0.0846,
+          "actual": 0.0963
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 62,
+          "predicted": 0.2953,
+          "actual": 0.3387
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 62,
+          "predicted": 0.3963,
+          "actual": 0.4032
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 80,
+          "predicted": 0.5062,
+          "actual": 0.5
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 70,
+          "predicted": 0.6098,
+          "actual": 0.5143
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 87,
+          "predicted": 0.6968,
+          "actual": 0.5977
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 391,
+          "predicted": 0.9231,
+          "actual": 0.8926
+        }
+      ]
+    }
+  },
+  "byCheckpoint": {
+    "basketball|p1_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p1_3min_left",
+      "belowMinSamples": false,
+      "n": 120,
+      "hits": 70,
+      "hitRate": 0.5833,
+      "avgPredicted": 0.6065,
+      "calibrationGap": -0.0232,
+      "brier": 0.2018,
+      "logLoss": 0.5818,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 10,
+          "predicted": 0.1925,
+          "actual": 0.2
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 14,
+          "predicted": 0.2974,
+          "actual": 0.4286
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 14,
+          "predicted": 0.3937,
+          "actual": 0.2143
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 15,
+          "predicted": 0.5076,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 10,
+          "predicted": 0.6167,
+          "actual": 0.6
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 15,
+          "predicted": 0.6952,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 42,
+          "predicted": 0.8804,
+          "actual": 0.7857
+        }
+      ]
+    },
+    "basketball|p1_6min_left": {
+      "sport": "basketball",
+      "checkpoint": "p1_6min_left",
+      "belowMinSamples": false,
+      "n": 120,
+      "hits": 70,
+      "hitRate": 0.5833,
+      "avgPredicted": 0.603,
+      "calibrationGap": -0.0196,
+      "brier": 0.2113,
+      "logLoss": 0.6043,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 6,
+          "predicted": 0.1526,
+          "actual": 0.1667
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 14,
+          "predicted": 0.3008,
+          "actual": 0.3571
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 11,
+          "predicted": 0.3869,
+          "actual": 0.6364
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 19,
+          "predicted": 0.5153,
+          "actual": 0.4737
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 18,
+          "predicted": 0.6076,
+          "actual": 0.3889
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 18,
+          "predicted": 0.7046,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 34,
+          "predicted": 0.8695,
+          "actual": 0.8529
+        }
+      ]
+    },
+    "basketball|p1_end": {
+      "sport": "basketball",
+      "checkpoint": "p1_end",
+      "belowMinSamples": false,
+      "n": 120,
+      "hits": 70,
+      "hitRate": 0.5833,
+      "avgPredicted": 0.607,
+      "calibrationGap": -0.0236,
+      "brier": 0.2064,
+      "logLoss": 0.5908,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 19,
+          "predicted": 0.179,
+          "actual": 0.2105
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 6,
+          "predicted": 0.3071,
+          "actual": 0.5
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 16,
+          "predicted": 0.4123,
+          "actual": 0.4375
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 11,
+          "predicted": 0.4932,
+          "actual": 0.7273
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 12,
+          "predicted": 0.6099,
+          "actual": 0.5833
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 10,
+          "predicted": 0.6992,
+          "actual": 0.4
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 46,
+          "predicted": 0.897,
+          "actual": 0.8043
+        }
+      ]
+    },
+    "basketball|p2_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p2_3min_left",
+      "belowMinSamples": false,
+      "n": 120,
+      "hits": 70,
+      "hitRate": 0.5833,
+      "avgPredicted": 0.6198,
+      "calibrationGap": -0.0365,
+      "brier": 0.1092,
+      "logLoss": 0.3305,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 31,
+          "predicted": 0.0864,
+          "actual": 0.129
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 5,
+          "predicted": 0.2871,
+          "actual": 0.2
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 4,
+          "predicted": 0.3936,
+          "actual": 0
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 5,
+          "predicted": 0.5179,
+          "actual": 0.6
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 3,
+          "predicted": 0.6134,
+          "actual": 0
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 12,
+          "predicted": 0.6674,
+          "actual": 0.4167
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 60,
+          "predicted": 0.9375,
+          "actual": 0.95
+        }
+      ]
+    },
+    "basketball|p2_6min_left": {
+      "sport": "basketball",
+      "checkpoint": "p2_6min_left",
+      "belowMinSamples": false,
+      "n": 120,
+      "hits": 70,
+      "hitRate": 0.5833,
+      "avgPredicted": 0.6115,
+      "calibrationGap": -0.0282,
+      "brier": 0.1261,
+      "logLoss": 0.384,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 27,
+          "predicted": 0.0841,
+          "actual": 0.1111
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 8,
+          "predicted": 0.2719,
+          "actual": 0.25
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 3,
+          "predicted": 0.3913,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 9,
+          "predicted": 0.5035,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 10,
+          "predicted": 0.6232,
+          "actual": 0.7
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 9,
+          "predicted": 0.7147,
+          "actual": 0.4444
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 54,
+          "predicted": 0.9364,
+          "actual": 0.9259
+        }
+      ]
+    },
+    "basketball|p2_end": {
+      "sport": "basketball",
+      "checkpoint": "p2_end",
+      "belowMinSamples": false,
+      "n": 64,
+      "hits": 33,
+      "hitRate": 0.5156,
+      "avgPredicted": 0.5524,
+      "calibrationGap": -0.0368,
+      "brier": 0.1803,
+      "logLoss": 0.5783,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 15,
+          "predicted": 0.1032,
+          "actual": 0.1333
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 4,
+          "predicted": 0.3086,
+          "actual": 0.5
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 4,
+          "predicted": 0.3866,
+          "actual": 0.25
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 6,
+          "predicted": 0.504,
+          "actual": 0.1667
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 5,
+          "predicted": 0.5833,
+          "actual": 0.6
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 8,
+          "predicted": 0.6981,
+          "actual": 0.75
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 22,
+          "predicted": 0.8864,
+          "actual": 0.8182
+        }
+      ]
+    },
+    "basketball|p3_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p3_3min_left",
+      "belowMinSamples": false,
+      "n": 64,
+      "hits": 33,
+      "hitRate": 0.5156,
+      "avgPredicted": 0.5282,
+      "calibrationGap": -0.0125,
+      "brier": 0.1147,
+      "logLoss": 0.7703,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 20,
+          "predicted": 0.046,
+          "actual": 0.05
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 5,
+          "predicted": 0.2822,
+          "actual": 0.2
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 4,
+          "predicted": 0.3938,
+          "actual": 0.5
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 4,
+          "predicted": 0.486,
+          "actual": 0.5
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 2,
+          "predicted": 0.605,
+          "actual": 0.5
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 1,
+          "predicted": 0.7257,
+          "actual": 1
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 28,
+          "predicted": 0.9291,
+          "actual": 0.8929
+        }
+      ]
+    },
+    "basketball|p3_6min_left": {
+      "sport": "basketball",
+      "checkpoint": "p3_6min_left",
+      "belowMinSamples": false,
+      "n": 60,
+      "hits": 32,
+      "hitRate": 0.5333,
+      "avgPredicted": 0.5365,
+      "calibrationGap": -0.0031,
+      "brier": 0.1188,
+      "logLoss": 0.4358,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 18,
+          "predicted": 0.0806,
+          "actual": 0.0556
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 4,
+          "predicted": 0.3167,
+          "actual": 0
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 1,
+          "predicted": 0.4316,
+          "actual": 1
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 7,
+          "predicted": 0.5148,
+          "actual": 0.4286
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 4,
+          "predicted": 0.6125,
+          "actual": 1
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 5,
+          "predicted": 0.7038,
+          "actual": 0.8
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 21,
+          "predicted": 0.9269,
+          "actual": 0.9048
+        }
+      ]
+    },
+    "basketball|p3_end": {
+      "sport": "basketball",
+      "checkpoint": "p3_end",
+      "belowMinSamples": false,
+      "n": 60,
+      "hits": 32,
+      "hitRate": 0.5333,
+      "avgPredicted": 0.5507,
+      "calibrationGap": -0.0174,
+      "brier": 0.1079,
+      "logLoss": 0.3363,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 22,
+          "predicted": 0.0787,
+          "actual": 0.0909
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 1,
+          "predicted": 0.2936,
+          "actual": 0
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 2,
+          "predicted": 0.4043,
+          "actual": 1
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 1,
+          "predicted": 0.4635,
+          "actual": 1
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 4,
+          "predicted": 0.5972,
+          "actual": 0
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 5,
+          "predicted": 0.6949,
+          "actual": 0.6
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 25,
+          "predicted": 0.9553,
+          "actual": 0.96
+        }
+      ]
+    },
+    "basketball|p4_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p4_3min_left",
+      "belowMinSamples": false,
+      "n": 60,
+      "hits": 32,
+      "hitRate": 0.5333,
+      "avgPredicted": 0.536,
+      "calibrationGap": -0.0026,
+      "brier": 0.0416,
+      "logLoss": 0.1442,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 26,
+          "predicted": 0.0248,
+          "actual": 0.0385
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 1,
+          "predicted": 0.3937,
+          "actual": 0
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 1,
+          "predicted": 0.5119,
+          "actual": 0
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1,
+          "predicted": 0.6261,
+          "actual": 1
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 1,
+          "predicted": 0.7329,
+          "actual": 1
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 30,
+          "predicted": 0.975,
+          "actual": 0.9667
+        }
+      ]
+    },
+    "basketball|p4_6min_left": {
+      "sport": "basketball",
+      "checkpoint": "p4_6min_left",
+      "belowMinSamples": false,
+      "n": 60,
+      "hits": 32,
+      "hitRate": 0.5333,
+      "avgPredicted": 0.5465,
+      "calibrationGap": -0.0131,
+      "brier": 0.0538,
+      "logLoss": 0.1753,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 24,
+          "predicted": 0.0399,
+          "actual": 0
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 1,
+          "predicted": 0.276,
+          "actual": 1
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 2,
+          "predicted": 0.3517,
+          "actual": 0.5
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1,
+          "predicted": 0.5998,
+          "actual": 0
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 3,
+          "predicted": 0.6791,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 29,
+          "predicted": 0.9729,
+          "actual": 0.9655
+        }
+      ]
+    },
+    "basketball|p4_end": {
+      "sport": "basketball",
+      "checkpoint": "p4_end",
+      "belowMinSamples": true,
+      "n": 1,
+      "hits": 0,
+      "hitRate": 0,
+      "avgPredicted": 0.5,
+      "calibrationGap": -0.5,
+      "brier": 0.25,
+      "logLoss": 0.6931,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 1,
+          "predicted": 0.5,
+          "actual": 0
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        }
+      ]
+    },
+    "basketball|p5_3min_left": {
+      "sport": "basketball",
+      "checkpoint": "p5_3min_left",
+      "belowMinSamples": true,
+      "n": 1,
+      "hits": 0,
+      "hitRate": 0,
+      "avgPredicted": 0.5,
+      "calibrationGap": -0.5,
+      "brier": 0.25,
+      "logLoss": 0.6931,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 1,
+          "predicted": 0.5,
+          "actual": 0
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        }
+      ]
+    }
+  },
+  "byLeague": {
+    "basketball|mens-college-basketball": {
+      "n": 308,
+      "hits": 192,
+      "hitRate": 0.6234,
+      "avgPredicted": 0.6491,
+      "calibrationGap": -0.0257,
+      "brier": 0.1234,
+      "logLoss": 0.4478,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 55,
+          "predicted": 0.0885,
+          "actual": 0.0727
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 15,
+          "predicted": 0.2904,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 19,
+          "predicted": 0.4013,
+          "actual": 0.4211
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 26,
+          "predicted": 0.5143,
+          "actual": 0.4231
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 19,
+          "predicted": 0.6124,
+          "actual": 0.6842
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 21,
+          "predicted": 0.6924,
+          "actual": 0.5238
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 153,
+          "predicted": 0.938,
+          "actual": 0.915
+        }
+      ]
+    },
+    "basketball|nba": {
+      "n": 662,
+      "hits": 352,
+      "hitRate": 0.5317,
+      "avgPredicted": 0.5531,
+      "calibrationGap": -0.0214,
+      "brier": 0.156,
+      "logLoss": 0.4747,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 163,
+          "predicted": 0.0833,
+          "actual": 0.1043
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 47,
+          "predicted": 0.2969,
+          "actual": 0.3404
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 43,
+          "predicted": 0.3941,
+          "actual": 0.3953
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 54,
+          "predicted": 0.5023,
+          "actual": 0.537
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 51,
+          "predicted": 0.6088,
+          "actual": 0.451
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 66,
+          "predicted": 0.6982,
+          "actual": 0.6212
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 238,
+          "predicted": 0.9136,
+          "actual": 0.8782
+        }
+      ]
+    }
+  },
+  "baselines": {
+    "test": {
+      "model": {
+        "n": 152,
+        "brier": 0.0869,
+        "logLoss": 0.2678,
+        "hitRate": 0.875,
+        "calibrationGap": 0.1405
+      },
+      "modelUncalibrated": {
+        "n": 152,
+        "brier": 0.0869,
+        "logLoss": 0.2678,
+        "hitRate": 0.875,
+        "calibrationGap": 0.1405
+      },
+      "walkForwardCalibrated": {
+        "n": 152,
+        "brier": 0.0977,
+        "logLoss": 0.2984,
+        "hitRate": 0.8421,
+        "calibrationGap": 0.1473
+      },
+      "prior": {
+        "n": 152,
+        "brier": 0.2061,
+        "logLoss": 0.6042,
+        "hitRate": 0.7961,
+        "calibrationGap": 0.2061
+      },
+      "scoreTime": {
+        "n": 152,
+        "brier": 0.0988,
+        "logLoss": 0.3087,
+        "hitRate": 0.8684,
+        "calibrationGap": 0.1873
+      },
+      "bookmaker": {
+        "n": 152,
+        "brier": 0.1067,
+        "logLoss": 0.3673,
+        "hitRate": 0.8618,
+        "calibrationGap": 0.1614
+      },
+      "naive": {
+        "n": 152,
+        "brier": 0.25,
+        "logLoss": 0.6931,
+        "hitRate": 0.7961,
+        "calibrationGap": 0.2961
+      }
+    },
+    "all": {
+      "model": {
+        "n": 970,
+        "brier": 0.1456,
+        "logLoss": 0.4661,
+        "hitRate": 0.7722,
+        "calibrationGap": 0.1886
+      },
+      "modelUncalibrated": {
+        "n": 970,
+        "brier": 0.1456,
+        "logLoss": 0.4661,
+        "hitRate": 0.7722,
+        "calibrationGap": 0.1886
+      },
+      "walkForwardCalibrated": {
+        "n": 970,
+        "brier": 0.151,
+        "logLoss": 0.4781,
+        "hitRate": 0.768,
+        "calibrationGap": 0.2234
+      },
+      "prior": {
+        "n": 970,
+        "brier": 0.2447,
+        "logLoss": 0.6824,
+        "hitRate": 0.5608,
+        "calibrationGap": -0.0074
+      },
+      "scoreTime": {
+        "n": 970,
+        "brier": 0.1491,
+        "logLoss": 0.4598,
+        "hitRate": 0.7711,
+        "calibrationGap": 0.2162
+      },
+      "bookmaker": {
+        "n": 970,
+        "brier": 0.1614,
+        "logLoss": 0.4927,
+        "hitRate": 0.7474,
+        "calibrationGap": 0.1541
+      },
+      "naive": {
+        "n": 970,
+        "brier": 0.25,
+        "logLoss": 0.6931,
+        "hitRate": 0.5608,
+        "calibrationGap": 0.0608
+      }
+    }
+  },
+  "calibration": {
+    "basketball": {
+      "method": "isotonic",
+      "fitted": true,
+      "trainedOn": 648,
+      "validatedOn": 170,
+      "monotone": true,
+      "brierGain": 0.0003,
+      "logLossGain": -0.0655,
+      "minImprovementBrier": 0.002,
+      "minImprovementLogLoss": 0.002,
+      "kept": false,
+      "model": null
+    }
+  },
+  "shipGate": {
+    "bySport": {
+      "basketball": {
+        "key": "basketball",
+        "n": 152,
+        "hitRate": 0.875,
+        "hitRateLowerBound": 0.813,
+        "breakEvenProbability": 0.524,
+        "minSamples": 500,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 152,
+          "brier": 0.0869,
+          "logLoss": 0.2678,
+          "hitRate": 0.875,
+          "calibrationGap": 0.1405
+        },
+        "bookmaker": {
+          "n": 152,
+          "brier": 0.1067,
+          "logLoss": 0.3673,
+          "hitRate": 0.8618,
+          "calibrationGap": 0.1614
+        },
+        "brierGain": 0.0198,
+        "logLossGain": 0.0995,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 152 < 500"
+        ]
+      }
+    },
+    "byLeague": {
+      "basketball|mens-college-basketball": {
+        "key": "basketball|mens-college-basketball",
+        "n": 97,
+        "hitRate": 0.8351,
+        "hitRateLowerBound": 0.7487,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 97,
+          "brier": 0.1099,
+          "logLoss": 0.3227,
+          "hitRate": 0.8351,
+          "calibrationGap": 0.0874
+        },
+        "bookmaker": {
+          "n": 97,
+          "brier": 0.102,
+          "logLoss": 0.348,
+          "hitRate": 0.8969,
+          "calibrationGap": 0.1473
+        },
+        "brierGain": -0.0079,
+        "logLossGain": 0.0253,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 97 < 150",
+          "Brier gain -0.0079 < 0.002"
+        ]
+      },
+      "basketball|nba": {
+        "key": "basketball|nba",
+        "n": 55,
+        "hitRate": 0.9455,
+        "hitRateLowerBound": 0.8515,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 55,
+          "brier": 0.0463,
+          "logLoss": 0.1709,
+          "hitRate": 0.9455,
+          "calibrationGap": 0.2342
+        },
+        "bookmaker": {
+          "n": 55,
+          "brier": 0.115,
+          "logLoss": 0.4013,
+          "hitRate": 0.8,
+          "calibrationGap": 0.1863
+        },
+        "brierGain": 0.0687,
+        "logLossGain": 0.2304,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 55 < 150"
+        ]
+      }
+    }
+  },
+  "verdict": {
+    "beatsBookmaker": true,
+    "beatsBookmakerBrier": true,
+    "modelLogLoss": 0.2678,
+    "bookmakerLogLoss": 0.3673,
+    "modelBrier": 0.0869,
+    "bookmakerBrier": 0.1067,
+    "sample": 152,
+    "shipped": false,
+    "shippedBuckets": [],
+    "failedReasons": [
+      "out-of-sample rows 152 < 500"
+    ],
+    "statement": "Gate NOT passed, but the shipped projection actually beat the de-vigged market on BOTH metrics on 152 out-of-sample rows (log loss 0.2678 vs 0.3673; Brier 0.0869 vs 0.1067). It fell short only on the ship gate's sample-size or hit-rate confidence clause (out-of-sample rows 152 < 500). Projection only; no live pick."
+  },
+  "failures": [],
+  "failureCount": 0
+}

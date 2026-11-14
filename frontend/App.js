@@ -48,6 +48,7 @@ import MatchDetailsScreen from './screens/MatchDetailsScreen';
 import LeoScreen from './screens/LeoScreen';
 import TermsScreen from './screens/TermsScreen';
 import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen';
+import LiveAnalysisScreen from './screens/LiveAnalysisScreen';
 import NoInternetScreen from './components/NoInternetScreen';
 
 const Stack = createStackNavigator();
@@ -163,6 +164,21 @@ function AppStack() {
         name="PrivacyPolicy" 
         component={PrivacyPolicyScreen} 
         options={{ headerShown: false }}
+      />
+      <RootStack.Screen 
+        name="LiveAnalysis" 
+        component={LiveAnalysisScreen} 
+        options={{ 
+          headerShown: true,
+          title: 'Live Game Analysis',
+          headerStyle: {
+            backgroundColor: theme.bg,
+            elevation: 0,
+            shadowOpacity: 0,
+            borderBottomWidth: 0,
+          },
+          headerTintColor: theme.text,
+        }}
       />
     </RootStack.Navigator>
   );

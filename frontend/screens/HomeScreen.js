@@ -313,6 +313,22 @@ export default function HomeScreen({ navigation }) {
         </View>
       </Animated.View>
 
+      {/* Live Game Analysis Entry */}
+      <TouchableOpacity
+        style={styles.liveEntryCard}
+        activeOpacity={0.9}
+        onPress={() => navigation.navigate('LiveAnalysis')}
+      >
+        <View style={styles.liveEntryIconBox}>
+          <Ionicons name="pulse" size={moderateScale(22)} color={theme.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.liveEntryTitle}>Live Game Analysis</Text>
+          <Text style={styles.liveEntrySubtitle}>Paste a link to track a game in play</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
+      </TouchableOpacity>
+
       {/* Live Games Section */}
       {liveMatches.length > 0 && (
         <View style={styles.sectionContainer}>
@@ -591,6 +607,37 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     marginBottom: verticalScale(2),
   },
   leoSubtitle: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+  },
+  liveEntryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: moderateScale(20),
+    marginBottom: verticalScale(24),
+    backgroundColor: theme.cardBg,
+    borderRadius: moderateScale(16),
+    padding: moderateScale(14),
+    borderWidth: 1,
+    borderColor: theme.border,
+    minHeight: 56,
+  },
+  liveEntryIconBox: {
+    width: horizontalScale(44),
+    height: horizontalScale(44),
+    borderRadius: moderateScale(12),
+    backgroundColor: 'rgba(98,129,65,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: horizontalScale(14),
+  },
+  liveEntryTitle: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(15),
+    fontWeight: 'bold',
+    marginBottom: verticalScale(2),
+  },
+  liveEntrySubtitle: {
     color: theme.textSecondary,
     fontSize: getResponsiveFontSize(12),
   },

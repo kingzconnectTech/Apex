@@ -55,8 +55,10 @@ const {
   filterAndRankFixtures,
 } = require('./services/predictabilityEngine');
 const { createBasketballRouter } = require('./routes/basketball');
+const { createLiveRouter } = require('./routes/live');
 const basketballPersistence = require('./services/basketball/persistence');
 const { startBasketballScheduler } = require('./services/basketball/scheduler');
+const { startLiveShadowScheduler } = require('./services/live/shadowScheduler');
 const { isFrenchCompetition } = require('./services/providers/normalizer');
 
 /**
@@ -170,6 +172,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Basketball prediction engine (calibrated totals & spread)
 app.use('/api', createBasketballRouter({ sportsData, admin, logger }));
+
+// Live game analysis from a pasted link (score/clock/context; probabilities
+// only where the Phase 5 ship gate has passed).
+app.use('/api', createLiveRouter({ sportsData, logger }));
 
 // Initialize Firebase Admin SDK
 try {
@@ -2864,6 +2870,16 @@ if (IS_ENTRY_POINT && sportsData) {
     startBasketballScheduler({ sportsData, admin, logger });
   } catch (err) {
     logger.error('Failed to start basketball scheduler', { error: err.message });
+  }
+}
+
+// Live shadow scheduler (Phase 9): sweeps the shadow sports' leagues on a fixed
+// cadence and logs withheld winner probabilities, independent of user requests.
+if (IS_ENTRY_POINT && sportsData) {
+  try {
+    startLiveShadowScheduler({ sportsData, logger });
+  } catch (err) {
+    logger.error('Failed to start live shadow scheduler', { error: err.message });
   }
 }
 

@@ -4,3 +4,5 @@ node_modules/
 serviceAccountKey.json
 coverage/
 dist/
+# Live replay sweep cache (large, regenerable ESPN responses). See services/live/espnCache.js.
+data/live-cache/

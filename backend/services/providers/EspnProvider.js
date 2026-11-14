@@ -199,9 +199,19 @@ class EspnProvider {
     return normalizeTeamStatsESPN(teamData, teamId, sport, scheduleData);
   }
 
-  async getMatchSummary(sport, league, eventId, { traceId = null } = {}) {
+  /**
+   * Cached ESPN match summary.
+   *
+   * @param {Object} [opts]
+   * @param {string} [opts.traceId]
+   * @param {number} [opts.ttl] overrides the response cache TTL (ms). The live
+   *   context read (services/live/liveContext.js) wants a short TTL so key
+   *   events and injuries stay fresh while a game runs; every other caller keeps
+   *   the default.
+   */
+  async getMatchSummary(sport, league, eventId, { traceId = null, ttl = TTL.DEFAULT } = {}) {
     return this._request(`${sport}/${league}/summary?event=${eventId}`, {
-      ttl: TTL.DEFAULT, traceId,
+      ttl, traceId,
     });
   }
 

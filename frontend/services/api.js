@@ -241,5 +241,95 @@ export const evaluateFixtureBackend = async ({ fixture, homeMatches, awayMatches
   }
 };
 
+/* --------------------------------------------------------------------------
+ * Live Game Analysis (Phase 6)
+ *
+ * These mirror the fetchMatchPrediction convention: on failure they resolve to
+ * an `{ unavailable: true, httpStatus, code, message }` marker so the UI can
+ * tell a provider outage apart from "the link was not recognised" or "the model
+ * has not passed backtesting". The pasted link is sent for identification only.
+ * ------------------------------------------------------------------------ */
+
+const liveFailure = (response, body) => ({
+  unavailable: true,
+  httpStatus: response.status,
+  code: body.code || null,
+  message: body.error || null,
+  errors: Array.isArray(body.errors) ? body.errors : undefined,
+});
+
+/**
+ * What the live feature is currently allowed to do.
+ * @returns {Promise<Object>} { enabled, sports, supported_sports, shipping, refresh, disclaimer }
+ */
+export const fetchLiveCapabilities = async () => {
+  try {
+    const response = await fetch(`${API_URL}/api/live/capabilities`);
+    if (!response.ok) return { unavailable: true, httpStatus: response.status, code: null, message: null };
+    return await response.json();
+  } catch (error) {
+    console.warn('[fetchLiveCapabilities] Network error:', error.message);
+    return { unavailable: true, httpStatus: 0, code: 'NETWORK_ERROR', message: error.message };
+  }
+};
+
+/**
+ * Identify the game behind a pasted bookmaker link.
+ * @param {string} link
+ * @returns {Promise<Object>} { status: 'matched'|'candidates'|'none', game?, analysis?, candidates?, reason?, manual_entry_required }
+ */
+export const resolveLiveLink = async (link) => {
+  try {
+    const response = await fetch(`${API_URL}/api/live/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) return liveFailure(response, body);
+    return body;
+  } catch (error) {
+    console.warn('[resolveLiveLink] Network error:', error.message);
+    return { unavailable: true, httpStatus: 0, code: 'NETWORK_ERROR', message: error.message };
+  }
+};
+
+/**
+ * Poll the live analysis for an already-resolved game.
+ * @param {string} gameId  e.g. 'espn:401234567'
+ */
+export const fetchLiveAnalysis = async (gameId) => {
+  try {
+    const response = await fetch(`${API_URL}/api/live/analysis/${encodeURIComponent(gameId)}`);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) return liveFailure(response, body);
+    return body;
+  } catch (error) {
+    console.warn('[fetchLiveAnalysis] Network error:', error.message);
+    return { unavailable: true, httpStatus: 0, code: 'NETWORK_ERROR', message: error.message };
+  }
+};
+
+/**
+ * Analyse a game the user typed in, when no link could be matched.
+ * @param {Object} input { sport, home_name, away_name, home_score, away_score, period, clock, status }
+ */
+export const fetchLiveManualAnalysis = async (input) => {
+  try {
+    const response = await fetch(`${API_URL}/api/live/manual`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) return liveFailure(response, body);
+    return body;
+  } catch (error) {
+    console.warn('[fetchLiveManualAnalysis] Network error:', error.message);
+    return { unavailable: true, httpStatus: 0, code: 'NETWORK_ERROR', message: error.message };
+  }
+};
+
+
 
 

@@ -1,0 +1,2150 @@
+{
+  "modelVersion": "live-backtest-1.0.0",
+  "generatedAt": "2026-10-27T16:50:43.216Z",
+  "dataset": {
+    "games": 227,
+    "checkpoints": 1135,
+    "skipped": 0,
+    "missingLine": 0,
+    "sports": [
+      "soccer"
+    ],
+    "from": "2026-03-07T12:00Z",
+    "to": "2026-03-15T03:10Z"
+  },
+  "windows": {
+    "train": [
+      0,
+      0.6
+    ],
+    "validation": [
+      0.6,
+      0.8
+    ],
+    "test": [
+      0.8,
+      1
+    ]
+  },
+  "counts": {
+    "games": 227,
+    "checkpoints": 1135,
+    "graded": 1135
+  },
+  "overall": {
+    "n": 1135,
+    "hits": 475,
+    "hitRate": 0.4185,
+    "avgPredicted": 0.4239,
+    "calibrationGap": -0.0054,
+    "brier": 0.1867,
+    "logLoss": 0.5543,
+    "buckets": [
+      {
+        "range": "0.00-0.25",
+        "n": 299,
+        "predicted": 0.1089,
+        "actual": 0.1472
+      },
+      {
+        "range": "0.25-0.35",
+        "n": 186,
+        "predicted": 0.3163,
+        "actual": 0.3333
+      },
+      {
+        "range": "0.35-0.45",
+        "n": 305,
+        "predicted": 0.4035,
+        "actual": 0.3639
+      },
+      {
+        "range": "0.45-0.55",
+        "n": 0,
+        "predicted": null,
+        "actual": null
+      },
+      {
+        "range": "0.55-0.65",
+        "n": 28,
+        "predicted": 0.6289,
+        "actual": 0.7857
+      },
+      {
+        "range": "0.65-0.75",
+        "n": 168,
+        "predicted": 0.6916,
+        "actual": 0.6667
+      },
+      {
+        "range": "0.75-1.00",
+        "n": 149,
+        "predicted": 0.8917,
+        "actual": 0.8322
+      }
+    ]
+  },
+  "uncalibrated": {
+    "n": 1135,
+    "hits": 475,
+    "hitRate": 0.4185,
+    "avgPredicted": 0.4239,
+    "calibrationGap": -0.0054,
+    "brier": 0.1867,
+    "logLoss": 0.5543,
+    "buckets": [
+      {
+        "range": "0.00-0.25",
+        "n": 299,
+        "predicted": 0.1089,
+        "actual": 0.1472
+      },
+      {
+        "range": "0.25-0.35",
+        "n": 186,
+        "predicted": 0.3163,
+        "actual": 0.3333
+      },
+      {
+        "range": "0.35-0.45",
+        "n": 305,
+        "predicted": 0.4035,
+        "actual": 0.3639
+      },
+      {
+        "range": "0.45-0.55",
+        "n": 0,
+        "predicted": null,
+        "actual": null
+      },
+      {
+        "range": "0.55-0.65",
+        "n": 28,
+        "predicted": 0.6289,
+        "actual": 0.7857
+      },
+      {
+        "range": "0.65-0.75",
+        "n": 168,
+        "predicted": 0.6916,
+        "actual": 0.6667
+      },
+      {
+        "range": "0.75-1.00",
+        "n": 149,
+        "predicted": 0.8917,
+        "actual": 0.8322
+      }
+    ]
+  },
+  "byWindow": {
+    "train": {
+      "n": 685,
+      "hits": 295,
+      "hitRate": 0.4307,
+      "avgPredicted": 0.4124,
+      "calibrationGap": 0.0183,
+      "brier": 0.1897,
+      "logLoss": 0.5685,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 194,
+          "predicted": 0.1078,
+          "actual": 0.1701
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 115,
+          "predicted": 0.3158,
+          "actual": 0.3739
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 180,
+          "predicted": 0.4033,
+          "actual": 0.3667
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 18,
+          "predicted": 0.6289,
+          "actual": 0.8889
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 89,
+          "predicted": 0.6911,
+          "actual": 0.6854
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 89,
+          "predicted": 0.897,
+          "actual": 0.8539
+        }
+      ]
+    },
+    "validation": {
+      "n": 225,
+      "hits": 80,
+      "hitRate": 0.3556,
+      "avgPredicted": 0.4497,
+      "calibrationGap": -0.0942,
+      "brier": 0.1751,
+      "logLoss": 0.5148,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 50,
+          "predicted": 0.1017,
+          "actual": 0.04
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 36,
+          "predicted": 0.3204,
+          "actual": 0.1944
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 61,
+          "predicted": 0.4035,
+          "actual": 0.3279
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 6,
+          "predicted": 0.6289,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 39,
+          "predicted": 0.6921,
+          "actual": 0.5385
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 33,
+          "predicted": 0.8845,
+          "actual": 0.7879
+        }
+      ]
+    },
+    "test": {
+      "n": 225,
+      "hits": 100,
+      "hitRate": 0.4444,
+      "avgPredicted": 0.433,
+      "calibrationGap": 0.0114,
+      "brier": 0.1894,
+      "logLoss": 0.5504,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 55,
+          "predicted": 0.1193,
+          "actual": 0.1636
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 35,
+          "predicted": 0.3138,
+          "actual": 0.3429
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 64,
+          "predicted": 0.404,
+          "actual": 0.3906
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 4,
+          "predicted": 0.6289,
+          "actual": 0.5
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 40,
+          "predicted": 0.6919,
+          "actual": 0.75
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 27,
+          "predicted": 0.8829,
+          "actual": 0.8148
+        }
+      ]
+    }
+  },
+  "bySport": {
+    "soccer": {
+      "n": 1135,
+      "hits": 475,
+      "hitRate": 0.4185,
+      "avgPredicted": 0.4239,
+      "calibrationGap": -0.0054,
+      "brier": 0.1867,
+      "logLoss": 0.5543,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 299,
+          "predicted": 0.1089,
+          "actual": 0.1472
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 186,
+          "predicted": 0.3163,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 305,
+          "predicted": 0.4035,
+          "actual": 0.3639
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 28,
+          "predicted": 0.6289,
+          "actual": 0.7857
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 168,
+          "predicted": 0.6916,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 149,
+          "predicted": 0.8917,
+          "actual": 0.8322
+        }
+      ]
+    }
+  },
+  "byCheckpoint": {
+    "soccer|m15": {
+      "sport": "soccer",
+      "checkpoint": "m15",
+      "belowMinSamples": false,
+      "n": 227,
+      "hits": 95,
+      "hitRate": 0.4185,
+      "avgPredicted": 0.4313,
+      "calibrationGap": -0.0128,
+      "brier": 0.2275,
+      "logLoss": 0.6478,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 3,
+          "predicted": 0.1543,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 18,
+          "predicted": 0.2617,
+          "actual": 0.2778
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 175,
+          "predicted": 0.4154,
+          "actual": 0.3714
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 28,
+          "predicted": 0.6289,
+          "actual": 0.7857
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 3,
+          "predicted": 0.8118,
+          "actual": 0.6667
+        }
+      ]
+    },
+    "soccer|m30": {
+      "sport": "soccer",
+      "checkpoint": "m30",
+      "belowMinSamples": false,
+      "n": 227,
+      "hits": 95,
+      "hitRate": 0.4185,
+      "avgPredicted": 0.419,
+      "calibrationGap": -0.0005,
+      "brier": 0.2075,
+      "logLoss": 0.6036,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 42,
+          "predicted": 0.1904,
+          "actual": 0.1905
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 130,
+          "predicted": 0.3874,
+          "actual": 0.3538
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 50,
+          "predicted": 0.6509,
+          "actual": 0.74
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 5,
+          "predicted": 0.8394,
+          "actual": 0.8
+        }
+      ]
+    },
+    "soccer|m45": {
+      "sport": "soccer",
+      "checkpoint": "m45",
+      "belowMinSamples": false,
+      "n": 227,
+      "hits": 95,
+      "hitRate": 0.4185,
+      "avgPredicted": 0.4128,
+      "calibrationGap": 0.0057,
+      "brier": 0.19,
+      "logLoss": 0.5609,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 59,
+          "predicted": 0.1221,
+          "actual": 0.1525
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 94,
+          "predicted": 0.3484,
+          "actual": 0.3511
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 58,
+          "predicted": 0.6828,
+          "actual": 0.6552
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 16,
+          "predicted": 0.8837,
+          "actual": 0.9375
+        }
+      ]
+    },
+    "soccer|m60": {
+      "sport": "soccer",
+      "checkpoint": "m60",
+      "belowMinSamples": false,
+      "n": 227,
+      "hits": 95,
+      "hitRate": 0.4185,
+      "avgPredicted": 0.4201,
+      "calibrationGap": -0.0016,
+      "brier": 0.1732,
+      "logLoss": 0.5165,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 66,
+          "predicted": 0.0691,
+          "actual": 0.1212
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 74,
+          "predicted": 0.2889,
+          "actual": 0.3243
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 60,
+          "predicted": 0.7339,
+          "actual": 0.6167
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 27,
+          "predicted": 0.9408,
+          "actual": 0.963
+        }
+      ]
+    },
+    "soccer|m75": {
+      "sport": "soccer",
+      "checkpoint": "m75",
+      "belowMinSamples": false,
+      "n": 227,
+      "hits": 95,
+      "hitRate": 0.4185,
+      "avgPredicted": 0.4362,
+      "calibrationGap": -0.0177,
+      "brier": 0.1355,
+      "logLoss": 0.4426,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 129,
+          "predicted": 0.0957,
+          "actual": 0.1395
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 98,
+          "predicted": 0.8845,
+          "actual": 0.7857
+        }
+      ]
+    }
+  },
+  "byLeague": {
+    "soccer|bra.1": {
+      "n": 55,
+      "hits": 25,
+      "hitRate": 0.4545,
+      "avgPredicted": 0.469,
+      "calibrationGap": -0.0145,
+      "brier": 0.1941,
+      "logLoss": 0.5837,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 15,
+          "predicted": 0.1036,
+          "actual": 0.1333
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 4,
+          "predicted": 0.3119,
+          "actual": 0.25
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 11,
+          "predicted": 0.4052,
+          "actual": 0.4545
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 3,
+          "predicted": 0.6289,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 15,
+          "predicted": 0.6892,
+          "actual": 0.6
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 7,
+          "predicted": 0.9016,
+          "actual": 0.8571
+        }
+      ]
+    },
+    "soccer|eng.1": {
+      "n": 25,
+      "hits": 5,
+      "hitRate": 0.2,
+      "avgPredicted": 0.2827,
+      "calibrationGap": -0.0827,
+      "brier": 0.1655,
+      "logLoss": 0.4984,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 9,
+          "predicted": 0.1311,
+          "actual": 0.1111
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 7,
+          "predicted": 0.3229,
+          "actual": 0.2857
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 9,
+          "predicted": 0.403,
+          "actual": 0.2222
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        }
+      ]
+    },
+    "soccer|eng.2": {
+      "n": 125,
+      "hits": 50,
+      "hitRate": 0.4,
+      "avgPredicted": 0.4521,
+      "calibrationGap": -0.0521,
+      "brier": 0.1896,
+      "logLoss": 0.5559,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 28,
+          "predicted": 0.0972,
+          "actual": 0.1429
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 15,
+          "predicted": 0.3268,
+          "actual": 0.2
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 39,
+          "predicted": 0.4025,
+          "actual": 0.3077
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 3,
+          "predicted": 0.6289,
+          "actual": 1
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 20,
+          "predicted": 0.7061,
+          "actual": 0.7
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 20,
+          "predicted": 0.8593,
+          "actual": 0.7
+        }
+      ]
+    },
+    "soccer|esp.1": {
+      "n": 70,
+      "hits": 40,
+      "hitRate": 0.5714,
+      "avgPredicted": 0.4852,
+      "calibrationGap": 0.0862,
+      "brier": 0.1978,
+      "logLoss": 0.5843,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 14,
+          "predicted": 0.1242,
+          "actual": 0.2857
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 11,
+          "predicted": 0.3056,
+          "actual": 0.3636
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 16,
+          "predicted": 0.4032,
+          "actual": 0.5
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 3,
+          "predicted": 0.6289,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 13,
+          "predicted": 0.6863,
+          "actual": 0.7692
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 13,
+          "predicted": 0.8927,
+          "actual": 0.9231
+        }
+      ]
+    },
+    "soccer|esp.2": {
+      "n": 75,
+      "hits": 40,
+      "hitRate": 0.5333,
+      "avgPredicted": 0.4701,
+      "calibrationGap": 0.0632,
+      "brier": 0.2487,
+      "logLoss": 0.7303,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 16,
+          "predicted": 0.133,
+          "actual": 0.1875
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 13,
+          "predicted": 0.3143,
+          "actual": 0.6154
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 17,
+          "predicted": 0.4022,
+          "actual": 0.5882
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 3,
+          "predicted": 0.6289,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 14,
+          "predicted": 0.6883,
+          "actual": 0.7143
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 12,
+          "predicted": 0.8905,
+          "actual": 0.5833
+        }
+      ]
+    },
+    "soccer|ger.1": {
+      "n": 70,
+      "hits": 20,
+      "hitRate": 0.2857,
+      "avgPredicted": 0.3878,
+      "calibrationGap": -0.1021,
+      "brier": 0.1926,
+      "logLoss": 0.572,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 22,
+          "predicted": 0.0936,
+          "actual": 0.1364
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 9,
+          "predicted": 0.3286,
+          "actual": 0.1111
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 20,
+          "predicted": 0.4042,
+          "actual": 0.3
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 2,
+          "predicted": 0.6289,
+          "actual": 0.5
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 12,
+          "predicted": 0.6892,
+          "actual": 0.4167
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 5,
+          "predicted": 0.9029,
+          "actual": 0.8
+        }
+      ]
+    },
+    "soccer|ger.2": {
+      "n": 65,
+      "hits": 20,
+      "hitRate": 0.3077,
+      "avgPredicted": 0.3692,
+      "calibrationGap": -0.0615,
+      "brier": 0.1752,
+      "logLoss": 0.5147,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 18,
+          "predicted": 0.0876,
+          "actual": 0.0556
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 14,
+          "predicted": 0.3148,
+          "actual": 0.2857
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 20,
+          "predicted": 0.4014,
+          "actual": 0.35
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1,
+          "predicted": 0.6289,
+          "actual": 1
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 6,
+          "predicted": 0.6945,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 6,
+          "predicted": 0.8651,
+          "actual": 0.8333
+        }
+      ]
+    },
+    "soccer|ita.1": {
+      "n": 65,
+      "hits": 35,
+      "hitRate": 0.5385,
+      "avgPredicted": 0.4241,
+      "calibrationGap": 0.1144,
+      "brier": 0.2229,
+      "logLoss": 0.6232,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 16,
+          "predicted": 0.1314,
+          "actual": 0.25
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 13,
+          "predicted": 0.3122,
+          "actual": 0.6154
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 17,
+          "predicted": 0.4022,
+          "actual": 0.4706
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 2,
+          "predicted": 0.6289,
+          "actual": 1
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 9,
+          "predicted": 0.6949,
+          "actual": 0.6667
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 8,
+          "predicted": 0.8819,
+          "actual": 0.875
+        }
+      ]
+    },
+    "soccer|ita.2": {
+      "n": 90,
+      "hits": 50,
+      "hitRate": 0.5556,
+      "avgPredicted": 0.4864,
+      "calibrationGap": 0.0691,
+      "brier": 0.1681,
+      "logLoss": 0.5077,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 23,
+          "predicted": 0.1173,
+          "actual": 0.2609
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 11,
+          "predicted": 0.3135,
+          "actual": 0.3636
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 19,
+          "predicted": 0.4066,
+          "actual": 0.3158
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 2,
+          "predicted": 0.6289,
+          "actual": 1
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 15,
+          "predicted": 0.6837,
+          "actual": 0.8667
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 20,
+          "predicted": 0.9198,
+          "actual": 0.95
+        }
+      ]
+    },
+    "soccer|mex.1": {
+      "n": 70,
+      "hits": 25,
+      "hitRate": 0.3571,
+      "avgPredicted": 0.3939,
+      "calibrationGap": -0.0368,
+      "brier": 0.1733,
+      "logLoss": 0.5043,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 19,
+          "predicted": 0.1017,
+          "actual": 0.0526
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 15,
+          "predicted": 0.313,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 18,
+          "predicted": 0.403,
+          "actual": 0.3889
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 2,
+          "predicted": 0.6289,
+          "actual": 0.5
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 9,
+          "predicted": 0.6892,
+          "actual": 0.5556
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 7,
+          "predicted": 0.8901,
+          "actual": 0.8571
+        }
+      ]
+    },
+    "soccer|ned.1": {
+      "n": 65,
+      "hits": 25,
+      "hitRate": 0.3846,
+      "avgPredicted": 0.3294,
+      "calibrationGap": 0.0552,
+      "brier": 0.1829,
+      "logLoss": 0.5953,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 28,
+          "predicted": 0.1026,
+          "actual": 0.1786
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 10,
+          "predicted": 0.31,
+          "actual": 0.5
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 16,
+          "predicted": 0.4049,
+          "actual": 0.3125
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1,
+          "predicted": 0.6289,
+          "actual": 1
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 4,
+          "predicted": 0.6748,
+          "actual": 0.75
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 6,
+          "predicted": 0.9385,
+          "actual": 1
+        }
+      ]
+    },
+    "soccer|por.1": {
+      "n": 55,
+      "hits": 5,
+      "hitRate": 0.0909,
+      "avgPredicted": 0.3215,
+      "calibrationGap": -0.2306,
+      "brier": 0.1702,
+      "logLoss": 0.5076,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 19,
+          "predicted": 0.1302,
+          "actual": 0.0526
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 14,
+          "predicted": 0.3063,
+          "actual": 0.1429
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 15,
+          "predicted": 0.4023,
+          "actual": 0.1333
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 1,
+          "predicted": 0.6289,
+          "actual": 0
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 5,
+          "predicted": 0.6866,
+          "actual": 0
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 1,
+          "predicted": 0.8243,
+          "actual": 0
+        }
+      ]
+    },
+    "soccer|sco.1": {
+      "n": 25,
+      "hits": 15,
+      "hitRate": 0.6,
+      "avgPredicted": 0.5003,
+      "calibrationGap": 0.0997,
+      "brier": 0.2013,
+      "logLoss": 0.5903,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 1,
+          "predicted": 0.188,
+          "actual": 0
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 6,
+          "predicted": 0.3186,
+          "actual": 0.3333
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 9,
+          "predicted": 0.403,
+          "actual": 0.5556
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 5,
+          "predicted": 0.6969,
+          "actual": 1
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 4,
+          "predicted": 0.8243,
+          "actual": 0.75
+        }
+      ]
+    },
+    "soccer|tur.1": {
+      "n": 75,
+      "hits": 30,
+      "hitRate": 0.4,
+      "avgPredicted": 0.4248,
+      "calibrationGap": -0.0248,
+      "brier": 0.1986,
+      "logLoss": 0.5941,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 19,
+          "predicted": 0.111,
+          "actual": 0.2105
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 13,
+          "predicted": 0.328,
+          "actual": 0.3077
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 20,
+          "predicted": 0.4028,
+          "actual": 0.25
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 3,
+          "predicted": 0.6289,
+          "actual": 1
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 11,
+          "predicted": 0.6991,
+          "actual": 0.6364
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 9,
+          "predicted": 0.8728,
+          "actual": 0.7778
+        }
+      ]
+    },
+    "soccer|uefa.champions": {
+      "n": 40,
+      "hits": 25,
+      "hitRate": 0.625,
+      "avgPredicted": 0.5876,
+      "calibrationGap": 0.0374,
+      "brier": 0.1263,
+      "logLoss": 0.3847,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 5,
+          "predicted": 0.053,
+          "actual": 0
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 5,
+          "predicted": 0.3073,
+          "actual": 0.2
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 8,
+          "predicted": 0.4014,
+          "actual": 0.5
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 2,
+          "predicted": 0.6289,
+          "actual": 1
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 5,
+          "predicted": 0.6969,
+          "actual": 0.8
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 15,
+          "predicted": 0.9165,
+          "actual": 0.9333
+        }
+      ]
+    },
+    "soccer|uefa.europa": {
+      "n": 40,
+      "hits": 15,
+      "hitRate": 0.375,
+      "avgPredicted": 0.4352,
+      "calibrationGap": -0.0602,
+      "brier": 0.2117,
+      "logLoss": 0.6025,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 8,
+          "predicted": 0.1228,
+          "actual": 0.125
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 7,
+          "predicted": 0.3229,
+          "actual": 0.2857
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 13,
+          "predicted": 0.4046,
+          "actual": 0.3846
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 9,
+          "predicted": 0.6984,
+          "actual": 0.5556
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 3,
+          "predicted": 0.8737,
+          "actual": 0.6667
+        }
+      ]
+    },
+    "soccer|usa.1": {
+      "n": 125,
+      "hits": 50,
+      "hitRate": 0.4,
+      "avgPredicted": 0.3847,
+      "calibrationGap": 0.0153,
+      "brier": 0.1569,
+      "logLoss": 0.4717,
+      "buckets": [
+        {
+          "range": "0.00-0.25",
+          "n": 39,
+          "predicted": 0.1022,
+          "actual": 0.1026
+        },
+        {
+          "range": "0.25-0.35",
+          "n": 19,
+          "predicted": 0.3188,
+          "actual": 0.3158
+        },
+        {
+          "range": "0.35-0.45",
+          "n": 38,
+          "predicted": 0.4051,
+          "actual": 0.3684
+        },
+        {
+          "range": "0.45-0.55",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.55-0.65",
+          "n": 0,
+          "predicted": null,
+          "actual": null
+        },
+        {
+          "range": "0.65-0.75",
+          "n": 16,
+          "predicted": 0.6836,
+          "actual": 0.875
+        },
+        {
+          "range": "0.75-1.00",
+          "n": 13,
+          "predicted": 0.9006,
+          "actual": 0.9231
+        }
+      ]
+    }
+  },
+  "baselines": {
+    "test": {
+      "model": {
+        "n": 225,
+        "brier": 0.1894,
+        "logLoss": 0.5504,
+        "hitRate": 0.72,
+        "calibrationGap": 0.287
+      },
+      "modelUncalibrated": {
+        "n": 225,
+        "brier": 0.1894,
+        "logLoss": 0.5504,
+        "hitRate": 0.72,
+        "calibrationGap": 0.287
+      },
+      "walkForwardCalibrated": {
+        "n": 225,
+        "brier": 0.1902,
+        "logLoss": 0.5538,
+        "hitRate": 0.72,
+        "calibrationGap": 0.3057
+      },
+      "prior": {
+        "n": 225,
+        "brier": 0.247,
+        "logLoss": 0.6871,
+        "hitRate": 0.5556,
+        "calibrationGap": 0.1185
+      },
+      "scoreTime": {
+        "n": 225,
+        "brier": 0.1903,
+        "logLoss": 0.553,
+        "hitRate": 0.72,
+        "calibrationGap": 0.2769
+      },
+      "bookmaker": {
+        "n": 225,
+        "brier": 0.2102,
+        "logLoss": 0.6063,
+        "hitRate": 0.6667,
+        "calibrationGap": 0.2101
+      },
+      "naive": {
+        "n": 225,
+        "brier": 0.25,
+        "logLoss": 0.6931,
+        "hitRate": 0.4444,
+        "calibrationGap": -0.0556
+      }
+    },
+    "all": {
+      "model": {
+        "n": 1135,
+        "brier": 0.1867,
+        "logLoss": 0.5543,
+        "hitRate": 0.7322,
+        "calibrationGap": 0.3083
+      },
+      "modelUncalibrated": {
+        "n": 1135,
+        "brier": 0.1867,
+        "logLoss": 0.5543,
+        "hitRate": 0.7322,
+        "calibrationGap": 0.3083
+      },
+      "walkForwardCalibrated": {
+        "n": 1135,
+        "brier": 0.1879,
+        "logLoss": 0.5596,
+        "hitRate": 0.7322,
+        "calibrationGap": 0.3151
+      },
+      "prior": {
+        "n": 1135,
+        "brier": 0.2437,
+        "logLoss": 0.6805,
+        "hitRate": 0.5815,
+        "calibrationGap": 0.1444
+      },
+      "scoreTime": {
+        "n": 1135,
+        "brier": 0.1883,
+        "logLoss": 0.5643,
+        "hitRate": 0.7322,
+        "calibrationGap": 0.2996
+      },
+      "bookmaker": {
+        "n": 1135,
+        "brier": 0.2251,
+        "logLoss": 0.6409,
+        "hitRate": 0.6123,
+        "calibrationGap": 0.1796
+      },
+      "naive": {
+        "n": 1135,
+        "brier": 0.25,
+        "logLoss": 0.6931,
+        "hitRate": 0.4185,
+        "calibrationGap": -0.0815
+      }
+    }
+  },
+  "calibration": {
+    "soccer": {
+      "method": "isotonic",
+      "fitted": true,
+      "trainedOn": 685,
+      "validatedOn": 225,
+      "monotone": true,
+      "brierGain": -0.0001,
+      "logLossGain": -0.0043,
+      "minImprovementBrier": 0.002,
+      "minImprovementLogLoss": 0.002,
+      "kept": false,
+      "model": null
+    }
+  },
+  "shipGate": {
+    "bySport": {
+      "soccer": {
+        "key": "soccer",
+        "n": 225,
+        "hitRate": 0.72,
+        "hitRateLowerBound": 0.658,
+        "breakEvenProbability": 0.524,
+        "minSamples": 500,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 225,
+          "brier": 0.1894,
+          "logLoss": 0.5504,
+          "hitRate": 0.72,
+          "calibrationGap": 0.287
+        },
+        "bookmaker": {
+          "n": 225,
+          "brier": 0.2102,
+          "logLoss": 0.6063,
+          "hitRate": 0.6667,
+          "calibrationGap": 0.2101
+        },
+        "brierGain": 0.0208,
+        "logLossGain": 0.0559,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 225 < 500"
+        ]
+      }
+    },
+    "byLeague": {
+      "soccer|bra.1": {
+        "key": "soccer|bra.1",
+        "n": 10,
+        "hitRate": 0.9,
+        "hitRateLowerBound": 0.5958,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 10,
+          "brier": 0.0753,
+          "logLoss": 0.264,
+          "hitRate": 0.9,
+          "calibrationGap": 0.5001
+        },
+        "bookmaker": {
+          "n": 10,
+          "brier": 0.211,
+          "logLoss": 0.5982,
+          "hitRate": 0.5,
+          "calibrationGap": 0.1893
+        },
+        "brierGain": 0.1357,
+        "logLossGain": 0.3342,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 10 < 150"
+        ]
+      },
+      "soccer|eng.1": {
+        "key": "soccer|eng.1",
+        "n": 15,
+        "hitRate": 0.6667,
+        "hitRateLowerBound": 0.4171,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 15,
+          "brier": 0.208,
+          "logLoss": 0.5914,
+          "hitRate": 0.6667,
+          "calibrationGap": 0.3891
+        },
+        "bookmaker": {
+          "n": 15,
+          "brier": 0.1456,
+          "logLoss": 0.4612,
+          "hitRate": 0.6667,
+          "calibrationGap": 0.1879
+        },
+        "brierGain": -0.0624,
+        "logLossGain": -0.1302,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 15 < 150",
+          "Brier gain -0.0624 < 0.002",
+          "log loss gain -0.1302 < 0.002",
+          "hit-rate 95% CI lower bound 0.4171 <= break-even 0.524"
+        ]
+      },
+      "soccer|esp.1": {
+        "key": "soccer|esp.1",
+        "n": 15,
+        "hitRate": 0.8,
+        "hitRateLowerBound": 0.5481,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 15,
+          "brier": 0.1246,
+          "logLoss": 0.4016,
+          "hitRate": 0.8,
+          "calibrationGap": 0.1056
+        },
+        "bookmaker": {
+          "n": 15,
+          "brier": 0.2305,
+          "logLoss": 0.65,
+          "hitRate": 0.6667,
+          "calibrationGap": 0.1171
+        },
+        "brierGain": 0.1059,
+        "logLossGain": 0.2484,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 15 < 150"
+        ]
+      },
+      "soccer|esp.2": {
+        "key": "soccer|esp.2",
+        "n": 20,
+        "hitRate": 0.65,
+        "hitRateLowerBound": 0.4329,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 20,
+          "brier": 0.2112,
+          "logLoss": 0.6095,
+          "hitRate": 0.65,
+          "calibrationGap": 0.2394
+        },
+        "bookmaker": {
+          "n": 20,
+          "brier": 0.2352,
+          "logLoss": 0.6621,
+          "hitRate": 0.5,
+          "calibrationGap": 0.1456
+        },
+        "brierGain": 0.024,
+        "logLossGain": 0.0526,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 20 < 150",
+          "hit-rate 95% CI lower bound 0.4329 <= break-even 0.524"
+        ]
+      },
+      "soccer|ger.1": {
+        "key": "soccer|ger.1",
+        "n": 5,
+        "hitRate": 1,
+        "hitRateLowerBound": 0.5655,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 5,
+          "brier": 0.1126,
+          "logLoss": 0.4009,
+          "hitRate": 1,
+          "calibrationGap": 0.6744
+        },
+        "bookmaker": {
+          "n": 5,
+          "brier": 0.1627,
+          "logLoss": 0.5163,
+          "hitRate": 1,
+          "calibrationGap": 0.5967
+        },
+        "brierGain": 0.0501,
+        "logLossGain": 0.1154,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 5 < 150"
+        ]
+      },
+      "soccer|ger.2": {
+        "key": "soccer|ger.2",
+        "n": 5,
+        "hitRate": 0.4,
+        "hitRateLowerBound": 0.1176,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 5,
+          "brier": 0.4014,
+          "logLoss": 1.0476,
+          "hitRate": 0.4,
+          "calibrationGap": -0.2088
+        },
+        "bookmaker": {
+          "n": 5,
+          "brier": 0.1846,
+          "logLoss": 0.5616,
+          "hitRate": 1,
+          "calibrationGap": 0.5703
+        },
+        "brierGain": -0.2168,
+        "logLossGain": -0.486,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 5 < 150",
+          "Brier gain -0.2168 < 0.002",
+          "log loss gain -0.486 < 0.002",
+          "hit-rate 95% CI lower bound 0.1176 <= break-even 0.524"
+        ]
+      },
+      "soccer|ita.1": {
+        "key": "soccer|ita.1",
+        "n": 10,
+        "hitRate": 0.6,
+        "hitRateLowerBound": 0.3127,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 10,
+          "brier": 0.2773,
+          "logLoss": 0.7517,
+          "hitRate": 0.6,
+          "calibrationGap": 0.3176
+        },
+        "bookmaker": {
+          "n": 10,
+          "brier": 0.0704,
+          "logLoss": 0.2932,
+          "hitRate": 1,
+          "calibrationGap": 0.5936
+        },
+        "brierGain": -0.2069,
+        "logLossGain": -0.4585,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 10 < 150",
+          "Brier gain -0.2069 < 0.002",
+          "log loss gain -0.4585 < 0.002",
+          "hit-rate 95% CI lower bound 0.3127 <= break-even 0.524"
+        ]
+      },
+      "soccer|ita.2": {
+        "key": "soccer|ita.2",
+        "n": 10,
+        "hitRate": 0.9,
+        "hitRateLowerBound": 0.5958,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 10,
+          "brier": 0.1199,
+          "logLoss": 0.4031,
+          "hitRate": 0.9,
+          "calibrationGap": 0.3917
+        },
+        "bookmaker": {
+          "n": 10,
+          "brier": 0.1792,
+          "logLoss": 0.5289,
+          "hitRate": 0.5,
+          "calibrationGap": 0.1758
+        },
+        "brierGain": 0.0593,
+        "logLossGain": 0.1258,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 10 < 150"
+        ]
+      },
+      "soccer|mex.1": {
+        "key": "soccer|mex.1",
+        "n": 25,
+        "hitRate": 0.88,
+        "hitRateLowerBound": 0.7004,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 25,
+          "brier": 0.1305,
+          "logLoss": 0.3994,
+          "hitRate": 0.88,
+          "calibrationGap": 0.4786
+        },
+        "bookmaker": {
+          "n": 25,
+          "brier": 0.1766,
+          "logLoss": 0.5343,
+          "hitRate": 0.6,
+          "calibrationGap": 0.109
+        },
+        "brierGain": 0.0461,
+        "logLossGain": 0.1349,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 25 < 150"
+        ]
+      },
+      "soccer|ned.1": {
+        "key": "soccer|ned.1",
+        "n": 20,
+        "hitRate": 0.75,
+        "hitRateLowerBound": 0.5313,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 20,
+          "brier": 0.1483,
+          "logLoss": 0.4305,
+          "hitRate": 0.75,
+          "calibrationGap": 0.3823
+        },
+        "bookmaker": {
+          "n": 20,
+          "brier": 0.2299,
+          "logLoss": 0.6532,
+          "hitRate": 0.75,
+          "calibrationGap": 0.216
+        },
+        "brierGain": 0.0816,
+        "logLossGain": 0.2227,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 20 < 150"
+        ]
+      },
+      "soccer|por.1": {
+        "key": "soccer|por.1",
+        "n": 15,
+        "hitRate": 0.6667,
+        "hitRateLowerBound": 0.4171,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 15,
+          "brier": 0.2273,
+          "logLoss": 0.6387,
+          "hitRate": 0.6667,
+          "calibrationGap": 0.2457
+        },
+        "bookmaker": {
+          "n": 15,
+          "brier": 0.152,
+          "logLoss": 0.461,
+          "hitRate": 0.6667,
+          "calibrationGap": 0.3226
+        },
+        "brierGain": -0.0753,
+        "logLossGain": -0.1777,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 15 < 150",
+          "Brier gain -0.0753 < 0.002",
+          "log loss gain -0.1777 < 0.002",
+          "hit-rate 95% CI lower bound 0.4171 <= break-even 0.524"
+        ]
+      },
+      "soccer|sco.1": {
+        "key": "soccer|sco.1",
+        "n": 5,
+        "hitRate": 0.8,
+        "hitRateLowerBound": 0.3755,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 5,
+          "brier": 0.1332,
+          "logLoss": 0.4384,
+          "hitRate": 0.8,
+          "calibrationGap": 0.1385
+        },
+        "bookmaker": {
+          "n": 5,
+          "brier": 0.6084,
+          "logLoss": 1.5141,
+          "hitRate": 0,
+          "calibrationGap": -0.22
+        },
+        "brierGain": 0.4752,
+        "logLossGain": 1.0757,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 5 < 150",
+          "hit-rate 95% CI lower bound 0.3755 <= break-even 0.524"
+        ]
+      },
+      "soccer|tur.1": {
+        "key": "soccer|tur.1",
+        "n": 15,
+        "hitRate": 0.4667,
+        "hitRateLowerBound": 0.2481,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 15,
+          "brier": 0.2746,
+          "logLoss": 0.7414,
+          "hitRate": 0.4667,
+          "calibrationGap": -0.0851
+        },
+        "bookmaker": {
+          "n": 15,
+          "brier": 0.1784,
+          "logLoss": 0.5462,
+          "hitRate": 1,
+          "calibrationGap": 0.4657
+        },
+        "brierGain": -0.0962,
+        "logLossGain": -0.1952,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 15 < 150",
+          "Brier gain -0.0962 < 0.002",
+          "log loss gain -0.1952 < 0.002",
+          "hit-rate 95% CI lower bound 0.2481 <= break-even 0.524"
+        ]
+      },
+      "soccer|usa.1": {
+        "key": "soccer|usa.1",
+        "n": 55,
+        "hitRate": 0.6909,
+        "hitRateLowerBound": 0.5597,
+        "breakEvenProbability": 0.524,
+        "minSamples": 150,
+        "minImprovementBrier": 0.002,
+        "minImprovementLogLoss": 0.002,
+        "model": {
+          "n": 55,
+          "brier": 0.2123,
+          "logLoss": 0.6152,
+          "hitRate": 0.6909,
+          "calibrationGap": 0.2769
+        },
+        "bookmaker": {
+          "n": 55,
+          "brier": 0.2471,
+          "logLoss": 0.6876,
+          "hitRate": 0.6364,
+          "calibrationGap": 0.12
+        },
+        "brierGain": 0.0348,
+        "logLossGain": 0.0724,
+        "passed": false,
+        "reasons": [
+          "out-of-sample rows 55 < 150"
+        ]
+      }
+    }
+  },
+  "verdict": {
+    "beatsBookmaker": true,
+    "beatsBookmakerBrier": true,
+    "modelLogLoss": 0.5504,
+    "bookmakerLogLoss": 0.6063,
+    "modelBrier": 0.1894,
+    "bookmakerBrier": 0.2102,
+    "sample": 225,
+    "shipped": false,
+    "shippedBuckets": [],
+    "failedReasons": [
+      "out-of-sample rows 225 < 500"
+    ],
+    "statement": "Gate NOT passed, but the shipped projection actually beat the de-vigged market on BOTH metrics on 225 out-of-sample rows (log loss 0.5504 vs 0.6063; Brier 0.1894 vs 0.2102). It fell short only on the ship gate's sample-size or hit-rate confidence clause (out-of-sample rows 225 < 500). Projection only; no live pick."
+  },
+  "failures": [],
+  "failureCount": 0
+}
