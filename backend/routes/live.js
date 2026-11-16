@@ -7,6 +7,10 @@
  *   GET  /api/live/analysis/:id   — poll the live analysis for a resolved game
  *   POST /api/live/manual         — type the values when nothing could be matched
  *   GET  /api/live/stats          — non-personal counters (secret-gated)
+ *   POST /api/live/sweep          — run the shadow sweep now (secret-gated, the
+ *                                   PRIMARY trigger; node-cron is the backup)
+ *   POST /api/live/reconcile      — run the counter reconcile now (secret-gated;
+ *                                   reports counter-vs-recount drift in health)
  *
  * The pasted link is used ONLY to identify the game. It is never fetched, never
  * scraped for odds, and never stored — only its hostname is counted.
@@ -19,6 +23,7 @@
  * Live estimates are statistical model outputs, not betting advice.
  */
 
+const crypto = require('crypto');
 const express = require('express');
 const CONFIG = require('../services/live/config');
 const { parseLink } = require('../services/live/linkParser');
@@ -36,6 +41,9 @@ const liveCalibrator = require('../services/live/liveCalibrator');
 const forwardTest = require('../services/live/forwardTest');
 const liveContext = require('../services/live/liveContext');
 const stats = require('../services/live/stats');
+const shadowHealth = require('../services/live/shadowHealth');
+const ledger = require('../services/live/ledger');
+const { executeShadowSweep, runShadowReconcile } = require('../services/live/shadowScheduler');
 const { createRateLimitMiddleware, createRateLimiter } = require('../services/live/rateLimit');
 
 const DISCLAIMER = CONFIG.liveApi.disclaimer;
@@ -71,17 +79,57 @@ function parsedSummary(parsed) {
   };
 }
 
-/** Secret-gated access to the counters, mirroring requireSettlementAuth. */
+/**
+ * Constant-time string compare.
+ *
+ * A plain `a !== b` short-circuits on the first differing byte, leaking the
+ * shared prefix — and the length — through timing. Both sides are hashed to a
+ * fixed-width SHA-256 digest first, so equal-length buffers can never make
+ * `timingSafeEqual` throw and no length information leaks either. Used for the
+ * stats/sweep secret (round G item 2). Never throws.
+ */
+function safeEqual(a, b) {
+  try {
+    const x = crypto.createHash('sha256').update(String(a)).digest();
+    const y = crypto.createHash('sha256').update(String(b)).digest();
+    return crypto.timingSafeEqual(x, y);
+  } catch (err) {
+    return false;
+  }
+}
+
+/** Truthy for `true`, `'true'`, `1`, `'1'`, `'yes'` — the query/body dry_run flag. */
+function isTruthy(v) {
+  return v === true || v === 1 || v === '1' || v === 'true' || v === 'yes';
+}
+
+/**
+ * Secret-gated access to the counters and the sweep trigger.
+ *
+ * Round H (item 2) hardening:
+ *   - the secret is accepted ONLY from the `Authorization: Bearer <secret>`
+ *     header — never a query string and never a request body, both of which
+ *     leak into access logs, proxies and referrers;
+ *   - a MISSING or SHORT (< `live.store.secret.minLength`, default 24) configured
+ *     secret is a 401, NOT an open route: an endpoint that writes evidence must
+ *     fail closed;
+ *   - the compare is constant time and the secret value is NEVER logged.
+ */
 function createStatsAuth() {
+  const cfg = (CONFIG.live.store && CONFIG.live.store.secret) || {};
+  const envName = cfg.env || 'LIVE_STATS_SECRET';
+  const fallbackName = cfg.fallbackEnv || 'SETTLEMENT_CRON_SECRET';
+  const minLength = Number.isFinite(cfg.minLength) ? cfg.minLength : 24;
   return function requireStatsAuth(req, res, next) {
-    const secret = process.env.LIVE_STATS_SECRET || process.env.SETTLEMENT_CRON_SECRET;
-    if (!secret) return next();
-    const header = req.headers['x-live-stats-secret']
-      || req.headers['x-settlement-secret']
-      || (typeof req.headers.authorization === 'string'
-        ? req.headers.authorization.replace(/^Bearer\s+/i, '')
-        : null);
-    if (header !== secret) {
+    const secret = process.env[envName] || process.env[fallbackName];
+    // Fail closed: no secret, or one too short to be safe. (Nothing is logged.)
+    if (typeof secret !== 'string' || secret.length < minLength) {
+      return res.status(401).json({ error: 'Unauthorized', traceId: req.traceId });
+    }
+    const raw = req.headers.authorization;
+    const token = typeof raw === 'string' ? raw.replace(/^Bearer\s+/i, '').trim() : null;
+    // Missing/blank header, or a mismatch under a constant-time compare → 401.
+    if (typeof token !== 'string' || !token || !safeEqual(token, secret)) {
       return res.status(401).json({ error: 'Unauthorized', traceId: req.traceId });
     }
     return next();
@@ -95,6 +143,7 @@ function createStatsAuth() {
  * @param {Object} [deps.matcher]    createLiveMatcher() instance, injected in tests
  * @param {Function} [deps.rateLimitMiddleware]
  * @param {Function} [deps.manualRateLimitMiddleware] stricter limiter for the manual path
+ * @param {Function} [deps.sweepRateLimitMiddleware] limiter for the sweep trigger
  * @param {Object} [deps.statsStore] defaults to services/live/stats
  */
 function createLiveRouter({
@@ -103,6 +152,7 @@ function createLiveRouter({
   matcher = null,
   rateLimitMiddleware = null,
   manualRateLimitMiddleware = null,
+  sweepRateLimitMiddleware = null,
   statsStore = stats,
 } = {}) {
   const router = express.Router();
@@ -149,6 +199,54 @@ function createLiveRouter({
   });
 
   const requireStatsAuth = createStatsAuth();
+
+  // Round H (item 3) — /api/live/stats reads DURABLE state (the scheduler health
+  // document) on every poll. Cache that durable read for a few seconds —
+  // configurable via `live.store.stats.cacheTtlMs` — so a burst of polling does
+  // not multiply Firestore reads. The HEALTH COUNTS ride along in the same
+  // cached value: they are derived from the same durable row set and must not be
+  // fresher than the scheduler state they are reported beside.
+  const statsCacheTtlMs = (CONFIG.live.store && CONFIG.live.store.stats
+    && Number.isFinite(CONFIG.live.store.stats.cacheTtlMs))
+    ? CONFIG.live.store.stats.cacheTtlMs : 5000;
+  let statsCache = { at: 0, value: null };
+
+  /** The durable health block, served from a short cache so polling is cheap. */
+  async function durableHealth(now) {
+    if (statsCacheTtlMs > 0 && statsCache.value && now - statsCache.at < statsCacheTtlMs) {
+      return statsCache.value;
+    }
+    const value = {
+      scheduler: await shadowHealth.readSnapshot({ now }),
+      rows_last_24h: forwardTest.rowsLast24h({ now }),
+      daily_since_freeze: forwardTest.dailyCounts({ sinceMs: forwardTest.confirmationFreeze().ms }),
+      // Round I (item 1) — the earliest and latest row times, read from the
+      // durable counters in `live_shadow/meta`, so they survive a cold start
+      // without loading the rows subcollection.
+      first_row_at: forwardTest.firstRowAt(),
+      last_row_at: forwardTest.lastRowAt(),
+      // Round H (item 5) — the ledger's first post-freeze row, surfaced next to
+      // the counts so a deployment checklist can confirm logging actually began.
+      // Read durably (a cold start must not blank it) and cached with the rest.
+      first_post_freeze_row: (await ledger.read()).first_post_freeze_row || null,
+    };
+    statsCache = { at: now, value };
+    return value;
+  }
+
+  // Round G (item 2) — POST /api/live/sweep is the PRIMARY shadow trigger, so it
+  // gets its own per-IP budget (config live.store.sweep.rateLimit). It is a
+  // cheap no-op when a sweep is already running (the scheduler's lock returns
+  // `skipped:true`), but a burst of calls would still hammer the provider, so the
+  // limit is enforced before the sweep runs. The secret check runs FIRST, so an
+  // unauthenticated caller can never consume the budget.
+  const sweepRateLimit = sweepRateLimitMiddleware || createRateLimitMiddleware({
+    ipLimiter: createRateLimiter({
+      windowMs: CONFIG.live.store.sweep.rateLimit.windowMs,
+      max: CONFIG.live.store.sweep.rateLimit.perIp,
+    }),
+    onLimited: () => statsStore.record('rate_limited'),
+  });
 
   /* --------------------------------------------------------- capabilities */
 
@@ -386,7 +484,15 @@ function createLiveRouter({
 
   /* ---------------------------------------------------------------- stats */
 
-  router.get('/live/stats', requireStatsAuth, (req, res) => {
+  router.get('/live/stats', requireStatsAuth, async (req, res) => {
+    const now = Date.now();
+    // Round J (item 3) — on the Firestore backend the startup counters hydrate
+    // ASYNCHRONOUSLY, so `status()` and `confirmationSummary()` below must not be
+    // read from different hydration states (a cold start could otherwise answer
+    // `total_rows: 3` beside `confirmation.settled_games: 0`). Await the (single)
+    // hydrate first so the whole payload is one consistent snapshot. Resolves
+    // immediately on the file backend and after a restart on Firestore.
+    await forwardTest.ready();
     // Phase 9 operational state (secret-gated, never on a user payload): which
     // calibrated column is served, whether each ROLLED-OUT pick is still within
     // tolerance of its backtest benchmark, and how the WITHHELD (shadow) evidence
@@ -409,6 +515,11 @@ function createLiveRouter({
       // explicit rather than implied by the rolling summary above.
       confirmationVerdicts[sport] = forwardTest.confirmationSummary(sport);
     });
+    // Round G (item 3) — the scheduler health is read from DURABLE storage, not
+    // the in-memory copy, so a cold start (the free-tier host having slept) does
+    // not reset it to `never_ran`. Round H (item 3) caches that durable read for
+    // `cacheTtlMs` so polling is cheap. Never throws (a read failure is blank).
+    const durable = await durableHealth(now);
     res.json({
       ...statsStore.snapshot(),
       calibrator: liveCalibrator.status(),
@@ -420,10 +531,132 @@ function createLiveRouter({
         // Phase 10 round D — settled GAMES per sport and per league on the
         // confirmation dataset, with a first-order estimate of when each reaches
         // the 500-game target at the observed settlement rate.
-        progress: forwardTest.progress(),
+        progress: forwardTest.progress({ now }),
+      },
+      // Phase 10 round F (item 1) — the health block. Where shadow rows live,
+      // whether the sweep is actually ticking, how many rows landed in the last
+      // 24h, and an actionable alert when live games are served but no row is
+      // being logged. All counts; no probability is exposed here.
+      // Round G: `storage` reports the ACTIVE adapter (file or Firestore), and
+      // `scheduler` is the durable read above. Round H: `cache_ttl_ms` is how
+      // long those durable counts are reused before storage is read again.
+      health: {
+        storage: forwardTest.storage(),
+        scheduler: durable.scheduler,
+        rows_last_24h: durable.rows_last_24h,
+        // Rows / distinct games per UTC day on the confirmation dataset (shadow
+        // rows logged at/after the candidate freeze). Empty means none landed.
+        daily_since_freeze: durable.daily_since_freeze,
+        // Round I (item 1) — the earliest and latest shadow-row times, read from
+        // the durable counters (present even when the rows are not loaded).
+        first_row_at: durable.first_row_at,
+        last_row_at: durable.last_row_at,
+        // Round H (item 5) — the exact instant the FIRST post-freeze shadow row
+        // was logged (from the durable ledger). `null` means logging has not
+        // started; rows before it do not exist, so nothing is backfilled.
+        first_post_freeze_row: durable.first_post_freeze_row,
+        // Round J (item 5) — the DAILY RECONCILE result: when it last ran,
+        // whether the durable counters disagreed with a recount of the rows, the
+        // drift itself (counts only) and any reconcile error. A non-zero delta
+        // also raises the `counter_drift` scheduler alert above.
+        reconcile: durable.scheduler ? durable.scheduler.reconcile : null,
+        cache_ttl_ms: statsCacheTtlMs,
       },
       disclaimer: DISCLAIMER,
     });
+  });
+
+  /* ---------------------------------------------------------- sweep trigger */
+
+  /**
+   * POST /api/live/sweep — run the shadow sweep NOW.
+   *
+   * This is the PRIMARY shadow trigger (round G item 2). The in-process
+   * node-cron is only a BACKUP: it stops the moment the host sleeps (a free-tier
+   * host sleeps after inactivity), so an EXTERNAL 5-minute scheduler should ping
+   * this endpoint to keep the evidence flowing without a permanently-awake
+   * process. See the README for the exact free-scheduler setup.
+   *
+   * Hardened:
+   *   - secret-gated, accepted ONLY from `Authorization: Bearer <secret>`
+   *     (`LIVE_STATS_SECRET`, falling back to `SETTLEMENT_CRON_SECRET`), compared
+   *     in constant time → 401 on a missing, short or wrong secret;
+   *   - per-IP rate limited (config live.store.sweep.rateLimit);
+   *   - safe under concurrency: a sweep already running returns `skipped:true`
+   *     (the scheduler's lock) instead of stacking a second sweep;
+   *   - bounded per call (`maxGamesPerCall`), so it returns well inside the
+   *     host's request timeout and the next call continues from where it stopped
+   *     (`truncated:true` reports that).
+   *
+   * `?dry_run=true` (or `{"dry_run":true}`) performs the SAME matching and grid
+   * gating but WRITES NOTHING — no rows, no health, no ledger — and reports what
+   * WOULD have been written (`would_log` / `would_settle`). Use it to check the
+   * trigger end to end without touching the evidence.
+   */
+  router.post('/live/sweep', requireStatsAuth, sweepRateLimit, async (req, res) => {
+    const traceId = req.traceId || null;
+    const dryRun = isTruthy(req.query && req.query.dry_run)
+      || isTruthy(req.body && req.body.dry_run);
+    try {
+      // Reuse the router's matcher (the injected one in tests, else the shared
+      // production instance) so the sweep hits the same provider view as resolve.
+      const result = await executeShadowSweep({ sportsData, logger, matcher: liveMatcher, dryRun });
+      return res.json({ ...(result || { skipped: true }), dry_run: dryRun, traceId });
+    } catch (err) {
+      logger?.log('error', '[LIVE] on-demand shadow sweep failed', { traceId, dry_run: dryRun, error: err?.message });
+      return res.status(503).json({
+        error: 'The shadow sweep could not be run.',
+        code: 'SWEEP_UNAVAILABLE',
+        reason: err?.message || null,
+        traceId,
+      });
+    }
+  });
+
+  /**
+   * POST /api/live/reconcile — run the DAILY COUNTER RECONCILE now (round J item 5).
+   *
+   * The counters in `live_shadow/meta` are a CACHE; the rows are the truth. This
+   * recounts the rows (`count()` aggregation on Firestore) and compares the
+   * result to the counters, recording any drift in the durable health document —
+   * /api/live/stats then surfaces it and raises a `counter_drift` alert on any
+   * non-zero delta.
+   *
+   * The in-process node-cron (`0 3 * * *`) is a BACKUP only: a free-tier host
+   * sleeps and the cron stops, exactly as for the sweep. This endpoint lets the
+   * SAME external scheduler that drives `/api/live/sweep` also drive the
+   * reconcile on its own (daily) schedule.
+   *
+   * Guarded identically to /api/live/sweep: secret-gated from the
+   * `Authorization: Bearer <secret>` header ONLY, constant-time compared, and
+   * per-IP rate limited. NEVER throws into the request — a reconcile that cannot
+   * complete is recorded in health and reported as `ok:false`.
+   */
+  router.post('/live/reconcile', requireStatsAuth, sweepRateLimit, async (req, res) => {
+    const traceId = req.traceId || null;
+    try {
+      const result = await runShadowReconcile({ logger });
+      if (!result) {
+        return res.status(503).json({ ok: false, error: 'The reconcile could not be run.', traceId });
+      }
+      return res.json({
+        ok: true,
+        drift_detected: result.drift_detected === true,
+        total_rows: result.total_rows || null,
+        drift: result.drift || null,
+        source: result.source || null,
+        traceId,
+      });
+    } catch (err) {
+      logger?.log('error', '[LIVE] on-demand reconcile failed', { traceId, error: err?.message });
+      return res.status(503).json({
+        ok: false,
+        error: 'The reconcile could not be run.',
+        code: 'RECONCILE_UNAVAILABLE',
+        reason: err?.message || null,
+        traceId,
+      });
+    }
   });
 
   return router;

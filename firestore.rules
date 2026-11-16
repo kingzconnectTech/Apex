@@ -36,6 +36,18 @@ service cloud.firestore {
       );
     }
     
+    // Phase 10 round H (item 3) — the shadow EVIDENCE collection.
+    //
+    // `live_shadow` (a `rows` subcollection plus `meta` / `health` / `ledger`
+    // documents) holds WITHHELD model evidence and operational state. It is
+    // written ONLY by the backend through the Firebase Admin SDK, which bypasses
+    // these rules entirely. No CLIENT — mobile, web or app — may read or write
+    // it, so both are denied. Stated explicitly (rather than relying on the
+    // default deny below) so the intent survives a future edit to the catch-all.
+    match /live_shadow/{document=**} {
+      allow read, write: if false;
+    }
+
     // Default deny for all other collections
     match /{document=**} {
       allow read, write: if false;

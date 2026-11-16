@@ -1197,7 +1197,7 @@ function basketballRows(dataset) {
 }
 
 /**
- * Item 4(a) (round E) — the FIRST-CHECKPOINT base-rate check.
+ * Item 4(a)/2 (round E) — the FIRST-CHECKPOINT base-rate check.
  *
  * At the first checkpoint of a game the model knows almost nothing (a few
  * minutes of a long game), so its average prediction should sit near the
@@ -1206,6 +1206,13 @@ function basketballRows(dataset) {
  * state itself. We take the EARLIEST checkpoint of each game (smallest fraction
  * of regulation elapsed), average the model probability, and compare it with the
  * realised home-win rate of those same games.
+ *
+ * Item 2 (round E) asked for the first checkpoint at "< 10% of regulation
+ * elapsed". Under the NBA-derived elapsed-fraction grid the earliest checkpoint
+ * of EVERY league sits at 1/8 = 12.5% of regulation, so that strict threshold
+ * selects NO rows — reported here (`blankUnder10Games`) rather than silently
+ * dropped. The table below therefore uses each game's earliest (first)
+ * checkpoint, which is the same thing the threshold was trying to capture.
  */
 function firstCheckpointBaseRate(good) {
   const firstByGame = new Map();
@@ -1222,6 +1229,7 @@ function firstCheckpointBaseRate(good) {
   const meanPredicted = preds.length ? mean(preds) : null;
   const actualHomeRate = firstRows.length ? mean(firstRows.map(r => r.y)) : null;
   const baseRate = good.length ? mean(good.map(r => r.y)) : null;
+  const fractions = firstRows.map(r => r.progress).filter(Number.isFinite);
 
   const byLeague = {};
   [...new Set(good.map(r => String(r.league)))].sort().forEach(league => {
@@ -1241,9 +1249,78 @@ function firstCheckpointBaseRate(good) {
     homeBaseRateAllCheckpoints: round4(baseRate),
     firstCheckpointHomeRate: round4(actualHomeRate),
     gapVsBaseRate: (meanPredicted != null && baseRate != null) ? round4(meanPredicted - baseRate) : null,
+    // The strict "< 10% of regulation" subset, so an empty result is explicit.
+    blankUnder10Games: firstRows.filter(r => Number.isFinite(r.progress) && r.progress < 0.10).length,
+    firstFractionMin: fractions.length ? round4(Math.min(...fractions)) : null,
+    firstFractionMax: fractions.length ? round4(Math.max(...fractions)) : null,
     byLeague,
     verdict: 'First-checkpoint predictions are close to the uninformed home base rate (no outcome information has entered the state yet).',
   };
+}
+
+/**
+ * Item 1 (round E) — per-league elapsed-minute distribution at the FIRST,
+ * SECOND and THIRD checkpoint of each game, plus the early/mid/late row counts.
+ *
+ * This is the direct evidence the schedule fix landed. Before it the schedule
+ * applied a fixed "minutes remaining in the period" mark set to every period, so
+ * a 2x20 game's earliest checkpoint sat at 14/40 = 0.35 of regulation (mid) and
+ * the league produced no early rows. On the uniform elapsed-fraction grid the
+ * first three checkpoints of EVERY league fall at 1/8, 3/16 and 1/4 of
+ * regulation — three early rows per game.
+ */
+function checkpointTiming(rows) {
+  const regulationOf = league => {
+    const l = bbLeagueConfig(league);
+    return (l.periods || 4) * (l.periodMinutes || 12);
+  };
+  const byGame = new Map();
+  rows.forEach(r => {
+    const k = String(r.gameId);
+    if (!byGame.has(k)) byGame.set(k, []);
+    byGame.get(k).push(r);
+  });
+  const perLeague = {};
+  [...new Set(rows.map(r => String(r.league)))].sort().forEach(league => {
+    perLeague[league] = {
+      regulationMinutes: regulationOf(league),
+      games: 0,
+      slots: [{ n: 0, sumMinutes: 0, sumFraction: 0 }, { n: 0, sumMinutes: 0, sumFraction: 0 }, { n: 0, sumMinutes: 0, sumFraction: 0 }],
+      buckets: { early: 0, mid: 0, late: 0 },
+    };
+  });
+  rows.forEach(r => {
+    const p = perLeague[String(r.league)];
+    if (p && r.bucket) p.buckets[r.bucket] = (p.buckets[r.bucket] || 0) + 1;
+  });
+  byGame.forEach(list => {
+    const p = perLeague[String(list[0].league)];
+    if (!p) return;
+    p.games += 1;
+    const ordered = list.slice().sort((a, b) => (Number(a.progress) || 0) - (Number(b.progress) || 0));
+    for (let i = 0; i < 3; i++) {
+      const r = ordered[i];
+      if (!r || !Number.isFinite(r.progress)) continue;
+      p.slots[i].n += 1;
+      p.slots[i].sumMinutes += r.progress * p.regulationMinutes;
+      p.slots[i].sumFraction += r.progress;
+    }
+  });
+  const out = {};
+  Object.entries(perLeague).forEach(([league, p]) => {
+    out[league] = {
+      regulationMinutes: p.regulationMinutes,
+      games: p.games,
+      bucketRows: p.buckets,
+      slots: p.slots.map((s, i) => ({
+        checkpoint: i + 1,
+        games: s.n,
+        meanElapsedMinutes: s.n ? round4(s.sumMinutes / s.n) : null,
+        meanFraction: s.n ? round4(s.sumFraction / s.n) : null,
+      })),
+    };
+  });
+  return out;
 }
 
 /**
@@ -1632,7 +1709,7 @@ function basketballHoldoutReport(rows, { truncation = null } = {}) {
   } : null;
 
   const reasons = [];
-  if (!gamesOk) reasons.push(`only ${games} fresh settled games (< ${FRESH_MIN_GAMES})`);
+  if (!gamesOk) reasons.push(`this ${games}-game holdout is the twice-scored SLIDING window, not fresh evidence — the release needs ${FRESH_MIN_GAMES} settled confirmation games per sport`);
   if (verdict.pass !== true) reasons.push('the logistic is not inside the absolute-calibration tolerance');
   if (!gainExcludesZero) reasons.push('the logistic\'s 3-way gain over scoreTime does not exclude zero at 95%');
 
@@ -1701,6 +1778,23 @@ function readExistingFreeze() {
     // No artifact yet, or a corrupt one: fall through and let main() stamp it.
   }
   return null;
+}
+
+/**
+ * The committed candidate artifact as written, or null. Read so the freeze is
+ * PRESERVED rather than rewritten: the schedule fix changes the replay rows (and
+ * therefore the refit), so a freshly computed id can drift from the committed
+ * one. The frozen ids/blocks are kept as committed; any drift is DISCLOSED in a
+ * metadata field outside the hashed blocks instead of silently overwriting them.
+ */
+function readExistingCandidates() {
+  try {
+    const p = path.join(BACKEND_DIR, CANDIDATE_FILE);
+    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return j && typeof j === 'object' ? j : null;
+  } catch (err) {
+    return null;
+  }
 }
 
 /**
@@ -1944,6 +2038,9 @@ async function main() {
     bbFit,
   );
   const basketballHoldout = basketballHoldoutReport(hbRows, { truncation: bbTruncation });
+  // Item 1 (round E) — the replay-side elapsed-minute distribution at each
+  // league's 1st/2nd/3rd checkpoint. Direct evidence the schedule fix landed.
+  const checkpointTimingByLeague = checkpointTiming(hbRows);
 
   // --- Freeze the shadow candidates (Item 2/5): a versioned artifact whose
   //     probability is logged on every shadow row and never refit for this
@@ -2033,12 +2130,41 @@ async function main() {
     },
   };
 
+  // Item 1 (round E) — KEEP shadow-candidates-1.0.0 UNCHANGED. The replay
+  // schedule moved onto a uniform elapsed-fraction grid; that changes the replay
+  // rows and therefore the refit, so freshly computed ids can drift from the
+  // committed ones. The frozen artifact is preserved as committed: the on-disk
+  // version/ids/blocks are kept, and any refit drift is DISCLOSED in a metadata
+  // field outside every hashed block rather than silently overwriting the freeze.
+  const frozenCandidates = readExistingCandidates();
+  const FROZEN_KEYS = ['basketball_logistic', 'soccer_table', 'soccer_mnl', 'soccer_score_time'];
+  const refitDrift = frozenCandidates && frozenCandidates.version === candidates.version
+    ? FROZEN_KEYS.map(k => {
+      const frozenId = (frozenCandidates[k] && frozenCandidates[k].id) || null;
+      const refitId = (candidates[k] && candidates[k].id) || null;
+      return { candidate: k, frozen_id: frozenId, refit_id: refitId, moved: Boolean(frozenId && refitId && frozenId !== refitId) };
+    })
+    : null;
+  const candidateArtifact = (frozenCandidates && frozenCandidates.version === candidates.version)
+    ? {
+      ...frozenCandidates,
+      // Metadata only (outside every hashed block) — the frozen ids do not move.
+      refit_disclosure: {
+        recorded_at: new Date().toISOString(),
+        reason: 'Replay checkpoint schedule moved to a uniform elapsed-fraction grid (schedule-only fix; no model parameters were changed).',
+        frozen_artifact_preserved: candidates.version,
+        refit_artifact_would_be: versionId(basketballLogisticBlock),
+        drift: refitDrift,
+      },
+    }
+    : candidates;
+
   // Freeze the candidate artifact BEFORE reading back the confirmation state:
   // the freeze instant is what decides which shadow rows count as unseen.
   const candPath = path.join(BACKEND_DIR, CANDIDATE_FILE);
   fs.mkdirSync(path.dirname(candPath), { recursive: true });
-  fs.writeFileSync(candPath, JSON.stringify(candidates, null, 2));
-  process.stderr.write(`[phase10] wrote ${CANDIDATE_FILE}\n`);
+  fs.writeFileSync(candPath, JSON.stringify(candidateArtifact, null, 2));
+  process.stderr.write(`[phase10] wrote ${CANDIDATE_FILE} (id-bearing blocks preserved: ${candidateArtifact.version})\n`);
 
   // Item 1/4 (round D) — the confirmation dataset and rollout progress, read
   // from the live shadow log against the freeze instant just written.
@@ -2046,7 +2172,23 @@ async function main() {
   const shadowCandidates = require('../services/live/shadowCandidates');
   shadowCandidates.reset();
   forwardTest.reset();
-  forwardTest.init();
+  // Round I (item 1) — the ONE-OFF EVALUATION: load every row (`loadRows`), not
+  // just the counters, because the confirmation breakdown scores each row. The
+  // file backend already returns its whole set from `readMeta`, so this is the
+  // explicit request for the same full set a Firestore `readRows()` would give.
+  forwardTest.init({ loadRows: true });
+  // Round I (item 1) — the one-off evaluation reads the RECOUNT of the rows, NOT
+  // the maintained counters in `live_shadow/meta`. On Firestore that is a
+  // `count()` aggregation grouped by (sport, league); on the file backend it is
+  // derived from the loaded rows. `drift` (counters vs recount) is reported so a
+  // counter that silently doubled is caught rather than released on.
+  const storeAdapter = require('../services/live/store');
+  let countersReconcile = null;
+  try {
+    countersReconcile = await storeAdapter.reconcile();
+  } catch (err) {
+    countersReconcile = { error: String((err && err.message) || err) };
+  }
   const shadowProgress = forwardTest.progress();
   const shadowConfirmation = {
     basketball: forwardTest.confirmationSummary('basketball'),
@@ -2088,7 +2230,7 @@ async function main() {
     freeze,
     confirmation: {
       rule: 'shadow rows logged after the candidate freeze timestamp, evaluated once',
-      artifact: candidates.version,
+      artifact: candidateArtifact.version,
       frozen_at: frozenAtIso,
       frozen_at_ms: freezeMs,
       min_settled_games_per_sport: FRESH_MIN_GAMES,
@@ -2096,6 +2238,12 @@ async function main() {
       // exposes NO performance, only counts/rates/ETA. The one-pass metrics are
       // computed only once every sport is ready.
       peeking_guarded: true,
+      // Round I (item 1) — the settled-game counts this evaluation rests on come
+      // from a RECOUNT of the rows, not from the maintained counters. `drift`
+      // must be zero; a non-zero delta means the counters were wrong and the
+      // counters themselves are not to be trusted.
+      counts_source: 'recount (rows), not counters',
+      counters_reconcile: countersReconcile,
     },
     shadow: { status: shadowStatus, progress: shadowProgress, confirmation: shadowConfirmation },
     item1_soccerSanity: item1,
@@ -2124,8 +2272,8 @@ async function main() {
       fit: { features: mnlFit.features, l2: mnlFit.l2, iters: mnlFit.iters, n: mnlFit.n, weights: mnlFit.weights, mu: mnlFit.mu, sd: mnlFit.sd },
       checks: mnlMonotonicity,
     },
-    item3_holdout: { basketball: basketballHoldout, productionCalibrator: production.calibrator, productionFitRows: production.fitRows },
-    candidates,
+    item3_holdout: { basketball: basketballHoldout, checkpointTiming: checkpointTimingByLeague, productionCalibrator: production.calibrator, productionFitRows: production.fitRows },
+    candidates: candidateArtifact,
   };
 
   printReport(report);
@@ -2338,6 +2486,29 @@ function printReport(r) {
     const parts = Object.entries(buckets).map(([label, m]) => `${label} n ${String(m.rows).padStart(5)}/g ${String(m.games).padStart(4)} B ${num(m.brier)} L ${num(m.logLoss)}`);
     L.push(`      ${league.padEnd(24)} ${parts.join(' | ')}`);
   });
+  // Item 1 (round E) — the elapsed-minute distribution at the 1st/2nd/3rd
+  // checkpoint of each game, per league (REPLAY path). On the uniform
+  // elapsed-fraction grid every league's first three checkpoints sit at 1/8,
+  // 3/16 and 1/4 of regulation, so all leagues get ~3 early rows per game.
+  const ct = r.item3_holdout.checkpointTiming || {};
+  L.push('    checkpoint timing (REPLAY) — mean ELAPSED minutes (fraction of regulation) at the 1st/2nd/3rd checkpoint:');
+  L.push('      league                   regMin  games   cp1 (min / frac)      cp2 (min / frac)      cp3 (min / frac)    early/mid/late rows');
+  Object.entries(ct).forEach(([league, t]) => {
+    const slots = t.slots || [];
+    const cell = i => {
+      const sl = slots[i];
+      if (!sl || sl.meanElapsedMinutes == null) return 'n/a'.padEnd(21);
+      return `${num(sl.meanElapsedMinutes)} / ${num(sl.meanFraction)}`.padEnd(21);
+    };
+    const b = t.bucketRows || { early: 0, mid: 0, late: 0 };
+    L.push(`      ${league.padEnd(24)} ${String(t.regulationMinutes).padStart(6)} ${String(t.games).padStart(6)}   ${cell(0)} ${cell(1)} ${cell(2)}  ${String(b.early || 0).padStart(5)}/${String(b.mid || 0).padStart(5)}/${String(b.late || 0).padStart(5)}`);
+  });
+  L.push('    LIVE SCHEDULER: runs on a 5-minute cron and logs whatever real clock it sees — it never');
+  L.push('      synthesises checkpoint marks, so this grid is IMPLICIT on the live side and the schedule');
+  L.push('      fix does NOT touch it. The distribution above is the replay path only.');
+  // Item 1 (round E) — the exact schedule-fix timestamp and the shadow rows that
+  // predate it (a schedule fix alone must not move frozen ids).
+  L.push(`    schedule-fix recorded at ${r.candidates && r.candidates.refit_disclosure ? r.candidates.refit_disclosure.recorded_at : r.generatedAt}; shadow rows logged BEFORE it are the pre-fix rows already labelled in the freeze boundary above.`);
   // Item 4 (round E) — the leakage test on THIS holdout. WORDING corrected: the
   // shuffle shows the metric DEPENDS on the labels; it does NOT prove the
   // absence of leakage. Two direct checks do that (below).
@@ -2357,8 +2528,9 @@ function printReport(r) {
   // base rate: at the first checkpoint no outcome information has entered.
   if (hbk.firstCheckpoint) {
     const fc = hbk.firstCheckpoint;
-    L.push(`    LEAKAGE CHECK 4(a) — first checkpoint vs home base rate (${fc.games} games):`);
+    L.push(`    LEAKAGE CHECK 4(a) / ITEM 2 — first checkpoint vs home base rate (${fc.games} games):`);
     L.push(`      mean predicted P(home) ${num(fc.meanPredicted)}   vs   home base rate (all checkpoints) ${num(fc.homeBaseRateAllCheckpoints)}   gap ${num(fc.gapVsBaseRate)}   (realised on these games ${num(fc.firstCheckpointHomeRate)})`);
+    L.push(`      earliest-checkpoint fraction: min ${num(fc.firstFractionMin)} max ${num(fc.firstFractionMax)}; games strictly < 10% of regulation: ${fc.blankUnder10Games} (the grid's earliest checkpoint is 1/8 = 12.5%, so the strict subset is empty by construction).`);
     Object.entries(fc.byLeague || {}).forEach(([league, v]) => {
       L.push(`      ${league.padEnd(24)} games ${String(v.games).padStart(4)}  meanPred ${num(v.meanPredicted)}  homeRate ${num(v.homeRate)}  gap ${num(v.gap)}`);
     });
@@ -2380,7 +2552,13 @@ function printReport(r) {
   L.push('      NOTE (item 5): the CBB holdout is 80/9 — far too skewed and thin to set parameters from;');
   L.push(`      league-specific parameters are only fitted at >= ${BT.shipGate.minLeagueGames} SETTLED GAMES in the fit window, else the sport-wide parameters are used.`);
 
-  L.push(`    fresh-games rule: ${hbk.games} settled games vs minimum ${hbk.freshMinGames} → ${hbk.gamesOk ? 'MET' : 'NOT MET (candidate stays blocked)'}`);
+  // Item 4 (round E) — CONFIRMATION PROGRESS per sport, and the holdout labelled
+  // for what it is: the twice-scored SLIDING window, not fresh evidence.
+  const confB = r.shadow.confirmation.basketball || {};
+  const confS = r.shadow.confirmation.soccer || {};
+  L.push(`    CONFIRMATION PROGRESS (settled GAMES after the freeze — the only eligible release evidence):`);
+  L.push(`      basketball ${confB.settled_games}/${confB.min_settled_games}   soccer ${confS.settled_games}/${confS.min_settled_games}`);
+  L.push(`    the ${hbk.games}-game holdout above is the TWICE-SCORED SLIDING window (it overlaps the prior window and was already evaluated) — it is NOT fresh confirmation evidence.`);
   L.push(`    SHIPS: ${hbk.ships ? 'YES' : 'NO'} — ${hbk.reasons.join('; ') || 'all clauses met'}`);
   L.push('');
 
@@ -2394,6 +2572,19 @@ function printReport(r) {
   });
   L.push(`  logged on every shadow row; confirmation = shadow rows logged strictly AFTER this instant.`);
   L.push(`PRIMARY (the only one the release reads, vs scoreTime, game-level CIs): basketball ${r.candidates.registration.basketball.primary}; soccer ${r.candidates.registration.soccer.primary} (secondary: ${r.candidates.registration.soccer.secondary}).`);
+  // Item 1 (round E) — the schedule fix changed the replay rows, so disclose any
+  // refit drift from the frozen ids rather than overwriting the freeze.
+  const rd = r.candidates.refit_disclosure;
+  if (rd && Array.isArray(rd.drift)) {
+    const moved = rd.drift.filter(d => d.moved);
+    L.push(`  REFIT DISCLOSURE (${rd.recorded_at}): ${rd.reason}`);
+    if (moved.length) {
+      L.push(`    the refit would move ${moved.length} id(s); the frozen ids above are PRESERVED and the drift is recorded, not applied:`);
+      moved.forEach(d => L.push(`      ${d.candidate.padEnd(20)} frozen ${d.frozen_id} → refit ${d.refit_id}`));
+    } else {
+      L.push('    the refit reproduces every frozen id exactly (no drift).');
+    }
+  }
   L.push('Near-certain outcomes are clipped to [0.01, 0.99] on every candidate, and any soccer table cell with < 30 raw rows is flagged thin.');
   L.push('Predictions are statistical estimates, not betting advice.');
 
@@ -2420,6 +2611,6 @@ module.exports = {
   versionId, productionHoldoutRows,
   bbLeagueConfig, basketballPredictor, fitBasketballModel, basketballModelProbability, basketballRows,
   soccerHoldoutReport, basketballHoldoutReport, holdoutRange, printReport,
-  readExistingFreeze, parseDateRange, priorHoldoutOverlap, freezeAudit, labelShuffleLeakage,
-  firstCheckpointBaseRate, checkpointTruncationTest,
+  readExistingFreeze, readExistingCandidates, parseDateRange, priorHoldoutOverlap, freezeAudit, labelShuffleLeakage,
+  firstCheckpointBaseRate, checkpointTiming, checkpointTruncationTest,
 };

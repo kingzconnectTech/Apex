@@ -726,7 +726,8 @@ manual-entry breakdown. In short:
 
 | Key | Meaning |
 |---|---|
-| `checkpoints.basketball.minutesRemaining` | in-period marks replayed (6, 3, 0) |
+| `checkpoints.basketball.fractions` | league-aware elapsed-fraction grid replayed (11 marks → 3 early / 4 mid / 4 late per game; supersedes the old 48/4 `minutesRemaining`) |
+| `checkpoints.basketball.minutesRemaining` | legacy in-period marks (6, 3, 0) — honoured only when a caller passes them explicitly (unit fixtures) |
 | `checkpoints.soccer.minutes` | cumulative match minutes replayed (15…75) |
 | `windows` | chronological train/validation/test fractions |
 | `refitEvery` | walk-forward calibrator refit cadence (games) |
@@ -755,3 +756,90 @@ manual-entry breakdown. In short:
 3. Re-run the sweep. The league ships a live pick only when its **sport** clears
    the ship gate and the league's own sanity check is not BLOCKED; until then it
    shows score/time/context only.
+
+## Erratum — 2026-11-14: the 48 / 4 basketball bucket constant
+
+Every basketball figure below that classified a checkpoint by the fraction of a
+**fixed 48-minute / 4-period** game is **SUPERSEDED**. `bucketFor` /
+`basketballElapsed` used the sport-wide clock (48 min), so a 40-minute league
+(WNBA 4×10, college 2×20) was scored against the wrong denominator: its
+checkpoints were pushed toward the "mid" bucket and it never reached "late". The
+replay checkpoint marks compounded this — a `minutesRemaining: [6, 3, 0]` set
+applied uniformly per period put a 2×20 game's earliest checkpoint at
+14/40 = 0.35 of regulation (mid), so college produced **no early checkpoints at
+all**.
+
+Superseded figures (Phases 8-10), listed so no reader re-quotes them:
+
+- The **By time bucket** table above — the basketball rows (early 2,817 / 940 …
+  late 2,089 / 529) and the `excludingLate` headline (5,724 / 940, 57.4 %,
+  Brier 0.1607, log loss 0.4786).
+- The **Honest findings** line that reads the `excludingLate` view as
+  "basketball is 57.4 % and soccer is 46.0 %".
+- Every **per-league `excludingLate` hit rate for WNBA and college** quoted in
+  the Phase 8-10 reports — those leagues' buckets were computed against 48
+  minutes, not their own 40.
+- The **config reference** row `checkpoints.basketball.minutesRemaining`
+  "(6, 3, 0)": the schedule is now a league-aware elapsed-fraction grid
+  (`checkpoints.basketball.fractions`), which reproduces the legacy NBA marks
+  exactly and gives WNBA/college the same **3 early / 4 mid / 4 late** checkpoints
+  per game as NBA.
+
+The model's own clock was already league-correct — the time feature of the
+logistic, `scoreTime` and the production model all read the league's regulation
+length — so the frozen model is unchanged and the artifact stays at
+**`shadow-candidates-1.0.0`** (the schedule fix does not move a frozen id). The
+schedule-fix instant and any refit drift are recorded by the Phase 10 report
+(`REFIT DISCLOSURE`); the one pre-fix shadow row (`espn:900`, logged
+`2026-11-12T12:25:19.484Z`) predates the freeze and does **not** count as
+confirmation evidence.
+
+**None of the superseded figures may decide a release.** The release decision
+reads the **confirmation dataset** only — shadow rows logged strictly after the
+freeze, evaluated once, ≥ 500 settled games per sport. The Basketball time-bucket
+tables and the `excludingLate` hit rates above are historical and are marked
+superseded by that confirmation dataset.
+
+## Erratum — 2026-11-14: the first post-freeze row is **not yet** logged
+
+The confirmation dataset begins at the **first shadow row logged strictly after
+the candidate freeze** (`2026-11-12T13:53:48Z`). That instant is a **durable,
+write-once record**: the evaluation ledger (`services/live/ledger.js`) captures it
+in `first_post_freeze_row` the moment such a row is appended (round G item 5),
+and it lives in the same storage backend as the rows (Firestore in production),
+so a cold start cannot move it. Rows timestamped **before** the freeze are **not
+part of the dataset and are not backfilled** — the one pre-freeze row (`espn:900`,
+logged `2026-11-12T12:25:19.484Z`, `at_ms` `1794486319484`) stays in the raw log
+but is excluded by its timestamp.
+
+**Current value: `first_post_freeze_row = null` (pending).** No row has been
+logged after the freeze yet — production storage is Firestore and no live sweep
+has run against it, so the dataset is empty and confirmation progress is **0 /
+500** per sport. The instant the first real post-freeze row lands, the ledger
+records its exact `at` / `at_ms` (plus `game_id`, `sport`, `league`,
+`grid_checkpoint`) once and never moves it.
+
+**Superseded — a test-pollution reading.** Two synthetic rows had appeared in the
+committed dev files at `2026-11-14T16:15Z` and would have been mistaken for the
+first post-freeze evidence:
+
+- `data/live-ledger.json` → `first_post_freeze_row` = `espn:401`, basketball /
+  `nba`, grid `0.625`, at `2026-11-14T16:15:28.252Z` — written by
+  `tests/live-shadow-scheduler.test.js` (its fixture is candidate `401`, NBA
+  `7:24` period 3 → elapsed `0.5958` → grid `0.625`). That suite redirected the
+  forward **and** health files but **not** the ledger.
+- `data/live-forward.json` → a second `espn:900`, soccer / `eng.1`, grid `0.375`
+  row at `2026-11-14T16:15:32.013Z` — written by `tests/live-api.test.js` (which
+  polls `/api/live/analysis/espn:900`; the fixture is soccer, clock `34'`, period
+  1 → `0.3778` → grid `0.375`). That suite redirected **no** evidence file.
+- `data/live-ledger.json` → `first_post_freeze_row` = `espn:1`, basketball /
+  `nba`, grid `0.625` — written by `tests/live-analysis.test.js`, whose
+  `recordForwardTest` / `forwardTest.settle` calls (`game_id` `espn:1`) reached
+  the committed ledger because that suite redirected the forward file only.
+
+Both suites now redirect the forward, health **and** ledger files to throwaway
+temp paths (and reset the stores), so a test run can no longer write into the
+committed evidence. The polluted rows were removed: `data/live-ledger.json` is
+back to `first_post_freeze_row = null` and `data/live-forward.json` holds only
+the pre-freeze row — verified untouched after a full 36-suite run. **None of the
+removed rows is counted, backfilled, or quotable as evidence.**

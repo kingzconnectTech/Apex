@@ -7,12 +7,19 @@
  * counters. Nothing here reaches a provider.
  */
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const express = require('express');
 const request = require('supertest');
 
 const CONFIG = require('../services/live/config');
 const stats = require('../services/live/stats');
 const policy = require('../services/live/policy');
+const forwardTest = require('../services/live/forwardTest');
+const shadowHealth = require('../services/live/shadowHealth');
+const ledger = require('../services/live/ledger');
+const store = require('../services/live/store');
 const { createLiveRouter, DISCLAIMER } = require('../routes/live');
 
 const LINK = 'https://example.com/football/premier-league/manchester-united-vs-chelsea';
@@ -59,9 +66,47 @@ function buildApp({ matcher = null, rateLimitMiddleware = null, manualRateLimitM
   return app;
 }
 
+// This suite polls /api/live/analysis/espn:900, which records a shadow row
+// through forwardTest — and that writes the row, the durable ledger's first
+// post-freeze entry and the health state. Redirect ALL three to throwaway files
+// so a test run can never append synthetic evidence to the committed
+// data/live-forward.json / data/live-ledger.json / data/live-shadow-health.json.
+const COMMITTED_FORWARD_FILE = CONFIG.live.forwardTest.file;
+const COMMITTED_HEALTH_FILE = CONFIG.live.health.file;
+const COMMITTED_LEDGER_FILE = CONFIG.live.store.ledger.file;
+const stamp = `${process.pid}-${Math.random().toString(16).slice(2)}`;
+const TMP_FORWARD_FILE = path.join(os.tmpdir(), `live-api-forward-${stamp}.json`);
+const TMP_HEALTH_FILE = path.join(os.tmpdir(), `live-api-health-${stamp}.json`);
+const TMP_LEDGER_FILE = path.join(os.tmpdir(), `live-api-ledger-${stamp}.json`);
+
+function rm(file) { try { fs.unlinkSync(file); } catch (err) { /* absent is fine */ } }
+
 beforeEach(() => {
   stats.reset();
   delete process.env.LIVE_STATS_SECRET;
+  rm(TMP_FORWARD_FILE); rm(TMP_HEALTH_FILE); rm(TMP_LEDGER_FILE);
+  CONFIG.live.forwardTest.file = TMP_FORWARD_FILE;
+  CONFIG.live.health.file = TMP_HEALTH_FILE;
+  CONFIG.live.store.ledger.file = TMP_LEDGER_FILE;
+  CONFIG.live.store.kind = 'file';
+  store.resetStore();
+  forwardTest.reset();
+  shadowHealth.reset();
+  ledger.reset();
+  forwardTest.init({ benchmarkLogLoss: 0.4303 });
+  shadowHealth.init();
+  ledger.init();
+});
+
+afterEach(() => {
+  CONFIG.live.forwardTest.file = COMMITTED_FORWARD_FILE;
+  CONFIG.live.health.file = COMMITTED_HEALTH_FILE;
+  CONFIG.live.store.ledger.file = COMMITTED_LEDGER_FILE;
+  store.resetStore();
+  forwardTest.reset();
+  shadowHealth.reset();
+  ledger.reset();
+  rm(TMP_FORWARD_FILE); rm(TMP_HEALTH_FILE); rm(TMP_LEDGER_FILE);
 });
 
 describe('GET /api/live/capabilities', () => {
@@ -337,8 +382,42 @@ describe('feature flags are independent, and each is enforced', () => {
 });
 
 describe('GET /api/live/stats', () => {
-  test('is open when no secret is configured and returns the counters', async () => {
+  // Round H (item 2) — the stats/sweep secret is REQUIRED, must be at least 24
+  // characters, and is accepted ONLY from the Authorization header.
+  const SECRET = 'apex-live-stats-secret-0123456789';
+  beforeEach(() => { process.env.LIVE_STATS_SECRET = SECRET; });
+  afterEach(() => { delete process.env.LIVE_STATS_SECRET; });
+
+  const authed = (app) => request(app).get('/api/live/stats').set('Authorization', `Bearer ${SECRET}`);
+
+  test('fails closed when no secret is configured', async () => {
+    delete process.env.LIVE_STATS_SECRET;
     const res = await request(buildApp({ matcher: {} })).get('/api/live/stats');
+    expect(res.status).toBe(401);
+  });
+
+  test('refuses a secret shorter than the configured minimum', async () => {
+    process.env.LIVE_STATS_SECRET = 'tooshort';
+    const res = await request(buildApp({ matcher: {} }))
+      .get('/api/live/stats').set('Authorization', 'Bearer tooshort');
+    expect(res.status).toBe(401);
+  });
+
+  test('accepts only the Authorization header — never a query string or body', async () => {
+    const app = buildApp({ matcher: {} });
+
+    const noHeader = await request(app).get('/api/live/stats');
+    expect(noHeader.status).toBe(401);
+
+    const withQuery = await request(app).get(`/api/live/stats?secret=${SECRET}`);
+    expect(withQuery.status).toBe(401);
+
+    const withHeader = await authed(app);
+    expect(withHeader.status).toBe(200);
+  });
+
+  test('returns the counters once authorized', async () => {
+    const res = await authed(buildApp({ matcher: {} }));
     expect(res.status).toBe(200);
     expect(res.body).toEqual(expect.objectContaining({
       resolve_total: expect.any(Number),
@@ -347,19 +426,8 @@ describe('GET /api/live/stats', () => {
     }));
   });
 
-  test('requires the secret header once one is configured', async () => {
-    process.env.LIVE_STATS_SECRET = 'sekret';
-    const app = buildApp({ matcher: {} });
-
-    const denied = await request(app).get('/api/live/stats');
-    expect(denied.status).toBe(401);
-
-    const allowed = await request(app).get('/api/live/stats').set('x-live-stats-secret', 'sekret');
-    expect(allowed.status).toBe(200);
-  });
-
   test('surfaces the Phase 9 calibrator and the shadow hold, without a number', async () => {
-    const res = await request(buildApp({ matcher: {} })).get('/api/live/stats');
+    const res = await authed(buildApp({ matcher: {} }));
     expect(res.status).toBe(200);
     // The served calibrator column, described — never a coefficient value.
     expect(res.body.calibrator).toEqual(expect.objectContaining({
@@ -375,7 +443,7 @@ describe('GET /api/live/stats', () => {
   });
 
   test('surfaces the confirmation dataset and the rollout progress', async () => {
-    const res = await request(buildApp({ matcher: {} })).get('/api/live/stats');
+    const res = await authed(buildApp({ matcher: {} }));
     expect(res.status).toBe(200);
     // Only rows logged after the freeze count, and the one-shot run waits for
     // the ship gate's 500 settled GAMES per sport.
@@ -393,6 +461,121 @@ describe('GET /api/live/stats', () => {
       per_sport: expect.any(Object),
       per_league: expect.any(Object),
     }));
+  });
+
+  test('reports the health block with the durable-read cache TTL (round H item 3)', async () => {
+    const res = await authed(buildApp({ matcher: {} }));
+    expect(res.status).toBe(200);
+    expect(res.body.health).toEqual(expect.objectContaining({
+      cache_ttl_ms: CONFIG.live.store.stats.cacheTtlMs,
+      rows_last_24h: expect.any(Number),
+      daily_since_freeze: expect.any(Array),
+      scheduler: expect.objectContaining({ alert: expect.any(Object) }),
+    }));
+    // Round H (item 5) — the ledger's first post-freeze row rides along (null
+    // until the first shadow row lands), so the deployment checklist can read it.
+    expect(res.body.health).toHaveProperty('first_post_freeze_row');
+  });
+});
+
+describe('POST /api/live/sweep', () => {
+  const SECRET = 'apex-live-stats-secret-0123456789';
+  beforeEach(() => { process.env.LIVE_STATS_SECRET = SECRET; });
+  afterEach(() => { delete process.env.LIVE_STATS_SECRET; });
+
+  /** A live NBA candidate that lands on a replay grid mark (logs a row). */
+  function bballCandidate() {
+    return {
+      source: 'espn',
+      fixture: {
+        sport: 'basketball',
+        fixture: { id: '501', status: 'live', clock: '7:24', period: 3, date: '2026-11-08T02:00:00Z', timestamp: 1700000000000, venue: 'Arena' },
+        league: { id: 'nba', name: 'NBA' },
+        homeTeam: { id: 'h', name: 'Lakers', score: 70 },
+        awayTeam: { id: 'a', name: 'Celtics', score: 66 },
+      },
+      match_confidence: 1,
+      orientation: 'direct',
+      home_similarity: null,
+      away_similarity: null,
+      match_notes: ['listed'],
+    };
+  }
+
+  // Only basketball has a shadow league with fixtures in this stub.
+  const sweepMatcher = () => ({
+    listLeagueFixtures: jest.fn(async ({ sport }) => (sport === 'basketball' ? [bballCandidate()] : [])),
+  });
+
+  test('dry_run runs matching and grid gating but writes nothing', async () => {
+    const app = buildApp({ matcher: sweepMatcher() });
+    const res = await request(app).post('/api/live/sweep?dry_run=true')
+      .set('Authorization', `Bearer ${SECRET}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.dry_run).toBe(true);
+    // It reports the row it WOULD log...
+    expect(res.body.would_log).toBe(1);
+    // ...and writes nothing: no shadow row, no forward file.
+    expect(res.body.logged).toBe(0);
+    expect(forwardTest.status().shadowRows).toBe(0);
+    expect(fs.existsSync(TMP_FORWARD_FILE)).toBe(false);
+  });
+
+  test('is secret-gated exactly like the stats route', async () => {
+    delete process.env.LIVE_STATS_SECRET;
+    const res = await request(buildApp({ matcher: sweepMatcher() })).post('/api/live/sweep?dry_run=true');
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /api/live/reconcile (round J item 5)', () => {
+  const SECRET = 'apex-live-stats-secret-0123456789';
+  beforeEach(() => { process.env.LIVE_STATS_SECRET = SECRET; });
+  afterEach(() => { delete process.env.LIVE_STATS_SECRET; });
+
+  /** A live NBA candidate that lands on a replay grid mark (logs a row). */
+  function bballCandidate() {
+    return {
+      source: 'espn',
+      fixture: {
+        sport: 'basketball',
+        fixture: { id: '601', status: 'live', clock: '7:24', period: 3, date: '2026-11-08T02:00:00Z', timestamp: 1700000000000, venue: 'Arena' },
+        league: { id: 'nba', name: 'NBA' },
+        homeTeam: { id: 'h', name: 'Lakers', score: 70 },
+        awayTeam: { id: 'a', name: 'Celtics', score: 66 },
+      },
+      match_confidence: 1,
+      orientation: 'direct',
+      home_similarity: null,
+      away_similarity: null,
+      match_notes: ['listed'],
+    };
+  }
+
+  const matcher = () => ({
+    listLeagueFixtures: jest.fn(async ({ sport }) => (sport === 'basketball' ? [bballCandidate()] : [])),
+  });
+
+  test('is secret-gated exactly like the sweep route', async () => {
+    delete process.env.LIVE_STATS_SECRET;
+    const res = await request(buildApp({ matcher: matcher() })).post('/api/live/reconcile');
+    expect(res.status).toBe(401);
+  });
+
+  test('recounts the rows and reports NO drift on a clean store', async () => {
+    const app = buildApp({ matcher: matcher() });
+    // One real sweep logs a grid row, so the recount has something to count.
+    await request(app).post('/api/live/sweep').set('Authorization', `Bearer ${SECRET}`);
+
+    const res = await request(app).post('/api/live/reconcile').set('Authorization', `Bearer ${SECRET}`);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.drift_detected).toBe(false);
+    // Counters agree with the recount, and the reconcile is recorded in health.
+    expect(res.body.total_rows.counters).toBe(res.body.total_rows.recount);
+    expect(res.body.total_rows.recount).toBeGreaterThanOrEqual(1);
+    expect(shadowHealth.snapshot().last_reconcile_at).toBeTruthy();
   });
 });
 

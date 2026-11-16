@@ -16,8 +16,10 @@
 
 const CONFIG = require('./config');
 const M = require('./liveMath');
+const { resolveLeagueKey, LEAGUES: BB_LEAGUES } = require('../basketball/leagues');
 
 const BT = CONFIG.liveBacktest;
+const BB = CONFIG.liveModel.basketball;
 
 function numOrNull(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -37,19 +39,74 @@ function clockMinutesRemaining(text) {
 
 /* ------------------------------------------------------------------ basket */
 
+/** Trim float noise from a label's "minutes remaining" value (6 -> "6", 2.5 -> "2.5"). */
+function fmtMinutes(v) {
+  return String(Math.round(v * 1e6) / 1e6);
+}
+
 /**
- * Basketball checkpoints: for each period, a snapshot at every configured
- * "minutes remaining" mark (0 = period end). The final period's end is skipped
- * because by then the game is decided and grading it would be self-fulfilling.
+ * A league's regulation structure, resolved the SAME way the backtester's
+ * elapsed/bucket helpers do (services/live/backtester basketballStructure): the
+ * period COUNT comes from liveModel.basketball.leaguePeriods and the regulation
+ * length from basketball/leagues. Keeping one source means a replay checkpoint
+ * and the bucket it is reported under cannot drift.
+ *
+ * @param {string} [league]
+ * @returns {{gameMinutes:number, periods:number, periodMinutes:number}}
+ */
+function basketballStructure(league) {
+  const fallback = BT.baselines.scoreTime.basketball;
+  const key = resolveLeagueKey(league);
+  const cfg = key && BB_LEAGUES[key] ? BB_LEAGUES[key] : null;
+  const gameMinutes = cfg && Number.isFinite(cfg.gameMinutes) ? cfg.gameMinutes : fallback.gameMinutes;
+  const periods = key && BB.leaguePeriods[key] ? BB.leaguePeriods[key] : (fallback.periods || BB.defaultPeriods);
+  return { gameMinutes, periods, periodMinutes: gameMinutes / periods };
+}
+
+/**
+ * Turn an ELAPSED-FRACTION grid into per-(period, minutes remaining) targets for
+ * one league. A fraction that lands exactly on a period boundary becomes that
+ * period's end (`remaining` 0); anything else becomes the in-period clock. This
+ * is what puts every league — 4x12, 4x10 and 2x20 — on the SAME grid, so a
+ * college game gets the early checkpoints a quarter-based schedule denied it.
+ */
+function fractionMarks(fractions, structure) {
+  const { periods, periodMinutes } = structure;
+  const total = periods * periodMinutes;
+  const marks = [];
+  (Array.isArray(fractions) ? fractions : []).forEach(f => {
+    if (!Number.isFinite(f) || f <= 0 || f >= 1) return;
+    const elapsed = f * total;
+    const boundary = Math.abs(elapsed / periodMinutes - Math.round(elapsed / periodMinutes)) < 1e-9;
+    if (boundary) {
+      marks.push({ period: Math.round(elapsed / periodMinutes), remaining: 0 });
+    } else {
+      const period = Math.floor(elapsed / periodMinutes) + 1;
+      marks.push({ period, remaining: period * periodMinutes - elapsed });
+    }
+  });
+  return marks;
+}
+
+/**
+ * Basketball checkpoints. Each target is a (period, minutes remaining) pair: the
+ * snapshot is the LAST play in that period still showing at least `remaining`
+ * minutes (the state closest to the mark, never a later play). The final
+ * period's buzzer (remaining 0) is skipped because by then the game is decided
+ * and grading it would be self-fulfilling.
+ *
+ * Targets come from one of two schedules:
+ *   - `opts.minutesRemaining` — explicit per-period marks (unit fixtures and the
+ *     synthetic smoke test pass these), applied to every present period; or
+ *   - the production elapsed-fraction grid (`opts.fractions` or
+ *     `liveBacktest.checkpoints.basketball.fractions`), mapped through the
+ *     LEAGUE's own period structure so every league samples the same fractions.
  *
  * @param {Array} plays  ESPN summary.plays
- * @param {Object} [opts] { minutesRemaining, maxPeriods }
+ * @param {Object} [opts] { league, fractions, minutesRemaining, maxPeriods, structure }
  * @returns {Array<{label,period,clock,home_score,away_score}>}
  */
 function basketballCheckpoints(plays, opts = {}) {
-  const marks = (opts.minutesRemaining || BT.checkpoints.basketball.minutesRemaining || [])
-    .slice()
-    .sort((a, b) => b - a);
   const list = Array.isArray(plays) ? plays : [];
 
   const byPeriod = new Map();
@@ -63,27 +120,40 @@ function basketballCheckpoints(plays, opts = {}) {
   if (!present.length) return [];
   const maxPeriod = opts.maxPeriods || present[present.length - 1];
 
+  let targets;
+  if (Array.isArray(opts.minutesRemaining) && opts.minutesRemaining.length) {
+    const marks = opts.minutesRemaining.slice().sort((a, b) => b - a);
+    targets = [];
+    present.filter(p => p <= maxPeriod).forEach(period => {
+      marks.forEach(remaining => targets.push({ period, remaining }));
+    });
+  } else {
+    const structure = opts.structure || basketballStructure(opts.league);
+    const fractions = opts.fractions || BT.checkpoints.basketball.fractions || [];
+    targets = fractionMarks(fractions, structure);
+  }
+
   const out = [];
-  present.filter(p => p <= maxPeriod).forEach(period => {
+  targets.forEach(({ period, remaining }) => {
+    if (period > maxPeriod) return;
     const inPeriod = byPeriod.get(period);
-    marks.forEach(remaining => {
-      if (remaining === 0 && period === maxPeriod) return; // final buzzer = the outcome
-      // The clock counts down, so the LAST play still showing at least `remaining`
-      // minutes is the state closest to that mark.
-      let chosen = null;
-      for (const p of inPeriod) {
-        const left = clockMinutesRemaining(p && p.clock && p.clock.displayValue);
-        if (left == null) continue;
-        if (left >= remaining - 1e-9) chosen = p;
-      }
-      if (!chosen) return;
-      out.push({
-        label: remaining === 0 ? `p${period}_end` : `p${period}_${remaining}min_left`,
-        period,
-        clock: (chosen.clock && chosen.clock.displayValue) || null,
-        home_score: numOrNull(chosen.homeScore),
-        away_score: numOrNull(chosen.awayScore),
-      });
+    if (!inPeriod) return;
+    if (remaining <= 0 && period === maxPeriod) return; // final buzzer = the outcome
+    // The clock counts down, so the LAST play still showing at least `remaining`
+    // minutes is the state closest to that mark.
+    let chosen = null;
+    for (const p of inPeriod) {
+      const left = clockMinutesRemaining(p && p.clock && p.clock.displayValue);
+      if (left == null) continue;
+      if (left >= remaining - 1e-9) chosen = p;
+    }
+    if (!chosen) return;
+    out.push({
+      label: remaining <= 0 ? `p${period}_end` : `p${period}_${fmtMinutes(remaining)}min_left`,
+      period,
+      clock: (chosen.clock && chosen.clock.displayValue) || null,
+      home_score: numOrNull(chosen.homeScore),
+      away_score: numOrNull(chosen.awayScore),
     });
   });
   return out;
@@ -286,7 +356,11 @@ function lineFromPickcenter(summary) {
  * @param {Object} ctx     { homeTeamId, awayTeamId, homeName, awayName }
  */
 function checkpointsFromSummary(sport, summary, ctx = {}) {
-  if (sport === 'basketball') return basketballCheckpoints(summary && summary.plays);
+  if (sport === 'basketball') {
+    // The league decides the period structure, so the elapsed-fraction grid
+    // resolves to the right in-period clock for a 4x12 / 4x10 / 2x20 game.
+    return basketballCheckpoints(summary && summary.plays, { league: ctx.league });
+  }
   if (sport === 'soccer') return soccerCheckpoints(summary && summary.keyEvents, ctx);
   return [];
 }
@@ -317,6 +391,7 @@ function recordFromSummary({ sport, league, event, summary, meta = {} } = {}) {
     awayTeamId: away.teamId,
     homeName: home.name,
     awayName: away.name,
+    league,
   };
 
   const finalHome = competitorScore(homeComp);
@@ -389,6 +464,8 @@ function buildGameRecord({
 module.exports = {
   numOrNull,
   clockMinutesRemaining,
+  basketballStructure,
+  fractionMarks,
   basketballCheckpoints,
   parseRunningScore,
   isGoalEvent,

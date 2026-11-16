@@ -22,7 +22,6 @@
  * It is deliberately NOT part of any user-facing payload.
  */
 
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
@@ -36,6 +35,12 @@ const liveCalibrator = require('./liveCalibrator');
 // Phase 10 round D — the CONFIRMATION dataset is defined by the frozen
 // candidate artifact's freeze instant, so the forward log has to read it.
 const shadowCandidates = require('./shadowCandidates');
+// Phase 10 round G (item 1) — durability goes through ONE storage adapter
+// (file in tests/dev, Firestore in production) and the evaluation ledger.
+const store = require('./store');
+const ledger = require('./ledger');
+const countersLib = require('./store/counters');
+const grid = store.grid;
 
 const FWD = CONFIG.live.forwardTest;
 const BACKEND_DIR = path.join(__dirname, '..', '..');
@@ -138,33 +143,70 @@ function percentileOf(sorted, q) {
   return sorted[idx];
 }
 
-/** Load the persisted log: { rows, benchmarkLogLoss, criteria, updatedAt } or an empty one. */
-function readStore(file = FWD.file) {
-  const target = resolveFile(file);
-  if (!target) return emptyStore();
-  try {
-    const json = JSON.parse(fs.readFileSync(target, 'utf8'));
-    const rows = Array.isArray(json && json.rows) ? json.rows : [];
-    return {
-      rows,
-      benchmarkLogLoss: Number.isFinite(json && json.benchmarkLogLoss) ? json.benchmarkLogLoss : null,
-      criteria: (json && json.criteria) || null,
-      shadowCalibratorId: (json && json.shadow_calibrator_id) || null,
-      updatedAt: (json && json.updatedAt) || null,
-    };
-  } catch (err) {
-    // No file yet, or a corrupt one: start empty rather than throw on a request.
-    return emptyStore();
-  }
+/* --------------------------------------------------- durable storage (round G) */
+
+/** An empty store result (no rows, no meta, blank counters). */
+function emptyStore() {
+  return {
+    rows: [],
+    benchmarkLogLoss: null,
+    criteria: null,
+    shadowCalibratorId: null,
+    updatedAt: null,
+    counters: countersLib.blank(),
+    rows_complete: false,
+  };
 }
 
-function emptyStore() {
-  return { rows: [], benchmarkLogLoss: null, criteria: null, shadowCalibratorId: null, updatedAt: null };
+/**
+ * Hydrate the in-memory working set from a storage-adapter result.
+ *
+ * Round I (item 1): the durable AGGREGATE COUNTERS ride along on the meta read,
+ * so the health surface (rows per day, settled games per sport/league, the
+ * first/last row time) is available even when the rows themselves are not
+ * loaded — which, in production (Firestore), is the normal case.
+ */
+function applyStore(data) {
+  const d = data || {};
+  rows = Array.isArray(d.rows) ? d.rows : [];
+  benchmarkLogLoss = Number.isFinite(d.benchmarkLogLoss) ? d.benchmarkLogLoss : null;
+  criteriaSnapshot = d.criteria || null;
+  shadowCalibratorId = d.shadowCalibratorId || null;
+  updatedAt = d.updatedAt || null;
+  counters = d.counters ? countersLib.mergeInto(countersLib.blank(), d.counters) : countersLib.blank();
+  countersDelta = countersLib.blank();
+  // The meta already carries a first-row time, so this session must NOT re-apply
+  // it (a later, larger timestamp would overwrite the durable minimum).
+  countersFirstApplied = Number.isFinite(counters.first_row_at_ms);
+  // Round I (item 1) — are these rows the WHOLE set? True for the file backend
+  // and a `readRows()` full load; false for the Firestore startup meta read.
+  // The counts-only surfaces (progress, confirmationSummary) consult this so
+  // they derive from the durable counters instead of reporting an empty set.
+  rowsComplete = d.rows_complete === true;
 }
 
 let rows = [];
 let benchmarkLogLoss = null;
 let updatedAt = null;
+/**
+ * Round I (item 1) — the durable AGGREGATE counters, mirrored in memory.
+ * `counters` is the running truth (rows per UTC day, settled games per
+ * sport/league, first/last row time); `countersDelta` is what has changed since
+ * the last flush and is what the Firestore backend applies ATOMICALLY
+ * (FieldValue.increment) in the same write as the rows. The file backend
+ * ignores the delta and re-derives the counters from its local rows.
+ */
+let counters = countersLib.blank();
+let countersDelta = countersLib.blank();
+let countersFirstApplied = false;
+/**
+ * Round I (item 1) — whether `rows` currently holds the WHOLE evidence set (the
+ * file backend, or a `readRows()` full load) or only the handful written since
+ * this process started (the Firestore startup path, which loads no rows). The
+ * counts-only surfaces use it to decide between scoring the rows and reading the
+ * durable counters.
+ */
+let rowsComplete = false;
 /**
  * Phase 9 freeze: the release criteria and calibrator version the shadow run
  * started under. Captured from the FIRST shadow row and never overwritten, so a
@@ -176,37 +218,34 @@ let shadowCalibratorId = null;
 let loaded = false;
 let dirty = false;
 let lastWrite = 0;
-const verdicts = new Map();
-
 /**
- * Load the persisted log once. Idempotent; safe to call at startup.
- * @param {Object} [opts]
- * @param {string} [opts.file]
- * @param {number|null} [opts.benchmarkLogLoss] backtest log loss to compare against
+ * Round J (item 3) — the STARTUP HYDRATE promise. On the Firestore backend the
+ * meta read (which carries the durable counters) is ASYNCHRONOUS, so `init()`
+ * returns before the counters are in memory. A surface that must report a
+ * CONSISTENT view (the /live/stats route spreads `status()` and
+ * `confirmationSummary()` into one payload) awaits `ready()` first, so the two
+ * are never computed from different hydration states — otherwise a cold start
+ * could show `status.total_rows = 3` beside `confirmation.settled_games = 0`.
  */
-function init({ file = FWD.file, benchmarkLogLoss: bench = undefined } = {}) {
-  const store = FWD.enabled === false ? emptyStore() : readStore(file);
-  rows = store.rows;
-  benchmarkLogLoss = bench !== undefined ? bench : store.benchmarkLogLoss;
-  criteriaSnapshot = store.criteria || null;
-  shadowCalibratorId = store.shadowCalibratorId || null;
-  updatedAt = store.updatedAt;
-  loaded = true;
-  dirty = false;
-  verdicts.clear();
-  return status();
-}
+let hydratePromise = null;
+/**
+ * Round I (item 3) — open sweep BATCHES. While > 0, `flush()` defers, so a whole
+ * sweep's rows + counter delta land in ONE meta write at the outermost
+ * `endBatch()`. Guards against the single-document write rate.
+ */
+let batchDepth = 0;
+const verdicts = new Map();
+/**
+ * Rows changed since the last flush, keyed by their storage key. The Firestore
+ * backend upserts only these, so a sweep writes the rows it actually touched
+ * instead of the whole collection; the file backend ignores it and rewrites the
+ * snapshot (bounded by maxRows).
+ */
+const pendingRows = new Map();
 
-function ensure() {
-  if (!loaded) init();
-}
-
-/** Write the log to disk now (used on settle, at shutdown, and by tests). */
-function flush(file = FWD.file) {
-  ensure();
-  const target = resolveFile(file);
-  if (!target) return false;
-  const payload = {
+/** The frozen meta carried alongside the rows. */
+function currentMeta() {
+  return {
     benchmarkLogLoss: Number.isFinite(benchmarkLogLoss) ? benchmarkLogLoss : null,
     // Phase 9 freeze: what the shadow run was collected under. Written once (on
     // the first shadow row) and carried forward, so the artifact documents the
@@ -214,14 +253,177 @@ function flush(file = FWD.file) {
     criteria: criteriaSnapshot || null,
     shadow_calibrator_id: shadowCalibratorId || null,
     updatedAt: new Date().toISOString(),
-    rows,
   };
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, JSON.stringify(payload));
-  updatedAt = payload.updatedAt;
+}
+
+/**
+ * Load the persisted log once, through the storage adapter (round G item 1).
+ * Idempotent; safe to call at startup.
+ *
+ * Round I (item 1) — the startup path reads the META document only
+ * (`store.readMeta`): the durable counters plus the calibrator/criteria/benchmark
+ * pointers, NEVER the whole `rows` subcollection. On the Firestore free tier a
+ * full subcollection read grows with the collection (tens of thousands of
+ * documents), so it is reserved for the one-off confirmation evaluation
+ * (`loadRows: true`). The file backend (tests/dev) is local and bounded, so its
+ * `readMeta` still returns the rows and the working set behaves exactly as
+ * before.
+ *
+ * @param {Object} [opts]
+ * @param {string} [opts.file]
+ * @param {number|null} [opts.benchmarkLogLoss] backtest log loss to compare against
+ * @param {boolean} [opts.loadRows] ONE-OFF EVAL ONLY — force `readRows()` so the
+ *   full row set is present (the confirmation evaluation needs every row). Never
+ *   on a request or startup path.
+ */
+function init({ file = FWD.file, benchmarkLogLoss: bench = undefined, loadRows = false } = {}) {
+  loaded = true;
+  dirty = false;
+  verdicts.clear();
+  pendingRows.clear();
+  if (FWD.enabled === false) {
+    applyStore(emptyStore());
+  } else {
+    const st = store.getStore();
+    const meta = typeof st.readMeta === 'function' ? st.readMeta({ file }) : null;
+    if (meta && typeof meta.then === 'function') {
+      // A Firestore backend (production) has no synchronous read: start empty and
+      // hydrate when the meta read lands — guarded so rows appended in the
+      // meantime are never lost.
+      applyStore(emptyStore());
+      hydratePromise = Promise.resolve(meta)
+        .then(data => { if (!rows.length) applyStore(data); })
+        .catch(() => {});
+    } else {
+      applyStore(meta || emptyStore());
+      hydratePromise = null;
+    }
+  }
+  if (bench !== undefined) benchmarkLogLoss = bench;
+  if (loadRows && FWD.enabled !== false) {
+    // ONE-OFF EVAL ONLY. A Firestore readRows is async; guard the same way so the
+    // full set lands without clobbering anything logged meanwhile.
+    const st = store.getStore();
+    const full = typeof st.readRows === 'function' ? st.readRows({ file }) : null;
+    if (full && typeof full.then === 'function') {
+      Promise.resolve(full)
+        .then(data => { if (!rows.length) applyStore(data); })
+        .catch(() => {});
+    } else if (full) {
+      applyStore(full);
+    }
+  }
+  return status();
+}
+
+function ensure() {
+  if (!loaded) init();
+}
+
+/**
+ * Persist rows + meta (+ the counter delta) through the adapter now (on settle,
+ * at shutdown, tests).
+ *
+ * The file backend writes the whole snapshot and returns a boolean; the Firestore
+ * backend writes the meta document — applying the counter delta ATOMICALLY via
+ * FieldValue.increment — and upserts the rows changed since the last flush,
+ * returning a promise. Both are best-effort: a failed write is swallowed here and
+ * the next sweep retries.
+ *
+ * Round I (item 1): `countersDelta` is what changed since the last flush (rows
+ * per day, settled games per sport/league, the latest row time). It is reset
+ * after the attempt; `first_row_at` is applied exactly once via `first_row_at_apply`
+ * so a later batch can never overwrite the durable minimum.
+ *
+ * Round I (item 3): while a sweep BATCH is open (`beginBatch`) this defers — it
+ * records the work as dirty and returns without a write, so the whole sweep
+ * lands in ONE meta-document write at `endBatch`, not one per row or per
+ * settled game. That keeps the sweep inside Firestore's single-document write
+ * rate.
+ */
+function flush(file = FWD.file) {
+  ensure();
+  if (batchDepth > 0) { dirty = true; return false; }
+  return flushNow(file);
+}
+
+/** The actual write; `flush` defers to here once the batch (if any) has closed. */
+function flushNow(file = FWD.file) {
+  const st = store.getStore();
+  const meta = currentMeta();
+  const pending = [...pendingRows.values()];
+  pendingRows.clear();
+  const delta = countersDelta;
+  countersDelta = countersLib.blank();
+  // The very first row ever written fixes first_row_at; set it only until the
+  // store has persisted it (applyStore sets the flag when meta already had one).
+  if (!countersFirstApplied && Number.isFinite(delta.first_row_at_ms)) {
+    delta.first_row_at_apply = true;
+    countersFirstApplied = true;
+  }
+  let result;
+  try {
+    result = st.flush({ rows, meta, pending, file, countersDelta: delta });
+  } catch (err) {
+    result = false;
+  }
+  updatedAt = meta.updatedAt;
   dirty = false;
   lastWrite = Date.now();
-  return true;
+  if (result && typeof result.then === 'function') {
+    return result
+      .then(res => { reconcileMirror(delta, res); return res; })
+      .catch(() => false);
+  }
+  return result;
+}
+
+/**
+ * Round I (item 1) — correct the in-memory counter mirror with what the store
+ * ACTUALLY created.
+ *
+ * On Firestore the rows subcollection is NOT loaded at startup, so `recordServed`
+ * cannot tell a brand-new checkpoint from one already stored — it can only see
+ * whether the key is new to THIS process's memory. After a restart every
+ * re-logged checkpoint therefore looks new and would inflate `rows_by_day`. The
+ * store, writing with create() semantics, KNOWS which documents it created, and
+ * returns them as `counters_delta.rows_by_day`. This replaces the guess with that
+ * truth, so the counts-only surfaces (progress, confirmation) never inherit an
+ * inflated count.
+ *
+ * `guess` is the delta the caller accumulated; both it and the mirrored
+ * `counters` carry the guess, so subtracting the difference for each day the
+ * guess touched leaves the mirror equal to the durable value.
+ */
+function reconcileMirror(guess, result) {
+  if (!result || typeof result !== 'object') return;
+  const truth = (result.counters_delta && result.counters_delta.rows_by_day) || {};
+  Object.keys((guess && guess.rows_by_day) || {}).forEach(day => {
+    const g = Number(guess.rows_by_day[day]) || 0;
+    const t = Number(truth[day]) || 0;
+    if (g !== t) counters.rows_by_day[day] = Math.max(0, (counters.rows_by_day[day] || 0) + (t - g));
+  });
+}
+
+/**
+ * Round I (item 3) — open a sweep BATCH. While one is open, `flush()` defers all
+ * durable writes so the ROW WRITES and the COUNTER DELTA of an entire sweep land
+ * in a single meta-document write at `endBatch`. Nested batches are counted, so
+ * only the outermost close performs the write.
+ */
+function beginBatch() {
+  batchDepth += 1;
+}
+
+/**
+ * Close a sweep BATCH; when the outermost one closes, perform the single
+ * deferred flush. Safe to call more times than `beginBatch` (a close with no
+ * open batch is a normal flush).
+ */
+function endBatch(file = FWD.file) {
+  if (batchDepth > 0) batchDepth -= 1;
+  if (batchDepth === 0) return flushNow(file);
+  return false;
 }
 
 /** Throttled write: at most one per persistIntervalMs while serving. */
@@ -244,11 +446,37 @@ function rowsForGame(gameId) {
 }
 
 /**
+ * Round I (item 2) — the most recent time a row was logged for one game, as
+ * epoch ms, or null when no row for it is in the working set.
+ *
+ * The sweep orders its candidates by this (least-recently-logged first) so a
+ * truncated call cannot keep spending its budget on the same leading games and
+ * starve the rest. It reads only the rows in memory — on the file backend that
+ * is the whole log; on Firestore it is the rows written since this process
+ * started, which is exactly the window a burst of sweeps between host sleeps
+ * competes over. A tie (or no row at all) is treated as `null` by the caller —
+ * never-logged games sort first.
+ */
+function lastLoggedAt(gameId) {
+  ensure();
+  if (gameId == null) return null;
+  let last = null;
+  rows.forEach(r => {
+    if (r.game_id === gameId && Number.isFinite(r.at_ms) && (last == null || r.at_ms > last)) {
+      last = r.at_ms;
+    }
+  });
+  return last;
+}
+
+/**
  * Append one served probability.
  *
- * Deduplicated on the live state: a repeated poll that returns the SAME rounding
- * of the probability at the same clock/period adds nothing, and a game is capped
- * at `maxRowsPerGame` rows so a long watch cannot dominate the sample.
+ * Store only rows that map to the replay grid: a checkpoint whose elapsed
+ * fraction is not within gridTolerance of a grid mark is skipped. Writing is
+ * IDEMPOTENT, keyed by (sport, league, game_id, grid_checkpoint) — a retry or a
+ * double sweep cannot add a second row, and a game is bounded at one row per
+ * grid mark.
  *
  * @param {Object} args
  * @param {Object} args.game        Phase 3 LiveGame
@@ -262,9 +490,12 @@ function rowsForGame(gameId) {
  * @param {Object} [args.candidates] Phase 10 — the FROZEN candidate columns for
  *   this checkpoint (services/live/shadowCandidates), logged verbatim so the
  *   fresh-data evaluation scores a fixed target. Never invented here.
+ * @param {boolean} [args.dryRun] Round H (item 2) — run the full computation and
+ *   grid gating and RETURN the row that would be written, but mutate NOTHING
+ *   (no row, no pending entry, no ledger, no freeze). Used by the sweep dry run.
  * @returns {Object|null} the appended row, or null when it was skipped
  */
-function recordServed({ game, probability, raw = null, now = Date.now(), source = null, shadow = false, candidates = null } = {}) {
+function recordServed({ game, probability, raw = null, now = Date.now(), source = null, shadow = false, candidates = null, dryRun = false } = {}) {
   ensure();
   if (FWD.enabled === false) return null;
   if (!game || !game.game_id) return null;
@@ -273,20 +504,15 @@ function recordServed({ game, probability, raw = null, now = Date.now(), source 
   if (game.manual) return null;
   if (!Number.isFinite(probability)) return null;
 
-  const existing = rowsForGame(game.game_id);
-  if ((FWD.maxRowsPerGame || 0) > 0 && existing.length >= FWD.maxRowsPerGame) return null;
-
   const p = round4(probability);
   const clock = game.live ? game.live.clock : null;
   const period = game.live ? game.live.period : null;
-  const last = existing[existing.length - 1];
-  if (last && last.p === p && last.clock === clock && last.period === period) return null;
 
   const freshness = game.freshness || {};
   const cp = checkpointOf(game);
-  // The score-and-time baseline and the elapsed-fraction bucket, both derived
-  // from THIS checkpoint only. A failure is recorded as null, never thrown: a
-  // logged row must never be lost to a baseline derivation.
+  // The score-and-time baseline and the elapsed fraction, both derived from THIS
+  // checkpoint only. A failure is recorded as null, never thrown: a logged row
+  // must never be lost to a baseline derivation.
   let pScoreTime = null;
   let progress = null;
   let bucket = null;
@@ -300,6 +526,18 @@ function recordServed({ game, probability, raw = null, now = Date.now(), source 
     progress = null;
     bucket = null;
   }
+
+  // Phase 10 round G (item 1) — store ONLY rows that map to the replay grid.
+  // A checkpoint whose elapsed fraction is not within gridTolerance of a grid
+  // mark is skipped entirely, so what is stored is exactly the schedule the
+  // replay scores, and the storage key (below) is stable across re-runs.
+  const gc = grid.gridCheckpoint(progress);
+  if (gc == null) return null;
+  // The value stored ON the row (rounded), used for both the row and the
+  // nearest-wins comparison below — comparing a raw fraction against a stored
+  // rounded one would let an identical checkpoint look (very slightly) nearer
+  // and spuriously overwrite itself.
+  const storedProgress = Number.isFinite(progress) ? round4(progress) : null;
 
   const cid = criteriaId();
   // AMENDMENT 1: the id this block superseded, written on every row so evidence
@@ -321,8 +559,12 @@ function recordServed({ game, probability, raw = null, now = Date.now(), source 
     p_score_time: pScoreTime,
     // Elapsed fraction and its early/mid/late bucket, frozen ON the row so a
     // later bucket-edge edit cannot silently re-bucket collected evidence.
-    progress: Number.isFinite(progress) ? round4(progress) : null,
+    progress: storedProgress,
     bucket,
+    // Phase 10 round G (item 1) — the replay grid mark this row was snapped to.
+    // It is the idempotency key's last component, so a retry or a double sweep
+    // overwrites the same stored row instead of appending a second one.
+    grid_checkpoint: gc,
     // Phase 10 — the FROZEN candidate columns for this exact checkpoint
     // (basketball logistic; soccer empirical table / multinomial logistic /
     // scoreTime). Null when the frozen artifact is absent — never a fabricated
@@ -346,8 +588,52 @@ function recordServed({ game, probability, raw = null, now = Date.now(), source 
     y: null,
     settled_at: null,
   };
-  rows.push(row);
-  if (shadow === true) freezeShadow(cid, calibId);
+
+  // Phase 10 round G (item 1) — idempotent write keyed by
+  // (sport, league, game_id, grid_checkpoint). The log holds AT MOST one row per
+  // (game, grid mark): a retry or a double sweep finds the existing key, and if
+  // the new checkpoint is not NEARER the mark it adds nothing. Keeping the
+  // nearest row (rather than first- or last-write-wins) makes the stored set
+  // independent of sweep order and identical to what resampleToGrid would pick.
+  const key = grid.storageKey(row);
+  const existingIdx = key == null ? -1 : rows.findIndex(r => grid.storageKey(r) === key);
+  if (existingIdx >= 0) {
+    const prev = rows[existingIdx];
+    const prevD = Math.abs((Number.isFinite(prev.progress) ? prev.progress : NaN) - gc);
+    const newD = Math.abs(storedProgress - gc);
+    if (!(newD < prevD)) return null;
+    // Round H (item 2) — a DRY RUN reports the row that WOULD overwrite and
+    // stops here: nothing is mutated.
+    if (dryRun) return row;
+    rows[existingIdx] = row;
+  } else {
+    // Cap rows per game so a long watch cannot dominate the sample; the grid
+    // already bounds a game at one row per mark.
+    if ((FWD.maxRowsPerGame || 0) > 0 && rowsForGame(game.game_id).length >= FWD.maxRowsPerGame) return null;
+    if (dryRun) return row;
+    rows.push(row);
+  }
+  if (key != null) pendingRows.set(key, row);
+
+  // Round I (item 1) — keep the durable counters in step with the rows written.
+  // A NEW grid key adds a row to today's bucket and may move the first/last
+  // bounds; an OVERWRITE adds no row (same key) but may still extend the latest
+  // row time. `counters` is the running truth, `countersDelta` what the store
+  // applies atomically on the next flush.
+  if (existingIdx < 0) {
+    countersLib.addRow(counters, row);
+    countersLib.addRow(countersDelta, row);
+  } else {
+    countersLib.touchTime(counters, row.at_ms, row.at);
+    countersLib.touchTime(countersDelta, row.at_ms, row.at);
+  }
+
+  if (shadow === true) {
+    freezeShadow(cid, calibId);
+    // Round G item 5 — record the FIRST post-freeze row in the durable ledger.
+    // Best-effort: a ledger failure must never lose the evidence row itself.
+    try { ledger.recordShadowRow(row); } catch (err) { /* ledger is non-critical */ }
+  }
   trim();
   dirty = true;
   verdicts.clear();
@@ -376,18 +662,63 @@ function freezeShadow(cid, calibId) {
 /**
  * Bind outcomes to the rows logged for a finished game.
  *
- * @returns {number} how many rows were settled by this call
+ * Round I (item 1) — in production (Firestore) the rows subcollection is NOT
+ * loaded at startup, so a game that finished after a restart would have no rows
+ * in memory. When that is the case this fetches ONLY that game's rows
+ * (`store.readRowsForGame`, <= maxRowsPerGame documents) and settles them
+ * exactly, rather than loading the whole collection. The in-memory path stays
+ * synchronous, so callers that settle a game already in the working set (the
+ * live request path, tests) are unaffected.
+ *
+ * @param {boolean} [args.dryRun] Round H (item 2) — count the rows that WOULD
+ *   settle and mutate nothing (no outcome, no flush). Used by the sweep dry run.
+ * @returns {number|Promise<number>} how many rows were settled by this call
  */
-function settle({ gameId, homeScore, awayScore, now = Date.now() } = {}) {
+function settle({ gameId, homeScore, awayScore, now = Date.now(), dryRun = false } = {}) {
   ensure();
   if (gameId == null) return 0;
   if (!Number.isFinite(homeScore) || !Number.isFinite(awayScore)) return 0;
   // Basketball has no draw; an equal score is a push and is graded as neither.
   const y = homeScore > awayScore ? 1 : (homeScore < awayScore ? 0 : null);
   const at = new Date(now).toISOString();
+  const params = { y, at, homeScore, awayScore, dryRun };
+
+  const inMemory = rows.filter(r => r.game_id === gameId);
+  if (inMemory.length) {
+    return applySettlement(inMemory, params);
+  }
+
+  // Not in memory (a restart in Firestore mode): fetch ONLY this game's rows.
+  const st = store.getStore();
+  if (!st || typeof st.readRowsForGame !== 'function') return 0;
+  let fetched;
+  try {
+    fetched = st.readRowsForGame(gameId);
+  } catch (err) {
+    return 0;
+  }
+  if (fetched && typeof fetched.then === 'function') {
+    return fetched.then(list => applySettlement(Array.isArray(list) ? list : [], params)).catch(() => 0);
+  }
+  return applySettlement(Array.isArray(fetched) ? fetched : [], params);
+}
+
+/**
+ * Settle the (unsettled) rows for one game and, when a game becomes settled for
+ * the first time, count it once in the durable settled-games counters.
+ *
+ * @param {Array} list       the game's rows (in memory or fetched for one game)
+ * @param {Object} params    { y, at, homeScore, awayScore, dryRun }
+ * @returns {number} how many rows were settled
+ */
+function applySettlement(list, { y, at, homeScore, awayScore, dryRun } = {}) {
+  const settledBefore = list.some(r => !!r.settled_at);
   let count = 0;
-  rows.forEach(r => {
-    if (r.game_id !== gameId || r.settled_at) return;
+  let sample = null;
+  list.forEach(r => {
+    if (r.settled_at) return;
+    count++;
+    if (dryRun) return;
     r.y = y;
     // Phase 10 — the final score is frozen onto the row too, so the three-way
     // soccer candidates (home/draw/away) can be graded on the SAME rows the
@@ -396,9 +727,19 @@ function settle({ gameId, homeScore, awayScore, now = Date.now() } = {}) {
     r.final_home = homeScore;
     r.final_away = awayScore;
     r.settled_at = at;
-    count++;
+    // The outcome change must reach the store: register the row so a Firestore
+    // flush upserts it (the file backend rewrites the whole snapshot anyway).
+    const key = grid.storageKey(r);
+    if (key != null) pendingRows.set(key, r);
+    if (!sample) sample = r;
   });
-  if (count) {
+  if (count && !dryRun) {
+    // Count the settled GAME once — only if it was not already settled before
+    // (a later checkpoint for an already-graded game must not inflate the tally).
+    if (sample && !settledBefore) {
+      countersLib.addSettledGame(counters, { sport: sample.sport, league: sample.league });
+      countersLib.addSettledGame(countersDelta, { sport: sample.sport, league: sample.league });
+    }
     dirty = true;
     verdicts.clear();
     flush();
@@ -813,6 +1154,44 @@ function confirmationSummary(sport = 'basketball') {
   const freezeMs = frozen.ms;
   const minGames = confirmationMinGames();
 
+  // Round I (item 1) — when the rows subcollection is NOT loaded (production
+  // Firestore startup) the per-row breakdown cannot be produced from memory.
+  // Derive the counts the durable counters DO carry — settled games for this
+  // sport, and the total rows ever written — and mark the row-derived detail as
+  // unavailable (null) rather than reporting a misleading zero. The full
+  // breakdown is produced in the one-off evaluation, where `loadRows:true` loads
+  // every row (then `rowsComplete` is true and the row path below runs).
+  if (!rowsComplete) {
+    const settled = Number(counters.settled_games_by_sport[sport]) || 0;
+    const ready = settled >= minGames;
+    return {
+      sport,
+      dataset: 'shadow rows logged after the candidate freeze timestamp, evaluated once',
+      artifact_version: shadowCandidates.version(),
+      frozen_at: frozen.iso,
+      frozen_at_ms: freezeMs,
+      min_settled_games: minGames,
+      // The counts came from live_shadow/meta, not from loaded rows.
+      counts_source: 'counters',
+      pre_freeze_rows: null,
+      pre_freeze_games: null,
+      rows: countersLib.totalRows(counters),
+      settled_games: settled,
+      settled_rows: null,
+      pending_games: null,
+      // No peeking: performance is never derived from the counters.
+      logLoss: null,
+      brier: null,
+      hitRate: null,
+      ready_to_evaluate: ready,
+      evaluated: false,
+      peeking_guarded: true,
+      // Row-derived breakdowns are unavailable without the rows.
+      resample: null,
+      per_league_release: null,
+    };
+  }
+
   const shadowRows = rows.filter(r => r.shadow === true && r.sport === sport);
   const timestamped = shadowRows.filter(r => Number.isFinite(r.at_ms));
   // Without a recorded freeze instant we cannot claim any row is unseen, so the
@@ -840,6 +1219,8 @@ function confirmationSummary(sport = 'basketball') {
     frozen_at: frozen.iso,
     frozen_at_ms: freezeMs,
     min_settled_games: minGames,
+    // Full per-row breakdown — the counts came from the loaded rows.
+    counts_source: 'rows',
     // Rows logged BEFORE the freeze: sliding-window evidence, already seen, and
     // deliberately NOT counted toward the confirmation sample.
     pre_freeze_rows: preFreeze.length,
@@ -853,6 +1234,13 @@ function confirmationSummary(sport = 'basketball') {
     ready_to_evaluate: ready,
     evaluated: false,
     peeking_guarded: true,
+    // Item 3 (round F) — how the confirmation rows sit on the REPLAY fraction
+    // grid: games with and without a row near the earliest mark, and the settled
+    // GAME count (not rows). Counts only — no metric is exposed before `ready`.
+    resample: resampleToGrid(confRows),
+    // Item 2 (round F) — the pre-registered per-league release verdict. Counts
+    // only until a league holds its minimum settled games (see perLeagueRelease).
+    per_league_release: perLeagueRelease(sport),
   };
 }
 
@@ -878,9 +1266,7 @@ function progress({ target = null, now = Date.now() } = {}) {
     && (freezeMs != null ? (Number.isFinite(r.at_ms) && r.at_ms >= freezeMs) : false));
   const graded = conf.filter(r => (r.y === 0 || r.y === 1) && Number.isFinite(r.p));
 
-  const tally = (list) => {
-    const s = summarise(list);
-    const games = s.games;
+  const tally = (games, settledRows) => {
     const rate = elapsedDays > 0 ? games / elapsedDays : null;
     const remaining = Math.max(goal - games, 0);
     let etaDays = null;
@@ -897,7 +1283,7 @@ function progress({ target = null, now = Date.now() } = {}) {
     // cannot be read as performance while it is still accruing.
     return {
       settled_games: games,
-      settled_rows: s.graded,
+      settled_rows: Number.isFinite(settledRows) ? settledRows : null,
       target: goal,
       remaining,
       rate_per_day: rate == null ? null : round4(rate),
@@ -909,23 +1295,254 @@ function progress({ target = null, now = Date.now() } = {}) {
 
   const perSport = {};
   const perLeague = {};
-  [...new Set(graded.map(r => r.sport).filter(Boolean))].forEach(sport => {
-    const list = graded.filter(r => r.sport === sport);
-    perSport[sport] = tally(list);
-    [...new Set(list.map(r => r.league).filter(Boolean))].forEach(league => {
-      perLeague[`${sport}/${league}`] = tally(list.filter(r => r.league === league));
+  if (rowsComplete) {
+    // The file backend / one-off evaluation holds every row, so the tally is the
+    // exact per-row breakdown (settled games AND settled rows).
+    [...new Set(graded.map(r => r.sport).filter(Boolean))].forEach(sport => {
+      const list = graded.filter(r => r.sport === sport);
+      const s = summarise(list);
+      perSport[sport] = tally(s.games, s.graded);
+      [...new Set(list.map(r => r.league).filter(Boolean))].forEach(league => {
+        const ls = summarise(list.filter(r => r.league === league));
+        perLeague[`${sport}/${league}`] = tally(ls.games, ls.graded);
+      });
     });
-  });
+  } else {
+    // Round I (item 1) — the rows subcollection is NOT loaded (production
+    // Firestore startup), so derive the SETTLED-GAME counts from the durable
+    // counters in `live_shadow/meta`. They are all-time (logging only began
+    // after the candidate freeze, so they ARE the post-freeze window) and
+    // survive a restart. Per-row detail (settled_rows) is unknown here — it is
+    // produced in the one-off evaluation, where the rows are loaded.
+    Object.entries(counters.settled_games_by_sport || {}).forEach(([sport, games]) => {
+      if (games > 0) perSport[sport] = tally(games, null);
+    });
+    Object.entries(counters.settled_games_by_league || {}).forEach(([key, games]) => {
+      // Round I (item 2) — the stored key is sanitised ('soccer::uefa_champions');
+      // show the EXACT 'soccer/uefa.champions' from `league_labels`.
+      if (games > 0) perLeague[countersLib.labelFor(counters, key)] = tally(games, null);
+    });
+  }
 
   return {
     target: goal,
     frozen_at: frozen.iso,
     frozen_at_ms: freezeMs,
     elapsed_days: round4(elapsedDays),
+    // Which source the settled-game counts came from: the loaded rows, or the
+    // durable counters (rows not loaded). Diagnostic only.
+    counts_source: rowsComplete ? 'rows' : 'counters',
     note: 'ETA extrapolates settled games per day since the candidate freeze; null until a settled game exists.',
     per_sport: perSport,
     per_league: perLeague,
   };
+}
+
+/* ------------------------------------------------ item 3: confirmation grid */
+
+/** The confirmation rows for a sport: shadow rows logged at/after the freeze. */
+function confirmationRows(sport) {
+  const freezeMs = confirmationFreeze().ms;
+  return rows.filter(r => r.shadow === true && r.sport === sport
+    && (freezeMs != null ? (Number.isFinite(r.at_ms) && r.at_ms >= freezeMs) : false));
+}
+
+/**
+ * Phase 10 round F (item 3) — resample the confirmation rows onto the REPLAY
+ * fraction grid.
+ *
+ * The replay scores each game at a FIXED grid of elapsed-fraction checkpoints
+ * (CONFIG.liveBacktest.checkpoints.basketball.fractions: 1/8, 3/16, 1/4, 3/8,
+ * ...). The live sweep logs a row whenever the clock has moved, so a live game
+ * carries many more rows than the replay — the two are not directly comparable.
+ * This snaps each game to the SAME grid: for every grid mark it keeps the ONE
+ * live row whose elapsed fraction is nearest that mark (within `slotTolerance`),
+ * so a fresh-data evaluation and the replay are scored on the same schedule.
+ *
+ * The grid's earliest mark is 1/8 = 12.5% of regulation. A game with NO row near
+ * that mark is counted separately (`games_without_early_row`), because an unequal
+ * early-row distribution is exactly the schedule artefact this resample exists to
+ * catch. Counts GAMES, not rows: checkpoints inside one game share an outcome.
+ *
+ * @param {Array} [list] confirmation rows (shadow, post-freeze)
+ * @param {Object} [opts]
+ * @param {number[]} [opts.fractions] the grid; defaults to the replay's
+ * @param {number} [opts.slotTolerance] how near a grid mark a row must fall
+ */
+function resampleToGrid(list = [], { fractions = null, slotTolerance = 0.03 } = {}) {
+  const cfgGrid = CONFIG.liveBacktest && CONFIG.liveBacktest.checkpoints
+    && CONFIG.liveBacktest.checkpoints.basketball
+    && CONFIG.liveBacktest.checkpoints.basketball.fractions;
+  const grid = (Array.isArray(fractions) && fractions.length ? fractions : (cfgGrid || [])).slice();
+
+  const timed = (Array.isArray(list) ? list : []).filter(r => Number.isFinite(r.at_ms));
+  const games = groupByGame(timed);
+  const slotCounts = grid.map(() => 0);
+  let withEarly = 0;
+  let withoutEarly = 0;
+  let snappedRows = 0;
+
+  games.forEach(gameRows => {
+    let hasEarly = false;
+    grid.forEach((f, gi) => {
+      let best = null;
+      let bestD = Infinity;
+      gameRows.forEach(r => {
+        if (!Number.isFinite(r.progress)) return;
+        const d = Math.abs(r.progress - f);
+        if (d < bestD) { bestD = d; best = r; }
+      });
+      if (best && bestD <= slotTolerance) {
+        slotCounts[gi] += 1;
+        snappedRows += 1;
+        if (gi === 0) hasEarly = true;
+      }
+    });
+    if (hasEarly) withEarly += 1; else withoutEarly += 1;
+  });
+
+  const graded = timed.filter(r => (r.y === 0 || r.y === 1) && Number.isFinite(r.p));
+
+  return {
+    dataset: 'confirmation rows resampled to the replay elapsed-fraction grid (one nearest row per grid mark, per game)',
+    grid,
+    slot_tolerance: slotTolerance,
+    games: games.length,
+    games_with_early_row: withEarly,
+    games_without_early_row: withoutEarly,
+    settled_games: groupByGame(graded).length,
+    snapped_rows: snappedRows,
+    slot_games: grid.map((f, i) => ({ fraction: f, games: slotCounts[i] })),
+  };
+}
+
+/* --------------------------------------------- item 2: per-league release */
+
+/**
+ * Phase 10 round F (item 2) — the PER-LEAGUE release verdict.
+ *
+ * Release is per league (CONFIG.live.perLeagueRelease): a league ships only when
+ * its own confirmation data passes a minimum settled-game count, an absolute
+ * calibration tolerance, and a positive log-loss gain over scoreTime. Under the
+ * no-peeking protocol this exposes the PRE-REGISTERED rule and per-league COUNTS
+ * only; the pass/fail verdict — which needs the calibration gap and the
+ * scoreTime-gain interval — is computed ONLY once a league holds its minimum
+ * settled games, so the rule cannot be read off before it may decide anything.
+ *
+ * A league that is not judged is explicitly WITHHELD (`judged:false`,
+ * `pass:null`, `released:false`) rather than silently absent: withheld leagues
+ * show score, time and context only.
+ *
+ * @param {string} [sport]
+ * @param {Object} [opts]
+ * @param {number} [opts.now]
+ */
+function perLeagueRelease(sport = 'basketball', { now = Date.now() } = {}) {
+  ensure();
+  const cfg = CONFIG.live.perLeagueRelease || {};
+  const rc = releaseCriteria();
+  const bootstrapCfg = rc.bootstrap || { iterations: 2000, seed: 11 };
+  const minGames = Number.isFinite(cfg.minGames) ? cfg.minGames : 100;
+  const calTol = Number.isFinite(cfg.calibrationTolerance) ? cfg.calibrationTolerance : 0.05;
+  const minGainLower = cfg.scoreTimeGain && Number.isFinite(cfg.scoreTimeGain.minLogLossGainCiLower)
+    ? cfg.scoreTimeGain.minLogLossGainCiLower
+    : 0;
+
+  const graded = confirmationRows(sport).filter(r => (r.y === 0 || r.y === 1) && Number.isFinite(r.p));
+  const listed = Array.isArray(cfg.leagues) ? cfg.leagues.map(String) : [];
+  const seen = [...new Set(graded.map(r => r.league).filter(Boolean))].map(String);
+  const leagues = [...new Set([...listed, ...seen])];
+
+  const perLeague = {};
+  leagues.forEach(league => {
+    const seg = graded.filter(r => String(r.league) === league);
+    const settled = groupByGame(seg).length;
+    const judged = settled >= minGames;
+    let verdict = { pass: null, calibration_ok: null, calibration_gap: null, score_time_gain_ci_lower: null, score_time_gain_ok: null };
+    if (judged) {
+      const realised = seg.reduce((s, r) => s + r.y, 0) / seg.length;
+      const meanPred = seg.reduce((s, r) => s + r.p, 0) / seg.length;
+      const gap = round4(realised - meanPred);
+      const calibOk = gap != null && Math.abs(gap) <= calTol;
+      const bt = BT.gameBootstrap(toBootstrapRows(seg), { bootstrap: bootstrapCfg, probKey: 'p', referenceKey: 'p_score_time' });
+      const gainLower = bt.logLossGain ? bt.logLossGain.lower : null;
+      const gainOk = gainLower != null && gainLower >= minGainLower;
+      verdict = {
+        pass: Boolean(calibOk && gainOk),
+        calibration_ok: calibOk,
+        calibration_gap: gap,
+        score_time_gain_ci_lower: gainLower,
+        score_time_gain_ok: gainOk,
+      };
+    }
+    perLeague[league] = {
+      settled_games: settled,
+      remaining: Math.max(minGames - settled, 0),
+      min_games: minGames,
+      judged,
+      ...verdict,
+      released: judged && verdict.pass === true,
+    };
+  });
+
+  return {
+    sport,
+    frozen_at: cfg.frozen_at || null,
+    criteria: { minGames, calibrationTolerance: calTol, scoreTimeGain: { minLogLossGainCiLower: minGainLower } },
+    note: cfg.note || null,
+    // The leagues actually released so far (populated only by the one-shot run).
+    released: Array.isArray(cfg.released) ? cfg.released.slice() : [],
+    leagues: perLeague,
+  };
+}
+
+/* ------------------------------------------------- item 1: store diagnostics */
+
+/**
+ * Phase 10 round F (item 1) — shadow rows per UTC day, read from the DURABLE
+ * counters (round I item 1) rather than from the in-memory rows.
+ *
+ * This is the shape the health block reports as `daily_since_freeze`:
+ * `[{ date, rows }]`, ascending. `sinceMs` restricts to days at or after the day
+ * an instant falls in (the candidate freeze, in the health block). Counts only —
+ * no probability, no per-day distinct-game breakdown (the counters are day- and
+ * (sport,league)-keyed, not row-keyed).
+ *
+ * @param {Object} [opts]
+ * @param {number|null} [opts.sinceMs]
+ */
+function dailyCounts({ sinceMs = null } = {}) {
+  ensure();
+  return countersLib.buckets(counters, { sinceMs });
+}
+
+/** Rows logged in the last `ms` (default 24h) — the item-1 health count. */
+function rowsLast24h({ now = Date.now(), ms = 24 * 60 * 60 * 1000 } = {}) {
+  ensure();
+  return countersLib.rowsLast24h(counters, { now, ms });
+}
+
+/** The earliest row's ISO time, from the durable counters (null until one lands). */
+function firstRowAt() {
+  ensure();
+  return counters.first_row_at || null;
+}
+
+/** The latest row's ISO time, from the durable counters (null until one lands). */
+function lastRowAt() {
+  ensure();
+  return counters.last_row_at || null;
+}
+
+/**
+ * Round J (item 3) — await the startup hydrate so a caller can build a
+ * CONSISTENT view (status + confirmation + progress) from one hydration state.
+ * Resolves immediately on the file backend (no async read) and after the meta
+ * read lands on Firestore. Never rejects.
+ */
+function ready() {
+  ensure();
+  return hydratePromise || Promise.resolve();
 }
 
 /** Read-only view for the stats/diagnostics surface. */
@@ -936,6 +1553,11 @@ function status() {
     file: FWD.file,
     rows: rows.length,
     shadowRows: rows.filter(r => r.shadow === true).length,
+    // Round I (item 1) — the durable counts, available even when the rows are
+    // not loaded (Firestore): total rows ever written and the first/last times.
+    total_rows: countersLib.totalRows(counters),
+    first_row_at: counters.first_row_at || null,
+    last_row_at: counters.last_row_at || null,
     // Phase 10 round D — the candidate freeze instant the confirmation dataset
     // accrues from, surfaced so a reader can see when the clock started.
     candidates_version: shadowCandidates.version(),
@@ -963,7 +1585,16 @@ function reset({ benchmarkLogLoss: bench = undefined } = {}) {
   loaded = false;
   dirty = false;
   lastWrite = 0;
+  batchDepth = 0;
+  hydratePromise = null;
   verdicts.clear();
+  pendingRows.clear();
+  // Round I (item 1) — drop the in-memory counters and the not-yet-persisted
+  // delta too, so a reset starts from a blank slate exactly like the rows.
+  counters = countersLib.blank();
+  countersDelta = countersLib.blank();
+  countersFirstApplied = false;
+  rowsComplete = false;
 }
 
 module.exports = {
@@ -971,18 +1602,39 @@ module.exports = {
   recordServed,
   settle,
   summarise,
+  lastLoggedAt,
   evaluate,
   isDisabled,
   shadowSummary,
   confirmationSummary,
   confirmationMinGames,
   confirmationFreeze,
+  confirmationRows,
   progress,
+  resampleToGrid,
+  perLeagueRelease,
+  dailyCounts,
+  rowsLast24h,
+  firstRowAt,
+  lastRowAt,
   status,
+  // Round J (item 3) — await the async startup hydrate before building a
+  // consistent view (status + confirmation + progress) on the stats surface.
+  ready,
   flush,
+  // Round I (item 3) — the sweep opens ONE batch and closes it once, so the whole
+  // sweep's rows + counters land in a single meta-document write.
+  beginBatch,
+  endBatch,
+  // Round I (item 1) — the recount the one-off evaluation uses instead of the
+  // maintained counters (backend-agnostic; Firestore uses count() aggregation).
+  reconcile: (opts = {}) => store.reconcile(opts),
   reset,
   groupByGame,
   resolveFile,
+  // Phase 10 round G (item 1) — where the evidence actually lives (storage
+  // adapter kind + paths), for the /live/stats health block.
+  storage: () => store.describe(),
   criteriaId,
   priorCriteriaId,
   releaseCriteria,

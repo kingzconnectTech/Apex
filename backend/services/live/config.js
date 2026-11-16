@@ -125,6 +125,23 @@ const CONFIG = {
         cron: '*/5 * * * *',
       },
       /**
+       * Round J (item 5) — the DAILY RECONCILE.
+       *
+       * The counters in `live_shadow/meta` are a CACHE; the rows are the truth.
+       * Once a day this recounts the rows (`count()` aggregation on Firestore)
+       * and compares the result to the counters, recording any counter-vs-recount
+       * drift in the durable health document. /api/live/stats surfaces that drift
+       * and raises a `counter_drift` alert on any non-zero delta, so a counter
+       * that has silently drifted is caught by the pipeline rather than trusted.
+       */
+      reconcile: {
+        enabled: true,
+        // 03:00 UTC — an hour after the nightly retrain (02:00) so the two jobs
+        // never contend. Daily is deliberate: the recount is O(configured
+        // leagues) of aggregation reads, cheap once a day but not per sweep.
+        cron: '0 3 * * *',
+      },
+      /**
        * Phase 10 — FROZEN shadow-candidate columns (items 2 and 5).
        *
        * The candidate models were fitted once (scripts/run-live-phase10-report.js)
@@ -171,6 +188,103 @@ const CONFIG = {
      * (a refit would move their ids, which are frozen for the confirmation run).
      */
     probabilityClip: { lower: 0.01, upper: 0.99 },
+
+    /**
+     * Phase 10 round F — SHADOW SWEEP HEALTH.
+     *
+     * The sweep runs on an in-process node-cron tick. Until now it recorded
+     * nothing about whether it had run, so a sleeping host, a restarted process
+     * and a matcher that throws every tick all looked identical to a healthy but
+     * quiet scheduler. services/live/shadowHealth writes a small state file
+     * after every sweep so /api/live/stats can report the last run, the error
+     * count and the last error, and raise an alert when live games are being
+     * served but no row is landing.
+     *
+     * All of these are REPORTING thresholds — they gate nothing.
+     */
+    health: {
+      // Relative to the backend directory; survives a restart of the process.
+      file: 'data/live-shadow-health.json',
+      // The sweep cadence is 5 min; a last run older than this means the
+      // scheduler is NOT ticking (the host is asleep, or the cron never started).
+      staleAfterMs: 15 * 60 * 1000,
+      // How recently live games must have been observed for the "no rows while
+      // live" alert to be meaningful. Outside this window a quiet log is normal.
+      liveWindowMs: 6 * 60 * 60 * 1000,
+      // The alert fires when no shadow row has been logged for this long while
+      // live games were seen within `liveWindowMs`.
+      noRowAlertMs: 6 * 60 * 60 * 1000,
+    },
+
+    /**
+     * Phase 10 round G — STORAGE ADAPTER.
+     *
+     * Shadow rows, settle outcomes, health state and the evaluation ledger all
+     * persist through ONE interface (services/live/store) with two
+     * implementations selected by `kind` (or LIVE_STORE_KIND):
+     *   - 'file'      : the backend-local JSON files — tests and local dev;
+     *   - 'firestore' : the existing Firebase admin setup — production, so the
+     *                   evidence survives a sleeping host and its ephemeral disk.
+     *
+     * The file backend keeps the EXISTING paths (forwardTest.file / health.file)
+     * so the committed artifacts, the frozen candidate ids and the criteria id
+     * do not move when this adapter is introduced.
+     */
+    store: {
+      kind: process.env.LIVE_STORE_KIND || 'file',
+      // The evaluation ledger ("how many times each window has been SCORED").
+      // Kept separate from the rows so a scored count is never conflated with
+      // evidence. Relative to the backend directory.
+      ledger: { file: 'data/live-ledger.json' },
+      // Firestore layout when kind === 'firestore'. ONE collection holds a meta
+      // document, a health document, a ledger document and a `rows`
+      // subcollection. A row document id IS the storage key
+      // (sport|league|game|grid_checkpoint), so a retry or a double sweep
+      // OVERWRITES the same document instead of appending a second row.
+      firestore: {
+        collection: 'live_shadow',
+        rowsSubcollection: 'rows',
+        // Round I — Firestore cannot hang a subcollection off a COLLECTION, so
+        // the rows live under this fixed PARENT document inside `live_shadow`:
+        //   live_shadow/<rowsParentDoc>/rows/<rowId>
+        // The parent document is never written, so it holds no data and never
+        // appears in a listing of `live_shadow`; it exists only to own the
+        // `rows` subcollection. The security rule `live_shadow/{document=**}`
+        // already covers this nested path.
+        rowsParentDoc: 'container',
+        metaDoc: 'meta',
+        healthDoc: 'health',
+        ledgerDoc: 'ledger',
+      },
+      // A shadow row is stored ONLY when its elapsed fraction lands within this
+      // of a REPLAY grid mark; any other row is skipped. This is the same
+      // tolerance resampleToGrid uses, so what is written is what is scored.
+      gridTolerance: 0.03,
+      // POST /api/live/sweep hardening. `maxGamesPerCall` bounds one call so a
+      // sweep always returns well inside the host's request timeout, reporting
+      // `truncated:true` and letting the next call continue.
+      sweep: {
+        maxGamesPerCall: 12,
+        rateLimit: { windowMs: 60 * 1000, perIp: 6 },
+      },
+      // Round H (item 2) — the sweep/stats secret. Accepted ONLY from the
+      // `Authorization: Bearer <secret>` header, never a query string or a
+      // request body (both leak into logs, proxies and referrers), and never
+      // logged. A secret that is ABSENT or shorter than `minLength` is refused
+      // (401) rather than leaving the route open: an endpoint that writes
+      // evidence must fail closed. `env` falls back to `fallbackEnv` so an
+      // existing settlement deployment needs no new variable.
+      secret: {
+        env: 'LIVE_STATS_SECRET',
+        fallbackEnv: 'SETTLEMENT_CRON_SECRET',
+        minLength: 24,
+      },
+      // Round H (item 3) — /api/live/stats re-reads DURABLE state (the scheduler
+      // health document) on every poll. Cache those durable reads for this long
+      // (ms) so a burst of polling does not multiply Firestore reads. 0 disables
+      // the cache (every poll reads storage).
+      stats: { cacheTtlMs: 5000 },
+    },
 
     /**
      * Phase 9 — forward test.
@@ -273,6 +387,56 @@ const CONFIG = {
           note: 'The 0.02 log-loss tolerance vs the 0.4303 benchmark is larger than the model\'s total gain over scoreTime, so the benchmark clause alone does not prove the model adds anything. Recorded before any shadow row settled.',
         },
       ],
+    },
+
+    /**
+     * Phase 10 round F — PER-LEAGUE RELEASE PRE-REGISTRATION.
+     *
+     * Release is PER LEAGUE, not per sport. `live.picks` is a league allowlist,
+     * so adding one league to `live.picks.basketball` ships that league and
+     * leaves every other league showing score, time and context only. This block
+     * fixes the RULE by which a league is added to that list — NOW, while the
+     * confirmation dataset still holds 0 settled games — so the rule cannot be
+     * chosen to fit the result.
+     *
+     * A basketball league is released INDIVIDUALLY only when, on the CONFIRMATION
+     * dataset (shadow rows logged strictly after the candidate freeze), ALL hold:
+     *   1. it carries >= `minGames` settled games;
+     *   2. its mean predicted P(home) is within `calibrationTolerance` of its
+     *      realised home-win rate (absolute calibration, on the same rows); AND
+     *   3. its own 95% game-level log-loss gain over scoreTime has a lower bound
+     *      >= `scoreTimeGain.minLogLossGainCiLower`.
+     * Clause 3 reuses the same whole-game bootstrap the ship gate uses, so the
+     * per-league verdict is measured on the same ruler.
+     *
+     * This is a SEPARATE frozen block from `releaseCriteria`, deliberately: the
+     * release-criteria id (7a32cb237260) is hashed from `releaseCriteria` alone
+     * and is frozen for the current confirmation run. Pre-registering the
+     * per-league rule here does NOT move that id.
+     *
+     * CBB observation — recorded 2026-11-14, NOT tuned. At the first checkpoint
+     * (102 games) the frozen logistic scores mean P(home) 0.7475 against a
+     * realised home-win rate of 0.8922. A first-checkpoint gap of that size is
+     * consistent with LEGACY-SEASON (pregame) strength selection in the sampled
+     * games rather than with live leakage — the state at minute one carries
+     * almost no in-game information. It is recorded so the confirmation run's
+     * per-league verdict can be read against it, and NOT acted on: no parameter
+     * is changed and no league is pre-cleared or pre-rejected.
+     */
+    perLeagueRelease: {
+      frozen_at: '2026-11-14',
+      // Minimum settled GAMES in one league before its own verdict is computed.
+      minGames: 100,
+      // Absolute-calibration tolerance: |mean predicted - realised| must be <= this.
+      calibrationTolerance: 0.05,
+      // The league's own log-loss-gain-vs-scoreTime 95% interval lower bound.
+      scoreTimeGain: { minLogLossGainCiLower: 0 },
+      // Every known basketball league is listed so a league that has not been
+      // run is visibly WITHHELD rather than silently absent from the report.
+      leagues: ['nba', 'wnba', 'ncaa'],
+      // Populated ONLY by the one-shot confirmation run, league by league.
+      released: [],
+      note: 'Withheld leagues show score/time/context only. Nothing is released by this block; it fixes the rule the confirmation run will apply.',
     },
   },
 
@@ -548,9 +712,26 @@ const CONFIG = {
   liveBacktest: {
     checkpoints: {
       basketball: {
-        // State snapshots taken at these "minutes remaining in the period" marks,
-        // for every period. A 0 mark is the period end and is skipped for the
-        // final period (there the game is already decided).
+        // State snapshots at these fractions of REGULATION elapsed. The SAME
+        // grid is applied to every league, so a 2x20 game (college) is sampled at
+        // the same early/mid/late points as a 4x12 game (NBA). The per-period
+        // clock mark is derived from the league's own period structure
+        // (periods x periodMinutes, see ./replay basketballStructure): for
+        // fraction f the target is period floor(f*P)+1 with clock
+        // periodMinutes - (f*P*periodMinutes - (period-1)*periodMinutes).
+        //
+        // This 11-point grid is exactly the legacy NBA 4x12 in-period [6, 3, 0]
+        // marks expressed as elapsed fractions: 6/48, 9/48, 12/48, 18/48, 21/48,
+        // 24/48, 30/48, 33/48, 36/48, 42/48, 45/48. NBA sampling is therefore
+        // UNCHANGED; only the other leagues move onto the same grid. Under
+        // bucketEdges [0.3333, 0.6667] it gives every league 3 early / 4 mid /
+        // 4 late checkpoints per game (when the plays are present).
+        fractions: [0.125, 0.1875, 0.25, 0.375, 0.4375, 0.5, 0.625, 0.6875, 0.75, 0.875, 0.9375],
+        // Legacy per-period "minutes remaining" marks. Still honoured when a
+        // caller passes them explicitly (unit fixtures, the synthetic smoke
+        // test); a 0 mark is the period end and is skipped for the final period
+        // (there the game is already decided). The production replay uses the
+        // elapsed-fraction grid above instead.
         minutesRemaining: [6, 3, 0],
       },
       soccer: {

@@ -7,6 +7,10 @@
     "start": "node server.js",
     "test": "jest --forceExit --testTimeout=20000"
   },
+  "jest": {
+    "globalSetup": "<rootDir>/tests/global-setup.js",
+    "globalTeardown": "<rootDir>/tests/global-teardown.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -23,6 +27,7 @@
     "winston": "^3.19.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
     "jest": "^29.7.0",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.1.2"

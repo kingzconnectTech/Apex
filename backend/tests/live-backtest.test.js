@@ -9,6 +9,8 @@
 
 const {
   basketballCheckpoints,
+  basketballStructure,
+  fractionMarks,
   soccerGoalLog,
   soccerCheckpoints,
   recordFromSummary,
@@ -170,6 +172,58 @@ describe('replay — basketball checkpoints', () => {
   test('returns nothing rather than guessing when plays are missing', () => {
     expect(basketballCheckpoints([])).toEqual([]);
     expect(basketballCheckpoints(null)).toEqual([]);
+  });
+
+  test('the elapsed-fraction grid reproduces the legacy NBA marks exactly', () => {
+    // The 11-point grid starts at 1/8 of regulation. On a 4x12 game that is the
+    // legacy [6, 3, 0] per-period marks, so NBA sampling must be UNCHANGED.
+    const grid = basketballCheckpoints(BB_PLAYS, { league: 'nba' });
+    const legacy = basketballCheckpoints(BB_PLAYS, { minutesRemaining: [6, 3, 0] });
+    expect(grid).toEqual(legacy);
+    expect(grid.map(c => c.label)).toEqual([
+      'p1_6min_left', 'p1_3min_left', 'p1_end', 'p2_6min_left', 'p2_3min_left',
+    ]);
+  });
+
+  test('a 2x20 game lands on the SAME elapsed fractions and gets early checkpoints', () => {
+    // College is two 20-minute halves. A per-period "6 minutes left" mark put its
+    // first checkpoint at 14/40 = 0.35 of regulation (mid), so it never got an
+    // early one. The elapsed-fraction grid fixes that: 1/8, 3/16 and 1/4 of a
+    // 40-minute game fall at 5, 7.5 and 10 minutes elapsed — three EARLY rows.
+    const cbbPlays = [
+      { period: { number: 1 }, clock: { displayValue: '20:00' }, homeScore: '0', awayScore: '0' },
+      { period: { number: 1 }, clock: { displayValue: '15:00' }, homeScore: '6', awayScore: '4' },
+      { period: { number: 1 }, clock: { displayValue: '10:00' }, homeScore: '14', awayScore: '11' },
+      { period: { number: 1 }, clock: { displayValue: '5:00' }, homeScore: '22', awayScore: '18' },
+      { period: { number: 1 }, clock: { displayValue: '0:00' }, homeScore: '30', awayScore: '26' },
+      { period: { number: 2 }, clock: { displayValue: '15:00' }, homeScore: '38', awayScore: '33' },
+      { period: { number: 2 }, clock: { displayValue: '10:00' }, homeScore: '46', awayScore: '41' },
+      { period: { number: 2 }, clock: { displayValue: '5:00' }, homeScore: '55', awayScore: '50' },
+      { period: { number: 2 }, clock: { displayValue: '0:00' }, homeScore: '63', awayScore: '58' },
+    ];
+    const cps = basketballCheckpoints(cbbPlays, { league: 'mens-college-basketball' });
+    expect(cps.map(c => c.label)).toEqual([
+      'p1_15min_left', 'p1_12.5min_left', 'p1_10min_left', 'p1_5min_left', 'p1_2.5min_left', 'p1_end',
+      'p2_15min_left', 'p2_12.5min_left', 'p2_10min_left', 'p2_5min_left', 'p2_2.5min_left',
+    ]);
+    // The first three checkpoints are 5 / 7.5 / 10 minutes elapsed of 40.
+    const structure = basketballStructure('mens-college-basketball');
+    expect(structure).toEqual({ gameMinutes: 40, periods: 2, periodMinutes: 20 });
+    expect(bucketFor(5 / 40)).toBe('early');
+    expect(bucketFor(7.5 / 40)).toBe('early');
+    expect(bucketFor(10 / 40)).toBe('early');
+    // The snapshot at 1/8 of regulation is the 15:00 play (6-4), never a later one.
+    expect(cps[0]).toMatchObject({ period: 1, clock: '15:00', home_score: 6, away_score: 4 });
+    expect(cps[5]).toMatchObject({ period: 1, clock: '0:00', home_score: 30, away_score: 26 });
+  });
+
+  test('fractionMarks puts a boundary fraction at a period end', () => {
+    // 1/2 of an NBA game (24 min elapsed) is the end of period 2.
+    expect(fractionMarks([0.5], { periods: 4, periodMinutes: 12 })).toEqual([{ period: 2, remaining: 0 }]);
+    // 1/2 of a WNBA game (20 min) is the end of period 2 as well.
+    expect(fractionMarks([0.5], { periods: 4, periodMinutes: 10 })).toEqual([{ period: 2, remaining: 0 }]);
+    // 1/4 of a college game is NOT a boundary: period 1 with 10 left.
+    expect(fractionMarks([0.25], { periods: 2, periodMinutes: 20 })).toEqual([{ period: 1, remaining: 10 }]);
   });
 });
 

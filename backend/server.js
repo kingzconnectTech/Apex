@@ -58,7 +58,7 @@ const { createBasketballRouter } = require('./routes/basketball');
 const { createLiveRouter } = require('./routes/live');
 const basketballPersistence = require('./services/basketball/persistence');
 const { startBasketballScheduler } = require('./services/basketball/scheduler');
-const { startLiveShadowScheduler } = require('./services/live/shadowScheduler');
+const { startLiveShadowScheduler, startLiveShadowReconcile } = require('./services/live/shadowScheduler');
 const { isFrenchCompetition } = require('./services/providers/normalizer');
 
 /**
@@ -142,6 +142,50 @@ const logger = winston.createLogger({
 });
 
 const compression = require('compression');
+
+/**
+ * Round J (item 1) — STARTUP GUARD + BACKEND BOOT LOG.
+ *
+ * `FIRESTORE_EMULATOR_HOST` points the Firestore SDK at a LOCAL emulator
+ * instead of the real database. That is exactly what the tests and local dev
+ * want and exactly what must NEVER happen in production: a production boot with
+ * the emulator host set would silently write the shadow evidence to a throwaway
+ * local instance, and the durable evidence would look like it had simply
+ * stopped — the failure this whole round exists to prevent. So refuse to start,
+ * loudly, rather than run in a state that looks healthy but stores nothing.
+ *
+ * Whichever backend is active is logged at boot, so a deployment log answers
+ * "is this process writing to Firestore or to an ephemeral local file?" without
+ * waiting 24 hours for the health block.
+ */
+function liveStoreBootInfo() {
+  try {
+    return require('./services/live/store').describe();
+  } catch (err) {
+    return { kind: 'unknown', error: err && err.message ? err.message : String(err) };
+  }
+}
+
+if (IS_ENTRY_POINT) {
+  const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST || null;
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction && emulatorHost) {
+    logger.error(
+      '[LIVE] REFUSING TO START: NODE_ENV=production but FIRESTORE_EMULATOR_HOST is set ('
+      + emulatorHost + '). This would point the durable shadow evidence at a local emulator. '
+      + 'Unset FIRESTORE_EMULATOR_HOST and restart.',
+    );
+    // Fail closed: never fall through to server.listen().
+    process.exit(1);
+  }
+  const backend = liveStoreBootInfo();
+  logger.info('[LIVE] store backend active', {
+    backend: backend && backend.kind ? backend.kind : 'unknown',
+    node_env: process.env.NODE_ENV || 'development',
+    emulator_host: emulatorHost,
+    detail: backend,
+  });
+}
 
 // Initialize Sports Data Service (ESPN primary + PitchAPI fallback)
 const sportsData = new SportsDataService({ logger });
@@ -2880,6 +2924,18 @@ if (IS_ENTRY_POINT && sportsData) {
     startLiveShadowScheduler({ sportsData, logger });
   } catch (err) {
     logger.error('Failed to start live shadow scheduler', { error: err.message });
+  }
+}
+
+// Round J (item 5) — the DAILY shadow RECONCILE. The counters in live_shadow/meta
+// are a cache; once a day this recounts the rows and records any counter-vs-
+// recount drift in the durable health document, where /api/live/stats alerts on
+// a non-zero delta.
+if (IS_ENTRY_POINT) {
+  try {
+    startLiveShadowReconcile({ logger });
+  } catch (err) {
+    logger.error('Failed to start live shadow reconcile job', { error: err.message });
   }
 }
 

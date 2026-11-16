@@ -918,5 +918,37 @@
       "secondary": "soccer_table"
     },
     "rule": "The release decision reads the PRIMARY candidate ONLY, versus scoreTime, with game-level CIs. Secondary candidates are logged but NOT selected on the confirmation data."
+  },
+  "refit_disclosure": {
+    "recorded_at": "2026-11-14T15:34:57.161Z",
+    "reason": "Replay checkpoint schedule moved to a uniform elapsed-fraction grid (schedule-only fix; no model parameters were changed).",
+    "frozen_artifact_preserved": "shadow-candidates-1.0.0",
+    "refit_artifact_would_be": "5bf73b8d247f",
+    "drift": [
+      {
+        "candidate": "basketball_logistic",
+        "frozen_id": "33f1a9025999",
+        "refit_id": "5bf73b8d247f",
+        "moved": true
+      },
+      {
+        "candidate": "soccer_table",
+        "frozen_id": "019d7e0afab3",
+        "refit_id": "019d7e0afab3",
+        "moved": false
+      },
+      {
+        "candidate": "soccer_mnl",
+        "frozen_id": "11837341b3fd",
+        "refit_id": "11837341b3fd",
+        "moved": false
+      },
+      {
+        "candidate": "soccer_score_time",
+        "frozen_id": "213f7dd0a1d8",
+        "refit_id": "213f7dd0a1d8",
+        "moved": false
+      }
+    ]
   }
 }

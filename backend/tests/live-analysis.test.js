@@ -14,6 +14,9 @@ const path = require('path');
 
 const CONFIG = require('../services/live/config');
 const forwardTest = require('../services/live/forwardTest');
+const shadowHealth = require('../services/live/shadowHealth');
+const ledger = require('../services/live/ledger');
+const store = require('../services/live/store');
 const {
   buildAnalysis, nextGoal, projectionFor,
   analyseLiveGame, rememberGame, resetCache, recordForwardTest, DISPLAY_MODES,
@@ -55,19 +58,45 @@ function withShippedLeague(sport, league, fn) {
 
 // Point the forward log at a throwaway file so no test can touch the committed
 // artifact (settle() writes through to disk), and give it a benchmark so the
-// shadow summary has something to compare against.
+// shadow summary has something to compare against. recordForwardTest also
+// records the durable ledger's first post-freeze entry and writes the health
+// state, so redirect ALL of them — otherwise this suite's synthetic `espn:1`
+// row would be written into the committed data/live-ledger.json as evidence.
 const COMMITTED_FORWARD_FILE = CONFIG.live.forwardTest.file;
-const TMP_FORWARD_FILE = path.join(os.tmpdir(), `live-forward-${process.pid}.json`);
+const COMMITTED_HEALTH_FILE = CONFIG.live.health.file;
+const COMMITTED_LEDGER_FILE = CONFIG.live.store.ledger.file;
+const stamp = `${process.pid}-${Math.random().toString(16).slice(2)}`;
+const TMP_FORWARD_FILE = path.join(os.tmpdir(), `live-forward-${stamp}.json`);
+const TMP_HEALTH_FILE = path.join(os.tmpdir(), `live-health-${stamp}.json`);
+const TMP_LEDGER_FILE = path.join(os.tmpdir(), `live-ledger-${stamp}.json`);
+
+function rm(file) { try { fs.unlinkSync(file); } catch (err) { /* absent is fine */ } }
 
 beforeEach(() => {
   resetCache();
-  try { fs.unlinkSync(TMP_FORWARD_FILE); } catch (err) { /* absent is fine */ }
+  rm(TMP_FORWARD_FILE); rm(TMP_HEALTH_FILE); rm(TMP_LEDGER_FILE);
   CONFIG.live.forwardTest.file = TMP_FORWARD_FILE;
+  CONFIG.live.health.file = TMP_HEALTH_FILE;
+  CONFIG.live.store.ledger.file = TMP_LEDGER_FILE;
+  CONFIG.live.store.kind = 'file';
+  store.resetStore();
+  forwardTest.reset();
+  shadowHealth.reset();
+  ledger.reset();
   forwardTest.init({ benchmarkLogLoss: 0.43 });
+  shadowHealth.init();
+  ledger.init();
 });
 
 afterEach(() => {
   CONFIG.live.forwardTest.file = COMMITTED_FORWARD_FILE;
+  CONFIG.live.health.file = COMMITTED_HEALTH_FILE;
+  CONFIG.live.store.ledger.file = COMMITTED_LEDGER_FILE;
+  store.resetStore();
+  forwardTest.reset();
+  shadowHealth.reset();
+  ledger.reset();
+  rm(TMP_FORWARD_FILE); rm(TMP_HEALTH_FILE); rm(TMP_LEDGER_FILE);
 });
 
 describe('nextGoal (soccer derivation)', () => {

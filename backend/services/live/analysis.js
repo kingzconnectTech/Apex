@@ -385,8 +385,10 @@ function buildAnalysis({ game, context = {}, contextView = null, now = Date.now(
  * @param {Object} args.game
  * @param {Object} args.analysis  a payload from buildAnalysis
  * @param {number} [args.now]
+ * @param {boolean} [args.dryRun] Round H (item 2) — compute and grid-gate the row
+ *   without writing it; pass through to forwardTest.recordServed.
  */
-function recordForwardTest({ game, analysis, now = Date.now() } = {}) {
+function recordForwardTest({ game, analysis, now = Date.now(), dryRun = false } = {}) {
   if (!game || !analysis) return null;
 
   // A shipped figure: the population users actually see decides the pick's life.
@@ -398,6 +400,7 @@ function recordForwardTest({ game, analysis, now = Date.now() } = {}) {
       raw: analysis.calibration ? analysis.calibration.raw_home_win : null,
       now,
       source: game.source || null,
+      dryRun,
     });
   }
 
@@ -420,6 +423,7 @@ function recordForwardTest({ game, analysis, now = Date.now() } = {}) {
       source: game.source || null,
       shadow: true,
       candidates,
+      dryRun,
     });
   }
 
@@ -429,13 +433,16 @@ function recordForwardTest({ game, analysis, now = Date.now() } = {}) {
 /**
  * Bind the outcome to every logged row for a game the provider now reports as
  * finished. Basketball has no draw, so an equal score is graded as neither.
+ *
+ * @param {boolean} [args.dryRun] Round H (item 2) — count the rows that WOULD
+ *   settle without writing (sweep dry run).
  */
-function settleForwardTest({ game, now = Date.now() } = {}) {
+function settleForwardTest({ game, now = Date.now(), dryRun = false } = {}) {
   if (!game || !game.game_id) return 0;
   if (!game.live || game.live.status !== 'finished') return 0;
   const home = game.home ? game.home.score : null;
   const away = game.away ? game.away.score : null;
-  return forwardTest.settle({ gameId: game.game_id, homeScore: home, awayScore: away, now });
+  return forwardTest.settle({ gameId: game.game_id, homeScore: home, awayScore: away, now, dryRun });
 }
 
 /**

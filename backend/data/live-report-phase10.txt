@@ -1,11 +1,11 @@
-﻿# Live Phase 10 (round E) report — 2026-11-12T14:59:30.984Z
+﻿# Live Phase 10 (round E) report — 2026-11-14T15:34:57.180Z
 historical dataset: 15686 games (11518 soccer / 4168 basketball)
-sliding holdout:    20261001-20261112 — 1252 games (918 soccer / 334 basketball) — NOT "fresh" (see ledger)
+sliding holdout:    20261003-20261114 — 1271 games (917 soccer / 354 basketball) — NOT "fresh" (see ledger)
 absolute calibration: bucket >= 300 rows, tolerance 0.05
 
 evaluation ledger — every window with how many times it has been SCORED:
   [seen]   historical test (frac 0.80-1.00)                 scored 3×  — Phase 8 sweep, Phase 9 report, Phase 10 report — scored 3×, no longer a clean holdout.
-  [seen]   sliding holdout 20261001-20261112                scored 2×  — Round C item 4 (basketball logistic + soccer table); earlier round (frozen production vs logistic). A SLIDING window — it overlaps the prior window, so most of its games were already scored.
+  [seen]   sliding holdout 20261003-20261114                scored 2×  — Round C item 4 (basketball logistic + soccer table); earlier round (frozen production vs logistic). A SLIDING window — it overlaps the prior window, so most of its games were already scored.
   [unseen] confirmation dataset (shadow rows after freeze)  scored 0×  — Scored 0× so far — evaluated ONCE per sport when it holds >= 500 settled GAMES (waiting on basketball 0/500, soccer 0/500).
 
 FREEZE BOUNDARY (item 1):
@@ -54,28 +54,28 @@ CONFIRMATION DATASET (the only dataset that may decide a release):
   The away side now sums to ~1.2186 goals/match, not 3.44. The retired parametric model's anomaly was a parsing artefact; no parametric conclusion is drawn.
 
 ## Item 2. Basketball scoreTime — CORRECTED diagnosis (historical test window)
-  games 833  rows 6486
-  column: Brier 0.1588 [0.1461, 0.1708]  log loss 0.4756 [0.4392, 0.5107]  hit 75.8%
-  calibration: slope 0.6488  intercept 0.1609  max judged-bucket deviation 0.1252 (0.25-0.35)
-  verdict: FAIL — worst judged bucket 0.25-0.35 off by 0.1252 (> 0.05)
+  games 833  rows 9128
+  column: Brier 0.1590 [0.1480, 0.1699]  log loss 0.4739 [0.4428, 0.5042]  hit 75.5%
+  calibration: slope 0.6981  intercept 0.1922  max judged-bucket deviation 0.1331 (0.25-0.35)
+  verdict: FAIL — worst judged bucket 0.25-0.35 off by 0.1331 (> 0.05)
   reliability:
-    0.00-0.25   n   1830  predicted 7.6%  actual 13.9%  dev 0.0634
-    0.25-0.35   n    454  predicted 29.5%  actual 42.1%  dev 0.1252
-    0.35-0.45   n    477  predicted 39.5%  actual 49.1%  dev 0.0958
-    0.45-0.55   n    603  predicted 49.9%  actual 56.9%  dev 0.0700
-    0.55-0.65   n    445  predicted 60.7%  actual 61.8%  dev 0.0114
-    0.65-0.75   n    488  predicted 70.3%  actual 67.6%  dev -0.0262
-    0.75-1.00   n   2189  predicted 92.5%  actual 87.4%  dev -0.0507
+    0.00-0.25   n   2406  predicted 8.0%  actual 13.6%  dev 0.0552
+    0.25-0.35   n    660  predicted 29.6%  actual 42.9%  dev 0.1331
+    0.35-0.45   n    752  predicted 39.6%  actual 50.0%  dev 0.1042
+    0.45-0.55   n    852  predicted 49.9%  actual 54.7%  dev 0.0475
+    0.55-0.65   n    770  predicted 60.4%  actual 64.0%  dev 0.0366
+    0.65-0.75   n    723  predicted 70.4%  actual 69.3%  dev -0.0110
+    0.75-1.00   n   2965  predicted 92.3%  actual 88.4%  dev -0.0383
   CORRECTED WORDING: over-confident at the extremes (slope < 1, low bucket realised above its prediction, high bucket below), with the home side under-estimated in the mid-range (positive intercept)
-    low bucket 0.00-0.25: predicted 7.6% -> realised 13.9%
-    high bucket 0.75-1.00: predicted 92.5% -> realised 87.4%
+    low bucket 0.00-0.25: predicted 8.0% -> realised 13.6%
+    high bucket 0.75-1.00: predicted 92.3% -> realised 88.4%
   by time bucket:
-    early  n   1128  games   377  Brier 0.2249  log loss 0.6406  hit 62.7%
-    mid    n   2860  games   829  Brier 0.1751  log loss 0.5225  hit 73.8%
-    late   n   2498  games   829  Brier 0.1104  log loss 0.3474  hit 84.1%
+    early  n   2496  games   833  Brier 0.2145  log loss 0.6155  hit 64.8%
+    mid    n   3316  games   829  Brier 0.1682  log loss 0.5027  hit 75.0%
+    late   n   3316  games   829  Brier 0.1080  log loss 0.3386  hit 84.1%
   by league:
-    mens-college-basketball  n   2342  games   456  Brier 0.1383  log loss 0.4157  maxDev 0.0386
-    nba                      n   4144  games   377  Brier 0.1704  log loss 0.5095  maxDev 0.0999
+    mens-college-basketball  n   5016  games   456  Brier 0.1499  log loss 0.4454  maxDev 0.1355
+    nba                      n   4112  games   377  Brier 0.1701  log loss 0.5087  maxDev 0.1039
 
 ## Item 3. Nonparametric / score-and-time-only models (fitted on TRAIN + VALIDATION)
   soccer empirical table: rows 46075  min cell 30  diff cap ±3
@@ -88,11 +88,11 @@ CONFIRMATION DATASET (the only dataset that may decide a release):
         45    0.00010.02710.14210.35840.71050.90180.9899
         60    0.00010.01580.08010.32010.73620.93150.9946
         75    0.00010.00010.03920.24030.80050.96570.9989
-  basketball logistic: rows 29071  x = margin / sqrt(minutes remaining)
-    sport-wide: intercept 0.2362  slope 0.6617  (n 29071)
-    mens-college-basketball  x  0.7909  intercept  0.4934  (n   6766)  league
-    nba                      x  0.6095  intercept  0.1706  (n  15683)  league
-    wnba                     x  0.6644  intercept  0.1789  (n   6622)  league
+  basketball logistic: rows 36680  x = margin / sqrt(minutes remaining)
+    sport-wide: intercept 0.3230  slope 0.6983  (n 36680)
+    mens-college-basketball  x  0.8305  intercept  0.5833  (n  14581)  league
+    nba                      x  0.6084  intercept  0.1690  (n  15521)  league
+    wnba                     x  0.6695  intercept  0.1828  (n   6578)  league
     overtime handling: for an OT checkpoint only the current OT period clock is used (remaining = clock minutes).
 
 ## Item 4. Soccer empirical table — per-cell n and fallback level (the 15'/30' collapse, and the fix)
@@ -164,64 +164,76 @@ CONFIRMATION DATASET (the only dataset that may decide a release):
           5    0.9978   0.0021   0.0000
 
 ## Item 3 (holdout). Frozen production model vs the logistic — SAME fresh holdout
-  holdout window 20261001-20261112: basketball 334 games / 3168 rows (soccer NOT re-evaluated here — its candidates go to shadow).
-  production calibrator: fitted on TRAIN+VALIDATION (isotonic, 31562 fit rows).
+  holdout window 20261003-20261114: basketball 354 games / 3894 rows (soccer NOT re-evaluated here — its candidates go to shadow).
+  production calibrator: fitted on TRAIN+VALIDATION (isotonic, 40277 fit rows).
 
   --- BASKETBALL (home-win) ---
-    logistic    Brier 0.1489 [0.1337, 0.1650]  logLoss 0.4419 [0.4027, 0.4822]  slope 1.0240  intercept -0.0930  maxDev -0.0370 (0.65-0.75)
-    scoreTime   Brier 0.1541  logLoss 0.4709
-    production  Brier 0.1500 [0.1348, 0.1658]  logLoss 0.4520 [0.4114, 0.4936]  slope 0.9801  intercept -0.0918  maxDev -0.0220
-    production vs scoreTime: Brier 0.0041 [-0.0015, 0.0098]  logLoss 0.0189 [-0.0032, 0.0446]
-    logistic vs production:  Brier 0.0011 [-0.0002, 0.0024]  logLoss 0.0101 [0.0031, 0.0182]  games 334
+    logistic    Brier 0.1310 [0.1171, 0.1455]  logLoss 0.3950 [0.3597, 0.4326]  slope 1.1209  intercept -0.0568  maxDev -0.0292 (0.35-0.45)
+    scoreTime   Brier 0.1373  logLoss 0.4228
+    production  Brier 0.1323 [0.1180, 0.1470]  logLoss 0.3995 [0.3630, 0.4385]  slope 1.0873  intercept -0.0744  maxDev -0.0415
+    production vs scoreTime: Brier 0.0050 [0.0004, 0.0096]  logLoss 0.0233 [0.0060, 0.0410]
+    logistic vs production:  Brier 0.0013 [0.0000, 0.0027]  logLoss 0.0045 [-0.0001, 0.0088]  games 354
     RECOMMENDATION: The logistic matches or beats the production model on the fresh holdout. Recommend simplifying to the logistic.
-    logistic vs scoreTime: Brier 0.0052 [0.0003, 0.0103]  logLoss 0.0290 [0.0077, 0.0542]  games 334
-    absolute-calibration verdict: PASS — worst judged bucket 0.65-0.75 off by -0.037 (<= 0.05)
+    logistic vs scoreTime: Brier 0.0063 [0.0017, 0.0107]  logLoss 0.0278 [0.0086, 0.0481]  games 354
+    absolute-calibration verdict: PASS — worst judged bucket 0.35-0.45 off by -0.0292 (<= 0.05)
     reliability:
-      0.00-0.25   n    507  predicted 11.0%  actual 9.3%  dev -0.0171
-      0.25-0.35   n    221  predicted 30.0%  actual 27.2%  dev -0.0288
-      0.35-0.45   n    298  predicted 39.9%  actual 38.3%  dev -0.0166
-      0.45-0.55   n    347  predicted 50.9%  actual 51.6%  dev 0.0066
-      0.55-0.65   n    297  predicted 60.3%  actual 59.3%  dev -0.0100
-      0.65-0.75   n    335  predicted 69.7%  actual 66.0%  dev -0.0370
-      0.75-1.00   n   1163  predicted 91.9%  actual 91.1%  dev -0.0072
+      0.00-0.25   n    534  predicted 11.0%  actual 8.4%  dev -0.0253
+      0.25-0.35   n    224  predicted 30.0%  actual 26.8%  dev -0.0321
+      0.35-0.45   n    320  predicted 40.1%  actual 37.2%  dev -0.0292
+      0.45-0.55   n    354  predicted 50.7%  actual 51.4%  dev 0.0072
+      0.55-0.65   n    342  predicted 60.4%  actual 61.4%  dev 0.0105
+      0.65-0.75   n    396  predicted 69.8%  actual 68.9%  dev -0.0086
+      0.75-1.00   n   1724  predicted 92.3%  actual 93.3%  dev 0.0092
     by time bucket:
-      early  n    736  games   246  Brier 0.2316  logLoss 0.6546  hit 62.1%
-      mid    n   1246  games   334  Brier 0.1533  logLoss 0.4634  hit 78.0%
-      late   n   1186  games   334  Brier 0.0930  logLoss 0.2873  hit 86.7%
+      early  n   1062  games   354  Brier 0.1882  logLoss 0.5509  hit 70.8%
+      mid    n   1417  games   354  Brier 0.1397  logLoss 0.4247  hit 80.2%
+      late   n   1415  games   354  Brier 0.0792  logLoss 0.2484  hit 89.0%
     by league:
-      mens-college-basketball  n    445  games    89  Brier 0.0354  logLoss 0.1267  maxDev 0.0165  BrierGain 0.0025  LLGain 0.0042  
-      nba                      n   2554  games   230  Brier 0.1664  logLoss 0.4905  maxDev -0.0234  BrierGain 0.0051  LLGain 0.0323  
-      wnba                     n    169  games    15  Brier 0.1832  logLoss 0.5368  maxDev n/a  BrierGain 0.0145  LLGain 0.0455  (unjudged)
+      mens-college-basketball  n   1122  games   102  Brier 0.0509  logLoss 0.1770  maxDev 0.0265  BrierGain 0.0098  LLGain 0.0235  
+      nba                      n   2629  games   239  Brier 0.1631  logLoss 0.4828  maxDev -0.0478  BrierGain 0.0047  LLGain 0.0302  
+      wnba                     n    143  games    13  Brier 0.1670  logLoss 0.4915  maxDev n/a  BrierGain 0.0091  LLGain 0.0162  (unjudged)
     early/mid/late split (checkpoints per bucket, per league):
-      mens-college-basketball  early n     1/g    1 B 0.0003 L 0.0180 | mid n   266/g   89 B 0.0455 L 0.1660 | late n   178/g   89 B 0.0205 L 0.0687
-      nba                      early n   690/g  230 B 0.2329 L 0.6577 | mid n   920/g  230 B 0.1818 L 0.5423 | late n   944/g  230 B 0.1028 L 0.3178
-      wnba                     early n    45/g   15 B 0.2171 L 0.6210 | mid n    60/g   15 B 0.1942 L 0.5712 | late n    64/g   15 B 0.1490 L 0.4452
-    LABEL-DEPENDENCE test (shuffle game-level labels, 200 draws, game n 334) — labels: home 211 / away 123
-      actual       model Brier 0.1489  logLoss 0.4419   | scoreTime Brier 0.1541  logLoss 0.4709
+      mens-college-basketball  early n   306/g  102 B 0.0890 L 0.3120 | mid n   409/g  102 B 0.0447 L 0.1567 | late n   407/g  102 B 0.0286 L 0.0959
+      nba                      early n   717/g  239 B 0.2293 L 0.6498 | mid n   956/g  239 B 0.1785 L 0.5343 | late n   956/g  239 B 0.0982 L 0.3062
+      wnba                     early n    39/g   13 B 0.2122 L 0.6085 | mid n    52/g   13 B 0.1755 L 0.5160 | late n    52/g   13 B 0.1246 L 0.3791
+    checkpoint timing (REPLAY) — mean ELAPSED minutes (fraction of regulation) at the 1st/2nd/3rd checkpoint:
+      league                   regMin  games   cp1 (min / frac)      cp2 (min / frac)      cp3 (min / frac)    early/mid/late rows
+      mens-college-basketball      40    102   4.8734 / 0.1218       7.3930 / 0.1848       9.8712 / 0.2468          306/  409/  407
+      nba                          48    239   5.8885 / 0.1227       8.8803 / 0.1850       12.0000 / 0.2500         717/  956/  956
+      wnba                         40     13   4.8692 / 0.1217       7.4090 / 0.1852       10.0000 / 0.2500          39/   52/   52
+    LIVE SCHEDULER: runs on a 5-minute cron and logs whatever real clock it sees — it never
+      synthesises checkpoint marks, so this grid is IMPLICIT on the live side and the schedule
+      fix does NOT touch it. The distribution above is the replay path only.
+    schedule-fix recorded at 2026-11-14T15:34:57.161Z; shadow rows logged BEFORE it are the pre-fix rows already labelled in the freeze boundary above.
+    LABEL-DEPENDENCE test (shuffle game-level labels, 200 draws, game n 354) — labels: home 227 / away 127
+      actual       model Brier 0.1310  logLoss 0.3950   | scoreTime Brier 0.1373  logLoss 0.4228
       constant0.5  Brier 0.2500  logLoss 0.6931 (no-skill floor)
-      shuffled     model Brier 0.3250 ± 0.0126  logLoss 1.4952   | scoreTime logLoss 2.6853
+      shuffled     model Brier 0.3222 ± 0.0140  logLoss 1.6001   | scoreTime logLoss 2.7197
       collapsed to no-skill: YES — Shuffling the game-level labels destroys the metric (it returns to the no-skill level): the low error therefore DEPENDS on the true outcome. This is a LABEL-DEPENDENCE test only — it does NOT by itself prove that no leakage is present. Leakage is ruled out directly by the first-checkpoint base-rate check and the post-checkpoint truncation test.
       WORDING: Label dependence ≠ absence of leakage. This shows the metric needs the true labels; it is silent on whether the model reads future state.
-      mens-college-basketball  game n  89  labels home 80/away 9  actual logLoss 0.1267  shuffled logLoss 1.1327  collapsed YES
-      nba                      game n 230  labels home 120/away 110  actual logLoss 0.4905  shuffled logLoss 1.2401  collapsed YES
-    LEAKAGE CHECK 4(a) — first checkpoint vs home base rate (334 games):
-      mean predicted P(home) 0.6243   vs   home base rate (all checkpoints) 0.5862   gap 0.0381   (realised on these games 0.6317)
-      mens-college-basketball  games   89  meanPred 0.8414  homeRate 0.8989  gap 0.0575
-      nba                      games  230  meanPred 0.5451  homeRate 0.5217  gap -0.0234
-      wnba                     games   15  meanPred 0.5498  homeRate 0.7333  gap 0.1835
-    LEAKAGE CHECK 4(b) — remove events after the checkpoint (3168 checkpoints over 334 games):
-      identical output 3168/3168 (100.0%)   max |Δp| 0.0000
-      sensitivity probe (a genuine LATER event MUST move it): 2606/2609 moved (99.9%) → test is informative
+      mens-college-basketball  game n 102  labels home 91/away 11  actual logLoss 0.1770  shuffled logLoss 0.9514  collapsed YES
+      nba                      game n 239  labels home 127/away 112  actual logLoss 0.4828  shuffled logLoss 1.2508  collapsed YES
+    LEAKAGE CHECK 4(a) / ITEM 2 — first checkpoint vs home base rate (354 games):
+      mean predicted P(home) 0.6060   vs   home base rate (all checkpoints) 0.6412   gap -0.0353   (realised on these games 0.6412)
+      earliest-checkpoint fraction: min 0.1121 max 0.1250; games strictly < 10% of regulation: 0 (the grid's earliest checkpoint is 1/8 = 12.5%, so the strict subset is empty by construction).
+      mens-college-basketball  games  102  meanPred 0.7475  homeRate 0.8922  gap 0.1447
+      nba                      games  239  meanPred 0.5474  homeRate 0.5314  gap -0.0160
+      wnba                     games   13  meanPred 0.5722  homeRate 0.6923  gap 0.1201
+    LEAKAGE CHECK 4(b) — remove events after the checkpoint (3894 checkpoints over 354 games):
+      identical output 3894/3894 (100.0%)   max |Δp| 0.0000
+      sensitivity probe (a genuine LATER event MUST move it): 3237/3246 moved (99.7%) → test is informative
       The output at a checkpoint is IDENTICAL when every later event is removed from the input; the sensitivity probe shows a genuine later event DOES move it — so no future state is read.
     constant base-rate predictor, per league (predict the league home rate everywhere) and the model skill vs it:
       league                     games  H/A     baseRate  constBrier  constLogLoss  modelBrier  modelLogLoss  brierSkill  logLossSkill
-      mens-college-basketball     89   80/9     0.8989      0.0909        0.3275      0.0354        0.1267      0.6106        0.6132  (thin: <100 games — no league params)
-      nba                        230  120/110   0.5217      0.2495        0.6922      0.1664        0.4905      0.3331        0.2913
-      wnba                        15   11/4     0.7333      0.1981        0.5855      0.1832        0.5368      0.0754        0.0832  (thin: <100 games — no league params)
+      mens-college-basketball    102   91/11    0.8922      0.0962        0.3420      0.0509        0.1770      0.4710        0.4824
+      nba                        239  127/112   0.5314      0.2490        0.6912      0.1631        0.4828      0.3450        0.3015
+      wnba                        13    9/4     0.6923      0.2130        0.6172      0.1670        0.4915      0.2160        0.2037  (thin: <100 games — no league params)
       NOTE (item 5): the CBB holdout is 80/9 — far too skewed and thin to set parameters from;
       league-specific parameters are only fitted at >= 100 SETTLED GAMES in the fit window, else the sport-wide parameters are used.
-    fresh-games rule: 334 settled games vs minimum 500 → NOT MET (candidate stays blocked)
-    SHIPS: NO — only 334 fresh settled games (< 500)
+    CONFIRMATION PROGRESS (settled GAMES after the freeze — the only eligible release evidence):
+      basketball 0/500   soccer 0/500
+    the 354-game holdout above is the TWICE-SCORED SLIDING window (it overlaps the prior window and was already evaluated) — it is NOT fresh confirmation evidence.
+    SHIPS: NO — this 354-game holdout is the twice-scored SLIDING window, not fresh evidence — the release needs 500 settled confirmation games per sport
 
 NOTHING SHIPS. Manual rough estimate stays blocked for every sport. Shadow, criteria and calibrator ids unchanged.
 Candidate artifact: shadow-candidates-1.0.0 frozen at 2026-11-12T13:53:48Z — every frozen id is labelled:
@@ -231,5 +243,8 @@ Candidate artifact: shadow-candidates-1.0.0 frozen at 2026-11-12T13:53:48Z — e
     soccer_score_time    213f7dd0a1d8  Soccer score-and-time baseline (plain Poisson at global rates) — the release reference
   logged on every shadow row; confirmation = shadow rows logged strictly AFTER this instant.
 PRIMARY (the only one the release reads, vs scoreTime, game-level CIs): basketball basketball_logistic; soccer soccer_mnl (secondary: soccer_table).
+  REFIT DISCLOSURE (2026-11-14T15:34:57.161Z): Replay checkpoint schedule moved to a uniform elapsed-fraction grid (schedule-only fix; no model parameters were changed).
+    the refit would move 1 id(s); the frozen ids above are PRESERVED and the drift is recorded, not applied:
+      basketball_logistic  frozen 33f1a9025999 → refit 5bf73b8d247f
 Near-certain outcomes are clipped to [0.01, 0.99] on every candidate, and any soccer table cell with < 30 raw rows is flagged thin.
 Predictions are statistical estimates, not betting advice.
