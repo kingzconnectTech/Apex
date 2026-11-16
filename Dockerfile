@@ -1,5 +1,5 @@
-# Use Node.js LTS (v20) as the base image
-FROM node:20-slim
+# Use Node.js 24 (firebase-admin -> @firebase/database-compat requires node >=24.12.0)
+FROM node:24-slim
 
 # Install Python 3 and other necessary system packages
 RUN apt-get update && apt-get install -y \

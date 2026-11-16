@@ -282,6 +282,8 @@ cd backend && npm test
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | the service-account JSON (one line) | Or place `./serviceAccountKey.json`. The Admin SDK bypasses the `live_shadow` security rule. The account needs **Cloud Datastore User**. |
 | `NODE_ENV` | `production` | Anything else enables the test-isolation guard. Do **not** also set `FIRESTORE_EMULATOR_HOST` — the startup guard refuses to boot. |
 
+**Node version.** `firebase-admin@13.6.0` pulls `@firebase/database-compat`, whose `engines.node` is `>=24.12.0`; on an older Node the install **fails** (yarn hard-fails on an engine mismatch). The version is pinned to `24.15.0` in `.node-version` (repo root and `backend/`) and `backend/package.json`'s `engines.node` (`>=24.12.0 <25.0.0`), so Render installs a compatible Node regardless of when the service was created. If a native Node service was created before 2026-10-21 it defaults to an older Node — the pin overrides that.
+
 Deploy the Firestore rules too (they deny all client access to `live_shadow`): `firebase deploy --only firestore:rules` with [firestore.rules](file:///c:/Users/prosp/Desktop/Apex/firestore.rules).
 
 ### 2. Trigger configuration
