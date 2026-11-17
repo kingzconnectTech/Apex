@@ -3,6 +3,8 @@
  *
  * Mounted at `/api`, exposing:
  *   GET  /api/live/capabilities   — what is on, and which sports may show a probability
+ *   GET  /api/live/matches        — the games IN PLAY now (FlashScore / LiveScore)
+ *   POST /api/live/validate-link  — check a user-supplied link before opening it
  *   POST /api/live/resolve        — paste a bookmaker link, identify the game
  *   GET  /api/live/analysis/:id   — poll the live analysis for a resolved game
  *   POST /api/live/manual         — type the values when nothing could be matched
@@ -45,6 +47,7 @@ const shadowHealth = require('../services/live/shadowHealth');
 const ledger = require('../services/live/ledger');
 const { executeShadowSweep, runShadowReconcile } = require('../services/live/shadowScheduler');
 const { createRateLimitMiddleware, createRateLimiter } = require('../services/live/rateLimit');
+const matchFeed = require('../services/live/matchFeed');
 
 const DISCLAIMER = CONFIG.liveApi.disclaimer;
 
@@ -255,7 +258,100 @@ function createLiveRouter({
       ...policy.featureState(),
       refresh: CONFIG.liveApi.refresh,
       max_link_length: CONFIG.liveApi.maxLinkLength,
+      // The live-matches surface (FlashScore / LiveScore). `enabled` gates the
+      // list itself; `sites` is the allow-list of hosts a user may save as a
+      // preferred link. Exposed here so the client can render the picker before
+      // it ever calls /live/matches. `refresh` uses the SAME snake_case shape as
+      // the /live/matches payload, so a client reads one contract from either.
+      matches: {
+        enabled: matchFeed.isEnabled(),
+        refresh: {
+          suggested_seconds: CONFIG.live.matchFeed.refresh.suggestedSeconds,
+          min_seconds: CONFIG.live.matchFeed.refresh.minSeconds,
+        },
+        max_link_length: matchFeed.MAX_LINK_LENGTH,
+        sites: matchFeed.sites(),
+      },
       disclaimer: DISCLAIMER,
+    });
+  });
+
+  /* --------------------------------------------------------------- matches */
+
+  /**
+   * GET /api/live/matches — the games IN PLAY right now.
+   *
+   * The SERVER reads the two public score sites and normalises the list; the
+   * client renders it. No odds are read and nothing is stored. Each source is
+   * fetched independently, so a source that is down is reported in `sources`
+   * and degrades the list rather than emptying it; when EVERY source fails the
+   * payload still returns 200 with `degraded:true` and `count:0`, so the UI can
+   * say "could not reach the sites" instead of showing a bare network error.
+   *
+   * `?sources=flashscore,livescore` restricts the read; `?force=true` bypasses
+   * the short server-side cache (an explicit user refresh).
+   */
+  router.get('/live/matches', rateLimit, async (req, res) => {
+    const traceId = req.traceId || null;
+    try {
+      if (!matchFeed.isEnabled()) {
+        return res.status(503).json({
+          error: 'The live matches feed is switched off.',
+          code: 'MATCHES_DISABLED',
+          traceId,
+        });
+      }
+
+      const rawSources = req.query && req.query.sources;
+      const requested = typeof rawSources === 'string'
+        ? rawSources.split(',').map(s => s.trim()).filter(Boolean)
+        : null;
+
+      const payload = await matchFeed.fetchLiveMatches({
+        sources: requested,
+        force: isTruthy(req.query && req.query.force),
+      });
+      return res.json({ ...payload, traceId });
+    } catch (err) {
+      logger?.log('error', '[LIVE] matches failed', { traceId, error: err?.message });
+      return res.status(503).json({
+        error: 'The live matches could not be fetched right now.',
+        code: 'MATCHES_UNAVAILABLE',
+        reason: err?.message || null,
+        traceId,
+      });
+    }
+  });
+
+  /**
+   * POST /api/live/validate-link — check a link the USER supplies before it is
+   * opened in the in-app browser.
+   *
+   * Only http/https links are accepted, so a `javascript:` / `file:` / `data:`
+   * URL can never reach the WebView. A host that is one of the known score
+   * sites is reported `recognised:true`; any other well-formed host is still
+   * accepted, but marked `recognised:false` so the UI never presents an unknown
+   * site as a known one.
+   *
+   * Unlike /live/resolve (which does work and 400s on a bad input), this is a
+   * pure INPUT CHECK, so it always answers 200 with the verdict in `valid` +
+   * `reason`: the client renders the reason inline while the user types instead
+   * of treating "not a link yet" as a request failure. `code` is still supplied
+   * (INVALID_LINK) so callers can map it programmatically.
+   */
+  router.post('/live/validate-link', rateLimit, (req, res) => {
+    const traceId = req.traceId || null;
+    const body = req.body || {};
+    const raw = typeof body.link === 'string' ? body.link
+      : (typeof body.url === 'string' ? body.url : '');
+
+    const verdict = matchFeed.validateSiteLink(raw);
+    return res.json({
+      ...verdict,
+      code: verdict.valid ? null : 'INVALID_LINK',
+      sites: matchFeed.sites(),
+      max_link_length: matchFeed.MAX_LINK_LENGTH,
+      traceId,
     });
   });
 

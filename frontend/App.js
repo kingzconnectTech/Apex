@@ -49,6 +49,7 @@ import LeoScreen from './screens/LeoScreen';
 import TermsScreen from './screens/TermsScreen';
 import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen';
 import LiveAnalysisScreen from './screens/LiveAnalysisScreen';
+import LiveMatchesScreen from './screens/LiveMatchesScreen';
 import NoInternetScreen from './components/NoInternetScreen';
 import AdminPicksScreen from './screens/AdminPicksScreen';
 import AdminDashboardScreen from './screens/admin/AdminDashboardScreen';
@@ -202,6 +203,14 @@ function AppStack() {
           },
           headerTintColor: theme.text,
         }}
+      />
+
+      {/* Live Matches — the games in play now, read from FlashScore / LiveScore,
+          opened in an in-app browser. */}
+      <RootStack.Screen
+        name="LiveMatches"
+        component={LiveMatchesScreen}
+        options={{ ...adminHeader(theme, 'Live Matches') }}
       />
 
       {/* User-facing Admin Picks — predictions uploaded by an administrator.

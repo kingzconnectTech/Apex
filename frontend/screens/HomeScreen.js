@@ -313,6 +313,22 @@ export default function HomeScreen({ navigation }) {
         </View>
       </Animated.View>
 
+      {/* Live Matches Entry — what is in play right now */}
+      <TouchableOpacity
+        style={styles.liveEntryCard}
+        activeOpacity={0.9}
+        onPress={() => navigation.navigate('LiveMatches')}
+      >
+        <View style={styles.liveEntryIconBox}>
+          <Ionicons name="radio" size={moderateScale(22)} color={theme.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.liveEntryTitle}>Live Matches</Text>
+          <Text style={styles.liveEntrySubtitle}>See what is in play now, open your sites</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
+      </TouchableOpacity>
+
       {/* Live Game Analysis Entry */}
       <TouchableOpacity
         style={styles.liveEntryCard}

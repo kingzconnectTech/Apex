@@ -330,6 +330,62 @@ export const fetchLiveManualAnalysis = async (input) => {
   }
 };
 
+/* --------------------------------------------------------------------------
+ * Live Matches (FlashScore / LiveScore)
+ *
+ * The SERVER reads the two public score sites and returns the games in play; the
+ * app opens any match — or the user's own preferred link — in an in-app browser.
+ * `validateSiteLink` checks a pasted link BEFORE it is opened, so a non-http(s)
+ * URL never reaches the WebView.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * List the games that are in play right now.
+ * @param {Object}   [options]
+ * @param {string[]} [options.sources] restrict to source ids (e.g. ['flashscore'])
+ * @param {boolean}  [options.force]   bypass the short server-side cache
+ * @returns {Promise<Object>} { enabled, count, fetched_at, degraded, refresh, sources, sites, matches }
+ */
+export const fetchLiveMatches = async ({ sources = null, force = false } = {}) => {
+  try {
+    const params = new URLSearchParams();
+    if (Array.isArray(sources) && sources.length) params.append('sources', sources.join(','));
+    if (force) params.append('force', 'true');
+    const query = params.toString();
+    const response = await fetch(`${API_URL}/api/live/matches${query ? `?${query}` : ''}`);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) return liveFailure(response, body);
+    return body;
+  } catch (error) {
+    console.warn('[fetchLiveMatches] Network error:', error.message);
+    return { unavailable: true, httpStatus: 0, code: 'NETWORK_ERROR', message: error.message };
+  }
+};
+
+/**
+ * Check a link the user supplies before it is opened in the in-app browser.
+ *
+ * The route always answers 200 with the verdict in `valid` + `reason` (a bad
+ * link is data, not a request failure), so the UI renders the reason inline.
+ * @param {string} link
+ * @returns {Promise<Object>} { valid, reason?, url?, site_id?, site_name?, recognised?, note? }
+ */
+export const validateSiteLink = async (link) => {
+  try {
+    const response = await fetch(`${API_URL}/api/live/validate-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) return liveFailure(response, body);
+    return body;
+  } catch (error) {
+    console.warn('[validateSiteLink] Network error:', error.message);
+    return { unavailable: true, httpStatus: 0, code: 'NETWORK_ERROR', message: error.message };
+  }
+};
+
 
 
 

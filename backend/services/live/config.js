@@ -438,6 +438,42 @@ const CONFIG = {
       released: [],
       note: 'Withheld leagues show score/time/context only. Nothing is released by this block; it fixes the rule the confirmation run will apply.',
     },
+
+    /**
+     * Live matches — external score-site feed (FlashScore / LiveScore).
+     *
+     * This is a SEPARATE surface from the bookmaker-link parser above: here the
+     * server itself reads two public score sites to list which games are IN PLAY
+     * right now. It fetches no odds and stores nothing — the list is built on
+     * demand, cached for a few seconds and handed to the client, which may then
+     * open any match (or its own preferred streaming link) in an in-app browser.
+     *
+     * `sites` is the allow-list of hosts a user may save as a preferred link and
+     * open. A link to any other http(s) host is still accepted but reported as
+     * unrecognised, never as valid-and-known.
+     */
+    matchFeed: {
+      enabled: true,
+      // Short cache so a burst of client polls shares one upstream read per source.
+      cacheTtlMs: 20 * 1000,
+      // Per-request upstream timeout; a slow source is reported as failed, not fatal.
+      requestTimeoutMs: 12 * 1000,
+      // Cap the live list handed to one client (highest-freshness games first).
+      maxMatches: 150,
+      // Auto-refresh hint for the client, in seconds.
+      refresh: { suggestedSeconds: 30, minSeconds: 15 },
+      // Hosts a user may save as a preferred link. Suffix-matched, so
+      // 'm.flashscore.com' and 'www.livescore.com' both resolve.
+      sites: [
+        { id: 'flashscore', name: 'FlashScore', host: 'flashscore.com', home: 'https://m.flashscore.com/' },
+        { id: 'livescore', name: 'LiveScore', host: 'livescore.com', home: 'https://www.livescore.com/en/' },
+      ],
+      // Per-source switches. A disabled source is skipped, not reported as failed.
+      sources: {
+        livescore: { enabled: true, sports: ['soccer', 'basketball'] },
+        flashscore: { enabled: true, sports: ['soccer', 'basketball'] },
+      },
+    },
   },
 
   /**
