@@ -1,7 +1,71 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
+    // ---------------------------------------------------------------------
+    // ADMIN PREDICTIONS (administrator-uploaded picks)
+    //
+    // This collection is completely separate from the AI prediction engine.
+    // Authorization is enforced HERE, server-side, from Firebase Authentication
+    // Custom Claims — never from a frontend-only check. An administrator is an
+    // authenticated user whose token carries `admin: true`; that claim can only
+    // be set by the backend Admin SDK (scripts/set-admin-claim.js), so a user
+    // can never grant it to themselves.
+    //
+    //   - any SIGNED-IN user may read PUBLISHED predictions;
+    //   - only administrators may read drafts, and create / edit / delete;
+    //   - ownership (`createdBy`) is immutable once the document exists.
+    // ---------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    // The exact shape every stored prediction must have. Used on create and on
+    // update so a malformed or half-written document can never be persisted.
+    function validPrediction(d) {
+      return d.sport in ['Football', 'Basketball']
+        && d.league is string && d.league.size() > 0
+        && d.homeTeam is string && d.homeTeam.size() > 0
+        && d.awayTeam is string && d.awayTeam.size() > 0
+        && d.matchDate is timestamp
+        && d.market is string && d.market.size() > 0
+        && d.selection is string && d.selection.size() > 0
+        && d.confidence is number && d.confidence >= 0 && d.confidence <= 100
+        && d.analysis is string
+        && d.status in ['pending', 'won', 'lost', 'void']
+        && d.visibility in ['draft', 'published']
+        && d.createdBy is string
+        && d.createdAt is timestamp
+        && d.updatedAt is timestamp
+        && (d.settledBy == null || d.settledBy is string)
+        && (d.settledAt == null || d.settledAt is timestamp);
+    }
+
+    match /admin_predictions/{predictionId} {
+      // Published picks are readable by any signed-in user; administrators can
+      // additionally read drafts. A non-admin LIST must therefore constrain
+      // `visibility == 'published'`, which the app's queries always do.
+      allow read: if isSignedIn() && (isAdmin() || resource.data.visibility == 'published');
+
+      // Administrators only, and they must own what they create.
+      allow create: if isAdmin()
+        && request.resource.data.createdBy == request.auth.uid
+        && validPrediction(request.resource.data);
+
+      // Administrators only; ownership can never be reassigned.
+      allow update: if isAdmin()
+        && request.resource.data.createdBy == resource.data.createdBy
+        && validPrediction(request.resource.data);
+
+      // Administrators only.
+      allow delete: if isAdmin();
+    }
+
     match /users/{userId} {
       // 1. READ: Allow any logged-in user to read profiles
       // Required so users can look up recipients by email

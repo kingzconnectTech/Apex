@@ -329,6 +329,22 @@ export default function HomeScreen({ navigation }) {
         <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
       </TouchableOpacity>
 
+      {/* Admin Picks Entry — expert predictions uploaded by administrators */}
+      <TouchableOpacity
+        style={styles.liveEntryCard}
+        activeOpacity={0.9}
+        onPress={() => navigation.navigate('AdminPicks')}
+      >
+        <View style={styles.liveEntryIconBox}>
+          <Ionicons name="ribbon" size={moderateScale(22)} color={theme.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.liveEntryTitle}>Admin Picks</Text>
+          <Text style={styles.liveEntrySubtitle}>Expert predictions from our analysts</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
+      </TouchableOpacity>
+
       {/* Live Games Section */}
       {liveMatches.length > 0 && (
         <View style={styles.sectionContainer}>

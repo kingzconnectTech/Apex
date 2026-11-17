@@ -50,6 +50,29 @@ import TermsScreen from './screens/TermsScreen';
 import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen';
 import LiveAnalysisScreen from './screens/LiveAnalysisScreen';
 import NoInternetScreen from './components/NoInternetScreen';
+import AdminPicksScreen from './screens/AdminPicksScreen';
+import AdminDashboardScreen from './screens/admin/AdminDashboardScreen';
+import AdminUploadScreen from './screens/admin/AdminUploadScreen';
+import AdminManageScreen from './screens/admin/AdminManageScreen';
+import AdminHistoryScreen from './screens/admin/AdminHistoryScreen';
+import AdminRoute from './components/AdminRoute';
+import { AdminProvider } from './context/AdminContext';
+
+// Admin screens render inside AdminRoute, which only lets a user through AFTER
+// Firebase confirms the `admin: true` custom claim (and Firestore rules enforce
+// it server-side regardless). Declared at module scope so they are stable.
+const AdminDashboardGuarded = props => (
+  <AdminRoute {...props}><AdminDashboardScreen {...props} /></AdminRoute>
+);
+const AdminUploadGuarded = props => (
+  <AdminRoute {...props}><AdminUploadScreen {...props} /></AdminRoute>
+);
+const AdminManageGuarded = props => (
+  <AdminRoute {...props}><AdminManageScreen {...props} /></AdminRoute>
+);
+const AdminHistoryGuarded = props => (
+  <AdminRoute {...props}><AdminHistoryScreen {...props} /></AdminRoute>
+);
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -180,8 +203,53 @@ function AppStack() {
           headerTintColor: theme.text,
         }}
       />
+
+      {/* User-facing Admin Picks — predictions uploaded by an administrator.
+          Completely separate from the AI prediction engine. */}
+      <RootStack.Screen
+        name="AdminPicks"
+        component={AdminPicksScreen}
+        options={{ ...adminHeader(theme, 'Admin Picks') }}
+      />
+
+      {/* Administrator experience (guarded by the `admin: true` custom claim). */}
+      <RootStack.Screen
+        name="AdminDashboard"
+        component={AdminDashboardGuarded}
+        options={{ ...adminHeader(theme, 'Admin Dashboard') }}
+      />
+      <RootStack.Screen
+        name="AdminUpload"
+        component={AdminUploadGuarded}
+        options={{ ...adminHeader(theme, 'Upload Prediction') }}
+      />
+      <RootStack.Screen
+        name="AdminManage"
+        component={AdminManageGuarded}
+        options={{ ...adminHeader(theme, 'Manage Predictions') }}
+      />
+      <RootStack.Screen
+        name="AdminHistory"
+        component={AdminHistoryGuarded}
+        options={{ ...adminHeader(theme, 'Prediction History') }}
+      />
     </RootStack.Navigator>
   );
+}
+
+/** Shared header styling for the admin screens. */
+function adminHeader(theme, title) {
+  return {
+    headerShown: true,
+    title,
+    headerStyle: {
+      backgroundColor: theme.bg,
+      elevation: 0,
+      shadowOpacity: 0,
+      borderBottomWidth: 0,
+    },
+    headerTintColor: theme.text,
+  };
 }
 
 function AuthStack() {
@@ -311,7 +379,9 @@ export default function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <UserProvider>
-          <AppContent />
+          <AdminProvider>
+            <AppContent />
+          </AdminProvider>
         </UserProvider>
       </ThemeProvider>
     </ErrorBoundary>

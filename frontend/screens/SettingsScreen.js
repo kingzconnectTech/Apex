@@ -3,11 +3,13 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Mo
 import auth from '@react-native-firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { useAdmin } from '../context/AdminContext';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
 import { GlobalBannerAd } from '../components/GlobalBannerAd';
 
 export default function SettingsScreen({ navigation }) {
   const { theme, isDarkMode, toggleTheme } = useTheme();
+  const { isAdmin } = useAdmin();
   const styles = createStyles(theme, isDarkMode);
   const user = auth().currentUser;
   const [contactModalVisible, setContactModalVisible] = React.useState(false);
@@ -92,6 +94,31 @@ export default function SettingsScreen({ navigation }) {
               value={isDarkMode}
             />
           </View>
+        </View>
+
+        {/* Predictions Section */}
+        <Text style={[styles.sectionTitle, { color: theme.secondary }]}>Predictions</Text>
+        <View style={[styles.section, { backgroundColor: theme.cardBg }]}>
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('AdminPicks')}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="ribbon-outline" size={moderateScale(22)} color={theme.icon} />
+              <Text style={[styles.rowLabel, { color: theme.text }]}>Admin Picks</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
+          </TouchableOpacity>
+
+          {isAdmin ? (
+            <>
+              <View style={[styles.separator, { backgroundColor: theme.bg }]} />
+              <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('AdminDashboard')}>
+                <View style={styles.rowLeft}>
+                  <Ionicons name="shield-checkmark-outline" size={moderateScale(22)} color={theme.primary} />
+                  <Text style={[styles.rowLabel, { color: theme.text }]}>Admin Dashboard</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={moderateScale(20)} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </>
+          ) : null}
         </View>
 
         {/* Support Section */}
