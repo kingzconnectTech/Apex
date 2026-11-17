@@ -473,6 +473,21 @@ const CONFIG = {
         livescore: { enabled: true, sports: ['soccer', 'basketball'] },
         flashscore: { enabled: true, sports: ['soccer', 'basketball'] },
       },
+      /**
+       * Transient-failure retry for each upstream read. Only network errors,
+       * timeouts (aborts) and 5xx/429 responses are retried; a 4xx is a request
+       * problem and is reported straight away. Backoff is exponential, capped at
+       * `maxDelayMs`.
+       */
+      retry: { attempts: 3, baseDelayMs: 400, maxDelayMs: 2000 },
+      /**
+       * Live predictions for the listed games. Each normalised match is adapted
+       * into the SAME Phase 3 LiveGame the rest of the engine consumes and run
+       * through the Phase 4 model, then gated by the Phase 5 ship gate — so a
+       * probability only appears where the rest of the product would show one.
+       * This is a sub-switch: the list still works when predictions are off.
+       */
+      predictions: { enabled: true },
     },
   },
 

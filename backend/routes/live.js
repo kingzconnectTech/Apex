@@ -288,6 +288,12 @@ function createLiveRouter({
    * payload still returns 200 with `degraded:true` and `count:0`, so the UI can
    * say "could not reach the sites" instead of showing a bare network error.
    *
+   * Each match carries a `prediction` block produced by the SAME live engine the
+   * rest of the product uses (services/live/matchFeed -> analysis). It is gated
+   * by the Phase 5 ship gate, so `probabilities`, `projection` and `uncertainty`
+   * are null wherever a figure may not be shown and `ship_gate.reason` explains
+   * why — the feed never emits an unvalidated number.
+   *
    * `?sources=flashscore,livescore` restricts the read; `?force=true` bypasses
    * the short server-side cache (an explicit user refresh).
    */

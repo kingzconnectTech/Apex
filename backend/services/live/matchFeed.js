@@ -12,6 +12,22 @@
  *                  3 finished) and `AG`/`AH` (the score), so the live set is
  *                  read from a status field, never inferred from a start time.
  *
+ * Each normalised match also carries the in-play CLOCK and PERIOD the source
+ * reported (`clock`, `period`); where a source does not publish one the field is
+ * null/0 rather than guessed. A successfully fetched but transiently failing read
+ * is retried with exponential backoff (config.live.matchFeed.retry); a read that
+ * still fails is reported per source and degrades the list rather than emptying
+ * it, and a source is never retried on a 4xx.
+ *
+ * Finally — and only when `config.live.matchFeed.predictions.enabled` is on —
+ * each listed game is adapted into the SAME Phase 3 LiveGame the rest of the
+ * engine consumes, run through the SAME Phase 4 model and gated by the SAME
+ * Phase 5 ship gate (services/live/analysis.js). A probability therefore appears
+ * here exactly when it would appear anywhere else, and is withheld — with the
+ * gate's own reason — everywhere it would be withheld. The feed never invents a
+ * figure, so a game with no clock is modelled as a pre-game projection and a
+ * game whose sport/league has not cleared the gate shows no probability at all.
+ *
  * Nothing here places a bet, reads odds or writes anything: the list is built on
  * demand, cached for a few seconds (config.live.matchFeed.cacheTtlMs) and handed
  * to the client. Each source is fetched independently, so one site being down
@@ -25,6 +41,9 @@
  */
 
 const CONFIG = require('./config');
+const M = require('./liveMath');
+const { buildLiveGame } = require('./liveGame');
+const { buildAnalysis } = require('./analysis');
 
 const CFG = CONFIG.live.matchFeed;
 
@@ -68,6 +87,14 @@ const LIVESCORE_PHASE_LABELS = {
   'Postp.': 'Postponed',
   'Aban.': 'Abandoned',
 };
+
+/**
+ * LiveScore `Esid` in-play period codes -> our numeric period. Only the two
+ * unambiguous in-play halves are mapped (2 = 1st half, 3 = 2nd half); every
+ * other code (not started, half time, finished, penalties, …) yields 0, so a
+ * period is never invented from a phase the source did not place us in.
+ */
+const LIVESCORE_PERIODS = { 2: 1, 3: 2 };
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -119,6 +146,21 @@ function dayKey(ms) {
   return `${d.getUTCFullYear()}`
     + `${String(d.getUTCMonth() + 1).padStart(2, '0')}`
     + `${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/**
+ * The in-play clock as the model understands it, or null.
+ *
+ * A source often publishes a phase code ("HT", "FT") where a clock would be;
+ * those are not clocks and are dropped rather than coerced. `parseClock` (the
+ * SAME parser the Phase 4 models use) decides what is real, so this can never
+ * admit a form the model would then fail to read.
+ */
+function liveClock(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  return M.parseClock(s) ? s : null;
 }
 
 /* ----------------------------------------------------------- LiveScore source */
@@ -193,6 +235,11 @@ function parseLiveScoreDate(json, { sport = 'soccer' } = {}) {
         home: { name: home, score: toInt(ev.Tr1) },
         away: { name: away, score: toInt(ev.Tr2) },
         status: { code: String(ev.Eps || ''), label: livescoreLabel(ev), live: true },
+        // LiveScore's `Eps` is the elapsed string for an in-play event ("34'",
+        // "90+1'") and a phase code ("HT", "FT") otherwise; `Esid` is its period
+        // enum. Both are read here, and neither is guessed at.
+        clock: liveClock(ev.Eps),
+        period: LIVESCORE_PERIODS[toInt(ev.Esid)] || 0,
         start_time: isoFromBasicStamp(ev.Esd),
         url: livescoreMatchUrl(stage, ev, sport),
       }));
@@ -297,6 +344,11 @@ function buildMatch(m) {
     home: m.home,
     away: m.away,
     status: m.status,
+    // The in-play clock and period when the source published them, otherwise
+    // null/0. FlashScore's list feed carries no per-minute clock, so a
+    // FlashScore-only row is honestly clock-less and models as a projection.
+    clock: m.clock || null,
+    period: Number(m.period) || 0,
     start_time: m.start_time || null,
     url: m.url || null,
     links: [{ source: m.source, source_name: name, url: m.url || null }],
@@ -348,6 +400,105 @@ function dedupeMatches(list) {
   return [...byKey.values()];
 }
 
+/* -------------------------------------------------------------- predictions */
+
+function predictionsEnabled() {
+  return Boolean(CFG.predictions && CFG.predictions.enabled !== false);
+}
+
+/** The source ids that reported a match, highest-primacy first. */
+function sourcesSeen(m) {
+  const ids = new Set((m.links || []).map(l => l && l.source).filter(Boolean));
+  if (m.source) ids.add(m.source);
+  const known = SOURCE_ORDER.filter(id => ids.has(id));
+  const others = [...ids].filter(id => !SOURCE_ORDER.includes(id)).sort();
+  return [...known, ...others];
+}
+
+/**
+ * Adapt one normalised match into the SAME Phase 3 LiveGame the rest of the
+ * engine consumes, so a listed game can be modelled with no bespoke maths here.
+ *
+ * The provider id is the part after the `<source>:` prefix `buildMatch` added,
+ * and `buildLiveGame` re-attaches it, giving back the identical `game_id`. The
+ * league carries only its DISPLAY name: we do not have the ESPN league id the
+ * ship gate keys on, so it is left null rather than filled with a name that
+ * would silently fail every allow-list check.
+ */
+function toLiveGame(match, { now = Date.now(), fetchedAt = now } = {}) {
+  const id = String((match && match.id) || '');
+  const providerId = id.includes(':') ? id.split(':').slice(1).join(':') : id;
+  return buildLiveGame({
+    candidate: {
+      source: match.source,
+      fixture: {
+        sport: match.sport,
+        fixture: {
+          id: providerId,
+          clock: match.clock || null,
+          period: Number(match.period) || 0,
+          status: 'live',
+          date: match.start_time || null,
+          timestamp: match.start_time ? Date.parse(match.start_time) : null,
+          venue: null,
+          rawStatus: (match.status && match.status.code) || null,
+        },
+        homeTeam: { name: match.home && match.home.name, score: match.home && match.home.score },
+        awayTeam: { name: match.away && match.away.name, score: match.away && match.away.score },
+        league: { id: null, name: match.league || null },
+      },
+    },
+    fetchedAt,
+    now,
+  });
+}
+
+/**
+ * The prediction slice of a full analysis payload. `probabilities`,
+ * `projection` and `uncertainty` are null whenever the ship gate withholds —
+ * exactly as they are on the analysis route — and `ship_gate.reason` says why.
+ */
+function summarizePrediction(analysis) {
+  return {
+    available: true,
+    display: analysis.display,
+    ship_gate: analysis.ship_gate,
+    model: analysis.model,
+    probabilities: analysis.probabilities,
+    probabilities_note: analysis.probabilities_note,
+    projection: analysis.projection,
+    uncertainty: analysis.uncertainty,
+    calibration: analysis.calibration,
+  };
+}
+
+/**
+ * Generate the live prediction for one listed match by reusing the engine end to
+ * end: the Phase 4 model computes the figure and the Phase 5 gate decides
+ * whether it may be shown. A failure to model one game never breaks the list —
+ * it degrades that game's prediction block alone.
+ *
+ * Only `buildAnalysis` is called, never `recordForwardTest`: the shadow/forward
+ * ledger is written by the scheduled SWEEP (one checkpoint per game per tick),
+ * so a burst of list polls must not append rows to it.
+ */
+function predictForMatch(match, now = Date.now()) {
+  if (!predictionsEnabled()) {
+    return { available: false, reason: 'live predictions are switched off' };
+  }
+  try {
+    const game = toLiveGame(match, { now, fetchedAt: now });
+    const analysis = buildAnalysis({ game, now, fetchedAt: now, tester: false });
+    return summarizePrediction(analysis);
+  } catch (err) {
+    return {
+      available: false,
+      reason: 'this game could not be modelled',
+      error: (err && err.message) || String(err),
+    };
+  }
+}
+
 /* ------------------------------------------------------------------- network */
 
 async function httpGet(url, { headers, timeoutMs, fetchImpl } = {}) {
@@ -376,6 +527,53 @@ function sourceHeaders(sourceId) {
 }
 
 /**
+ * Is this read failure worth another attempt?
+ *
+ * A network error or an aborted (timed-out) request is transient, so yes. For
+ * an HTTP status, 5xx and 429 are the server telling us to come back; every
+ * other 4xx is a request problem that will not fix itself, so it is reported
+ * straight away rather than hammered.
+ */
+function isRetryable(err) {
+  const msg = String((err && err.message) || err || '');
+  const m = msg.match(/HTTP (\d{3})/);
+  if (m) {
+    const status = Number(m[1]);
+    if (status === 429) return true;
+    return status >= 500;
+  }
+  return true;
+}
+
+/** Default backoff sleeper; tests inject their own so they never really wait. */
+function sleepDefault(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Run `fn`, retrying a retryable failure with exponential backoff up to
+ * `attempts` tries in total. The final failure is re-thrown so the caller's
+ * existing per-source error handling reports it.
+ */
+async function withRetry(fn, { attempts = 1, baseDelayMs = 0, maxDelayMs = 0, sleep = sleepDefault } = {}) {
+  const tries = Math.max(1, Number(attempts) || 1);
+  const base = Math.max(0, Number(baseDelayMs) || 0);
+  const cap = Number(maxDelayMs) > 0 ? Number(maxDelayMs) : base;
+  let lastErr = null;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= tries - 1 || !isRetryable(err)) throw err;
+      const delay = Math.min(cap, base * (2 ** attempt));
+      if (delay > 0) await sleep(delay);
+    }
+  }
+  throw lastErr;
+}
+
+/**
  * The URLs one source needs for one sport. LiveScore is read per UTC day and
  * both today and yesterday are read, so a game that kicked off before midnight
  * UTC and is still running is not missed. FlashScore's feed is a single
@@ -389,7 +587,7 @@ function sourceUrls(sourceId, sport, now) {
 }
 
 /** Fetch and parse one source across its configured sports, isolating failures. */
-async function loadSource(sourceId, { now, fetchImpl }) {
+async function loadSource(sourceId, { now, fetchImpl, sleepImpl } = {}) {
   const def = (CFG.sources && CFG.sources[sourceId]) || {};
   const sports = Array.isArray(def.sports) ? def.sports : [];
   const started = Date.now();
@@ -398,11 +596,19 @@ async function loadSource(sourceId, { now, fetchImpl }) {
   for (const sport of sports) {
     for (const url of sourceUrls(sourceId, sport, now)) {
       try {
-        const text = await httpGet(url, {
-          headers: sourceHeaders(sourceId),
-          timeoutMs: CFG.requestTimeoutMs,
-          fetchImpl,
-        });
+        const text = await withRetry(
+          () => httpGet(url, {
+            headers: sourceHeaders(sourceId),
+            timeoutMs: CFG.requestTimeoutMs,
+            fetchImpl,
+          }),
+          {
+            attempts: CFG.retry && CFG.retry.attempts,
+            baseDelayMs: CFG.retry && CFG.retry.baseDelayMs,
+            maxDelayMs: CFG.retry && CFG.retry.maxDelayMs,
+            sleep: sleepImpl,
+          },
+        );
         const parsed = sourceId === 'livescore'
           ? parseLiveScoreDate(JSON.parse(text), { sport, now })
           : parseFlashScoreFeed(text, { sport, now });
@@ -452,10 +658,13 @@ function sites() {
  * @param {string[]} [opts.sources]   restrict to these source ids
  * @param {number}   [opts.now]       injected clock (ms)
  * @param {Function} [opts.fetchImpl] injected fetch (tests)
+ * @param {Function} [opts.sleepImpl] injected backoff sleeper (tests)
  * @param {boolean}  [opts.force]     bypass the short cache
  * @returns {Promise<Object>} the payload the route serves
  */
-async function fetchLiveMatches({ sources = null, now = Date.now(), fetchImpl = null, force = false } = {}) {
+async function fetchLiveMatches({
+  sources = null, now = Date.now(), fetchImpl = null, sleepImpl = null, force = false,
+} = {}) {
   if (!force && cache.value && now - cache.at < CFG.cacheTtlMs) return cache.value;
 
   const requested = Array.isArray(sources) && sources.length
@@ -463,7 +672,7 @@ async function fetchLiveMatches({ sources = null, now = Date.now(), fetchImpl = 
     : enabledSourceIds();
   const ids = requested.length ? requested : enabledSourceIds();
 
-  const results = await Promise.all(ids.map(id => loadSource(id, { now, fetchImpl })));
+  const results = await Promise.all(ids.map(id => loadSource(id, { now, fetchImpl, sleepImpl })));
 
   const all = [];
   results.forEach(r => { all.push(...r.matches); });
@@ -474,7 +683,15 @@ async function fetchLiveMatches({ sources = null, now = Date.now(), fetchImpl = 
     const bt = b.start_time ? Date.parse(b.start_time) : 0;
     return at - bt;
   });
-  const matches = merged.slice(0, CFG.maxMatches);
+  const matches = merged.slice(0, CFG.maxMatches).map(m => ({
+    ...m,
+    // Which of the two sites reported this game — the cross-source consistency
+    // signal, so a caller can tell a both-sites row from a single-site one.
+    sources_seen: sourcesSeen(m),
+    // The live prediction, generated by the shared engine and gated by the
+    // shared ship gate. Absent figures are withheld, never zeroed.
+    prediction: predictForMatch(m, now),
+  }));
 
   const value = {
     enabled: isEnabled(),
@@ -566,6 +783,14 @@ module.exports = {
   parseLiveScoreDate,
   parseFlashScoreFeed,
   dedupeMatches,
+  toLiveGame,
+  predictForMatch,
+  predictionsEnabled,
+  summarizePrediction,
+  sourcesSeen,
+  withRetry,
+  isRetryable,
+  liveClock,
   validateLink: validateSiteLink,
   livescoreUrl,
   flashscoreUrl,
@@ -575,4 +800,5 @@ module.exports = {
   isoFromUnixSeconds,
   slugify,
   MAX_LINK_LENGTH,
+  LIVESCORE_PERIODS,
 };

@@ -442,3 +442,265 @@ describe('GET /api/live/capabilities', () => {
     expect(res.body.matches.sites.map(s => s.id)).toEqual(['flashscore', 'livescore']);
   });
 });
+
+/* ===================== in-play clock / period ====================== */
+
+describe('in-play clock and period', () => {
+  test('liveClock accepts a real clock form and rejects a phase code', () => {
+    expect(matchFeed.liveClock("67'")).toBe("67'");
+    expect(matchFeed.liveClock("90+1'")).toBe("90+1'");
+    expect(matchFeed.liveClock('7:24')).toBe('7:24');
+    expect(matchFeed.liveClock('HT')).toBeNull();
+    expect(matchFeed.liveClock('FT')).toBeNull();
+    expect(matchFeed.liveClock('')).toBeNull();
+    expect(matchFeed.liveClock(null)).toBeNull();
+  });
+
+  test('a LiveScore in-play event carries Eps as the clock and Esid as the period', () => {
+    const doc = {
+      Stages: [{
+        CompN: 'Serie A', CompD: 'Italy',
+        Events: [{
+          Eid: '7', Epr: 1, Eps: "67'", Esid: 3, Tr1: '1', Tr2: '0',
+          T1: [{ Nm: 'Inter' }], T2: [{ Nm: 'Milan' }],
+        }],
+      }],
+    };
+    const [m] = matchFeed.parseLiveScoreDate(doc, { sport: 'soccer' });
+    expect(m.clock).toBe("67'");
+    expect(m.period).toBe(2);
+  });
+
+  test('a phase code is not passed off as a clock', () => {
+    const doc = {
+      Stages: [{
+        CompN: 'Serie A',
+        Events: [{
+          Eid: '7', Epr: 1, Eps: 'HT', Esid: 10, Tr1: '1', Tr2: '0',
+          T1: [{ Nm: 'Inter' }], T2: [{ Nm: 'Milan' }],
+        }],
+      }],
+    };
+    const [m] = matchFeed.parseLiveScoreDate(doc, { sport: 'soccer' });
+    expect(m.clock).toBeNull();
+    expect(m.period).toBe(0);
+  });
+
+  test('a FlashScore block carries no clock and no period', () => {
+    const [m] = matchFeed.parseFlashScoreFeed(FLASHSCORE_TEXT, { sport: 'soccer' });
+    expect(m.clock).toBeNull();
+    expect(m.period).toBe(0);
+  });
+});
+
+/* ============================ predictions ========================== */
+
+describe('toLiveGame', () => {
+  test('rebuilds the shared LiveGame shape and re-attaches the provider id', () => {
+    const game = matchFeed.toLiveGame({
+      id: 'livescore:12345', source: 'livescore', sport: 'soccer', league: 'Premier League',
+      home: { name: 'Arsenal', score: 2 }, away: { name: 'Chelsea', score: 1 },
+      status: { code: '2H', label: '2nd half', live: true },
+      clock: "67'", period: 2, start_time: '2026-11-17T15:30:00.000Z',
+    });
+    expect(game.game_id).toBe('livescore:12345');
+    expect(game.sport).toBe('soccer');
+    expect(game.source).toBe('livescore');
+    expect(game.league).toEqual({ id: null, name: 'Premier League' });
+    expect(game.live.status).toBe('live');
+    expect(game.live.is_live).toBe(true);
+    expect(game.live.clock).toBe("67'");
+    expect(game.live.period).toBe(2);
+    expect(game.data_tier).toBe('full_live');
+    expect(game.manual).toBe(false);
+  });
+
+  test('a clock-less row is score_time_only — never dressed up as full live', () => {
+    const game = matchFeed.toLiveGame({
+      id: 'flashscore:abc', source: 'flashscore', sport: 'soccer', league: null,
+      home: { name: 'A', score: 0 }, away: { name: 'B', score: 0 },
+      status: { code: 'live', label: 'Live', live: true }, clock: null, period: 0,
+    });
+    expect(game.data_tier).toBe('score_time_only');
+  });
+});
+
+describe('predictForMatch', () => {
+  function soccerMatch(over = {}) {
+    return {
+      id: 'livescore:7', source: 'livescore', source_name: 'LiveScore',
+      sport: 'soccer', sport_label: 'Football', league: 'Serie A', country: 'Italy',
+      home: { name: 'Inter', score: 1 }, away: { name: 'Milan', score: 0 },
+      status: { code: '2H', label: '2nd half', live: true },
+      clock: "67'", period: 2, start_time: '2026-11-17T15:30:00.000Z',
+      url: 'https://www.livescore.com/en/7/',
+      links: [{ source: 'livescore', source_name: 'LiveScore', url: 'https://www.livescore.com/en/7/' }],
+      ...over,
+    };
+  }
+
+  test('a game with a real clock is modelled live, but the ship gate withholds the figure', () => {
+    const p = matchFeed.predictForMatch(soccerMatch());
+    expect(p.available).toBe(true);
+    // The model DID analyse the live state ...
+    expect(p.model.status).toBe('live');
+    // ... but the gate refuses to show it, with its own reason.
+    expect(p.ship_gate.decision).toBe('withheld');
+    expect(p.ship_gate.reason).toMatch(/validat/i);
+    expect(p.probabilities).toBeNull();
+    expect(p.projection).toBeNull();
+    expect(p.display.mode).toBe('context_only');
+    expect(p.display.shows_probabilities).toBe(false);
+  });
+
+  test('a clock-less game degrades to the pre-game projection (still withheld)', () => {
+    const p = matchFeed.predictForMatch(soccerMatch({ clock: null, period: 0 }));
+    expect(p.available).toBe(true);
+    expect(p.model.status).toBe('prior_only');
+    expect(p.probabilities).toBeNull();
+    expect(p.ship_gate.decision).toBe('withheld');
+  });
+
+  test('an unsupported sport is reported, never guessed', () => {
+    const p = matchFeed.predictForMatch(soccerMatch({ sport: 'tennis' }));
+    expect(p.available).toBe(true);
+    expect(p.model.status).toBe('unsupported');
+    expect(p.probabilities).toBeNull();
+  });
+
+  test('when predictions are switched off the block says so and computes nothing', () => {
+    const prev = CONFIG.live.matchFeed.predictions.enabled;
+    CONFIG.live.matchFeed.predictions.enabled = false;
+    try {
+      const p = matchFeed.predictForMatch(soccerMatch());
+      expect(p.available).toBe(false);
+      expect(p.reason).toMatch(/switched off/i);
+    } finally {
+      CONFIG.live.matchFeed.predictions.enabled = prev;
+    }
+  });
+
+  test('a match that cannot be adapted degrades to available:false, never throws', () => {
+    const p = matchFeed.predictForMatch(null);
+    expect(p.available).toBe(false);
+    expect(typeof p.error).toBe('string');
+  });
+});
+
+/* ========================= fetch + retry =========================== */
+
+describe('fetchLiveMatches with predictions + retry', () => {
+  const liveDoc = () => ({
+    Stages: [{
+      CompN: 'Serie A', CompD: 'Italy',
+      Events: [{
+        Eid: '7', Epr: 1, Eps: "67'", Esid: 3, Tr1: '1', Tr2: '0',
+        T1: [{ Nm: 'Inter' }], T2: [{ Nm: 'Milan' }],
+      }],
+    }],
+  });
+
+  /** A fetch stub that answers by URL and can fail the first `failures` calls. */
+  function stubFetch({ failures = 0 } = {}) {
+    let calls = 0;
+    const impl = async (url) => {
+      calls += 1;
+      if (calls <= failures) throw new Error('network down');
+      const body = url.includes('flashscore') ? FLASHSCORE_TEXT : JSON.stringify(liveDoc());
+      return { ok: true, status: 200, text: async () => body };
+    };
+    impl.calls = () => calls;
+    return impl;
+  }
+
+  function withSoccerOnly(fn) {
+    const key = 'livescore';
+    const prev = CONFIG.live.matchFeed.sources[key].sports;
+    CONFIG.live.matchFeed.sources[key].sports = ['soccer'];
+    return Promise.resolve().then(fn).finally(() => {
+      CONFIG.live.matchFeed.sources[key].sports = prev;
+    });
+  }
+
+  test('each listed match carries sources_seen and a gated prediction', async () => {
+    await withSoccerOnly(async () => {
+      const payload = await matchFeed.fetchLiveMatches({
+        sources: ['livescore'], fetchImpl: stubFetch(), force: true,
+      });
+      expect(payload.count).toBe(1);
+      const m = payload.matches[0];
+      expect(m.sources_seen).toEqual(['livescore']);
+      expect(m.prediction).toBeDefined();
+      expect(m.prediction.probabilities).toBeNull();
+      expect(m.prediction.ship_gate.decision).toBe('withheld');
+    });
+  });
+
+  test('a transient failure is retried and the read still succeeds', async () => {
+    const prevRetry = { ...CONFIG.live.matchFeed.retry };
+    CONFIG.live.matchFeed.retry = { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 };
+    try {
+      await withSoccerOnly(async () => {
+        const impl = stubFetch({ failures: 1 });
+        const payload = await matchFeed.fetchLiveMatches({
+          sources: ['livescore'], fetchImpl: impl, sleepImpl: async () => {}, force: true,
+        });
+        const src = payload.sources.find(s => s.id === 'livescore');
+        expect(src.ok).toBe(true);
+        expect(src.count).toBeGreaterThanOrEqual(1);
+        expect(impl.calls()).toBeGreaterThanOrEqual(2);
+      });
+    } finally {
+      CONFIG.live.matchFeed.retry = prevRetry;
+    }
+  });
+
+  test('a source that keeps failing is reported, not thrown', async () => {
+    const prevRetry = { ...CONFIG.live.matchFeed.retry };
+    CONFIG.live.matchFeed.retry = { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 };
+    try {
+      const impl = async () => { throw new Error('network down'); };
+      const payload = await matchFeed.fetchLiveMatches({
+        sources: ['livescore'], fetchImpl: impl, sleepImpl: async () => {}, force: true,
+      });
+      expect(payload.degraded).toBe(true);
+      expect(payload.matches).toHaveLength(0);
+      const src = payload.sources.find(s => s.id === 'livescore');
+      expect(src.ok).toBe(false);
+      expect(src.error).toBeTruthy();
+    } finally {
+      CONFIG.live.matchFeed.retry = prevRetry;
+    }
+  });
+});
+
+describe('withRetry', () => {
+  test('retries a retryable error then succeeds', async () => {
+    let n = 0;
+    const out = await matchFeed.withRetry(() => {
+      n += 1;
+      if (n < 3) throw new Error('HTTP 503');
+      return 'ok';
+    }, { attempts: 5, baseDelayMs: 0, maxDelayMs: 0, sleep: async () => {} });
+    expect(out).toBe('ok');
+    expect(n).toBe(3);
+  });
+
+  test('does not retry a 4xx (a request problem will not fix itself)', async () => {
+    let n = 0;
+    await expect(matchFeed.withRetry(() => {
+      n += 1;
+      throw new Error('HTTP 404');
+    }, { attempts: 5, baseDelayMs: 0, maxDelayMs: 0, sleep: async () => {} })).rejects.toThrow('404');
+    expect(n).toBe(1);
+  });
+
+  test('gives up after `attempts` tries and rethrows the last error', async () => {
+    let n = 0;
+    await expect(matchFeed.withRetry(() => {
+      n += 1;
+      throw new Error('HTTP 500');
+    }, { attempts: 3, baseDelayMs: 0, maxDelayMs: 0, sleep: async () => {} })).rejects.toThrow('500');
+    expect(n).toBe(3);
+  });
+});
