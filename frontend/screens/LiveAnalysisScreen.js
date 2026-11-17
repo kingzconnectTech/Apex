@@ -34,12 +34,16 @@ import {
   refreshSeconds,
   shouldPoll,
   candidateOptions,
+  isAutoResolvableLink,
 } from '../utils/liveAnalysisView';
 
 const SPORTS = [
   { key: 'soccer', label: 'Football' },
   { key: 'basketball', label: 'Basketball' },
 ];
+
+/** How long to wait after the last keystroke/paste before auto-resolving. */
+const AUTO_RESOLVE_DELAY_MS = 350;
 
 /**
  * Live Game Analysis from a pasted link.
@@ -63,6 +67,10 @@ export default function LiveAnalysisScreen({ navigation }) {
 
   const gameIdRef = useRef(null);
   const pollRef = useRef(null);
+  // Auto-resolve bookkeeping: a debounce timer and the last link we fired on, so
+  // a paste (or a link typed out) resolves once, without a button press.
+  const autoTimerRef = useRef(null);
+  const lastAutoRef = useRef(null);
 
   // Capabilities tell us whether the surface is on at all, and carry the
   // disclaimer the server wants shown.
@@ -71,6 +79,13 @@ export default function LiveAnalysisScreen({ navigation }) {
     fetchLiveCapabilities().then(caps => { if (alive) setCapabilities(caps); });
     return () => { alive = false; };
   }, []);
+
+  const disabled = capabilities && capabilities.unavailable === true;
+  const featureOff = capabilities && capabilities.enabled === false;
+  // Manual entry has its own switch: the form is hidden when it is off, without
+  // hiding the rest of the live surface.
+  const manualOff = capabilities && capabilities.manual_entry === false;
+  const candidates = candidateOptions(resolveResult);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -100,10 +115,19 @@ export default function LiveAnalysisScreen({ navigation }) {
     }, seconds * 1000);
   }, [applyAnalysis, stopPolling]);
 
-  useEffect(() => () => stopPolling(), [stopPolling]);
+  const clearAutoTimer = useCallback(() => {
+    if (autoTimerRef.current) {
+      clearTimeout(autoTimerRef.current);
+      autoTimerRef.current = null;
+    }
+  }, []);
 
-  const handleResolve = async () => {
-    const trimmed = link.trim();
+  // Cancel the debounce and stop polling when the screen goes away.
+  useEffect(() => () => { clearAutoTimer(); stopPolling(); }, [clearAutoTimer, stopPolling]);
+
+  /** Resolve one link: the shared body of the button and the auto-paste path. */
+  const resolveLinkValue = useCallback(async (trimmed) => {
+    clearAutoTimer();
     if (!trimmed) {
       setStatus(VIEW_STATE.ERROR);
       setMessage('Paste a bookmaker link first.');
@@ -126,7 +150,25 @@ export default function LiveAnalysisScreen({ navigation }) {
     if (classified.state === VIEW_STATE.NONE) setManualOpen(true);
     setStatus(classified.state);
     setMessage(classified.message);
-  };
+  }, [applyAnalysis, clearAutoTimer, startPolling, stopPolling]);
+
+  const handleResolve = () => resolveLinkValue(link.trim());
+
+  // Paste (or type out) a LiveScore / FlashScore link and it resolves on its own
+  // — no button press. Any other link still waits for the Analyse button.
+  const handleChangeLink = useCallback((text) => {
+    setLink(text);
+    clearAutoTimer();
+    if (disabled || featureOff) return;
+    const trimmed = text.trim();
+    if (!isAutoResolvableLink(trimmed)) return;
+    if (trimmed === lastAutoRef.current) return;
+    autoTimerRef.current = setTimeout(() => {
+      autoTimerRef.current = null;
+      lastAutoRef.current = trimmed;
+      resolveLinkValue(trimmed);
+    }, AUTO_RESOLVE_DELAY_MS);
+  }, [clearAutoTimer, disabled, featureOff, resolveLinkValue]);
 
   const handleSelectCandidate = async (gameId) => {
     stopPolling();
@@ -147,13 +189,6 @@ export default function LiveAnalysisScreen({ navigation }) {
     setStatus(classified.state);
     setMessage(classified.message);
   };
-
-  const disabled = capabilities && capabilities.unavailable === true;
-  const featureOff = capabilities && capabilities.enabled === false;
-  // Manual entry has its own switch: the form is hidden when it is off, without
-  // hiding the rest of the live surface.
-  const manualOff = capabilities && capabilities.manual_entry === false;
-  const candidates = candidateOptions(resolveResult);
 
   return (
     <KeyboardAvoidingView
@@ -176,7 +211,7 @@ export default function LiveAnalysisScreen({ navigation }) {
           <TextInput
             style={styles.input}
             value={link}
-            onChangeText={setLink}
+            onChangeText={handleChangeLink}
             placeholder="https://bookmaker.example/game/..."
             placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"

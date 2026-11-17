@@ -333,6 +333,11 @@ function parseFlashScoreFeed(text, { sport = 'soccer' } = {}) {
 /** Shape one source's match into the single contract the UI renders. */
 function buildMatch(m) {
   const name = SOURCE_NAMES[m.source] || m.source;
+  const id = String(m.id || '');
+  // The provider's own id (the part after the `<source>:` prefix), so a link the
+  // user pastes can be matched back to this row even when the row was won by the
+  // other source during de-duplication.
+  const providerId = id.includes(':') ? id.split(':').slice(1).join(':') : id;
   return {
     id: m.id,
     source: m.source,
@@ -351,7 +356,7 @@ function buildMatch(m) {
     period: Number(m.period) || 0,
     start_time: m.start_time || null,
     url: m.url || null,
-    links: [{ source: m.source, source_name: name, url: m.url || null }],
+    links: [{ source: m.source, source_name: name, source_id: providerId, url: m.url || null }],
   };
 }
 
@@ -719,6 +724,60 @@ async function fetchLiveMatches({
   return value;
 }
 
+/* --------------------------------------------------------- pasted match links */
+
+/**
+ * Does this listed match correspond to a given source + provider id? True when
+ * the row's own id is that match, or when any of its links carries the id — so a
+ * pasted FlashScore link finds a row that LiveScore won during de-duplication.
+ */
+function matchHasProviderId(m, source, providerId) {
+  if (!m) return false;
+  const wanted = String(providerId);
+  if (m.id === `${source}:${wanted}`) return true;
+  return (m.links || []).some((l) => {
+    if (!l || l.source !== source) return false;
+    if (l.source_id != null) return String(l.source_id) === wanted;
+    // Links built before `source_id` existed fall back to the URL text.
+    return typeof l.url === 'string' && l.url.includes(wanted);
+  });
+}
+
+/**
+ * Locate ONE match on the live feed by the source + id a pasted score-site link
+ * carries, so a pasted LiveScore / FlashScore link resolves against the SAME
+ * normalised list the user can see.
+ *
+ * Returns the match (with its `prediction` block) plus the health of the source
+ * that was asked, so the caller can tell "not in play" apart from "the site
+ * could not be reached". Never throws for an unknown source: it reports
+ * `reason: 'unknown_source'` so the route can fall through.
+ *
+ * @param {Object} args
+ * @param {string} args.source      'livescore' | 'flashscore'
+ * @param {string} args.providerId  the match id read from the pasted URL
+ */
+async function resolveFeedMatch({
+  source, providerId, now = Date.now(), fetchImpl = null, sleepImpl = null, force = false,
+} = {}) {
+  const wanted = String(providerId == null ? '' : providerId).trim();
+  const src = SOURCE_ORDER.includes(source) ? source : null;
+  if (!src || !wanted) {
+    return { match: null, source_ok: false, source_error: null, reason: 'unknown_source' };
+  }
+
+  const list = await fetchLiveMatches({ now, fetchImpl, sleepImpl, force });
+  const match = (list.matches || []).find(m => matchHasProviderId(m, src, wanted)) || null;
+  const health = (list.sources || []).find(s => s.id === src) || null;
+  return {
+    match,
+    source_ok: health ? Boolean(health.ok) : false,
+    source_error: health ? health.error : null,
+    source_count: health ? health.count : 0,
+    reason: null,
+  };
+}
+
 /* ------------------------------------------------------- user link validation */
 
 /**
@@ -775,6 +834,8 @@ function validateSiteLink(raw) {
 
 module.exports = {
   fetchLiveMatches,
+  resolveFeedMatch,
+  matchHasProviderId,
   validateSiteLink,
   sites,
   isEnabled,

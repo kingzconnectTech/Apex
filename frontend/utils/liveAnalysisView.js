@@ -349,6 +349,32 @@ function candidateOptions(resolveResult) {
   }));
 }
 
+/** The two score sites whose match pages the feed can answer for. */
+const SCORE_SITE_HOSTS = ['livescore.com', 'flashscore.com'];
+
+/**
+ * True when `text` is a complete http(s) link to a LiveScore / FlashScore page.
+ * This is the client-side half of "paste a link and it just shows": the screen
+ * auto-resolves such a link the moment it lands, so the user does not have to
+ * press a button. It is deliberately host-only — the SERVER owns what a valid
+ * match page is, so the client never second-guesses it, it only decides whether
+ * the link is worth asking about right away.
+ *
+ * A bare host (a link still being typed) is NOT auto-resolvable; a sub-domain
+ * that has a real path is.
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isAutoResolvableLink(text) {
+  if (typeof text !== 'string') return false;
+  const trimmed = text.trim();
+  const m = /^https?:\/\/([^/?#\s]+)\/.+$/i.exec(trimmed);
+  if (!m) return false;
+  const host = m[1].toLowerCase().replace(/:\d+$/, '');
+  return SCORE_SITE_HOSTS.some(h => host === h || host.endsWith('.' + h));
+}
+
 module.exports = {
   VIEW_STATE,
   MESSAGES,
@@ -378,4 +404,5 @@ module.exports = {
   refreshSeconds,
   shouldPoll,
   candidateOptions,
+  isAutoResolvableLink,
 };

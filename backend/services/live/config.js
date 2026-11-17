@@ -560,6 +560,10 @@ const CONFIG = {
     minTeamSlugLetters: 3,
     // Opaque match ids are stripped from the head/tail of the final path segment.
     idTokenMinDigits: 3,
+    // Confidence attached to a recognised LiveScore / FlashScore MATCH page: the
+    // game is identified from its own canonical match id, so no team-name
+    // guesswork is involved.
+    platformConfidence: 0.99,
     confidence: {
       byKind: {
         'query-explicit': 0.95,

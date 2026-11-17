@@ -20,6 +20,7 @@ const forwardTest = require('../services/live/forwardTest');
 const shadowHealth = require('../services/live/shadowHealth');
 const ledger = require('../services/live/ledger');
 const store = require('../services/live/store');
+const matchFeed = require('../services/live/matchFeed');
 const { createLiveRouter, DISCLAIMER } = require('../routes/live');
 
 const LINK = 'https://example.com/football/premier-league/manchester-united-vs-chelsea';
@@ -211,6 +212,98 @@ describe('POST /api/live/resolve', () => {
     } finally {
       CONFIG.live.enabled = original;
     }
+  });
+});
+
+describe('POST /api/live/resolve — score-site match pages', () => {
+  const LS_LINK =
+    'https://www.livescore.com/en/football/england/premier-league/group-stage/arsenal-chelsea/12345/';
+
+  function feedMatch(over = {}) {
+    return {
+      id: 'livescore:12345', source: 'livescore', source_name: 'LiveScore',
+      sport: 'soccer', sport_label: 'Football', league: 'Premier League', country: 'England',
+      home: { name: 'Arsenal', score: 2 }, away: { name: 'Chelsea', score: 1 },
+      status: { code: '2H', label: '2nd half', live: true },
+      clock: "67'", period: 2, start_time: '2026-11-17T15:30:00.000Z',
+      url: LS_LINK,
+      links: [{ source: 'livescore', source_name: 'LiveScore', source_id: '12345', url: LS_LINK }],
+      ...over,
+    };
+  }
+
+  afterEach(() => { jest.restoreAllMocks(); });
+
+  test('a live LiveScore link resolves to the feed match and an analysis', async () => {
+    const spy = jest.spyOn(matchFeed, 'resolveFeedMatch').mockResolvedValue({
+      match: feedMatch(), source_ok: true, source_error: null, reason: null,
+    });
+
+    const res = await request(buildApp()).post('/api/live/resolve').send({ link: LS_LINK });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('matched');
+    expect(res.body.parsed.source).toBe('livescore');
+    expect(res.body.parsed.provider_id).toBe('12345');
+    expect(res.body.game.game_id).toBe('livescore:12345');
+    expect(res.body.game.home.name).toBe('Arsenal');
+    expect(res.body.analysis.ship_gate.decision).toBe('withheld');
+    expect(res.body.analysis.probabilities).toBeNull();
+    expect(res.body.disclaimer).toBe(DISCLAIMER);
+    // The link's own id is what the feed was asked for.
+    expect(spy).toHaveBeenCalledWith({ source: 'livescore', providerId: '12345' });
+
+    // And the resolved game can now be polled without resolving again.
+    const poll = await request(buildApp()).get('/api/live/analysis/livescore:12345');
+    expect(poll.status).toBe(200);
+    expect(poll.body.game_id).toBe('livescore:12345');
+  });
+
+  test('a match that is not in play says so, and asks for manual entry', async () => {
+    jest.spyOn(matchFeed, 'resolveFeedMatch').mockResolvedValue({
+      match: null, source_ok: true, source_error: null, reason: null,
+    });
+    const res = await request(buildApp()).post('/api/live/resolve').send({ link: LS_LINK });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('none');
+    expect(res.body.reason).toMatch(/not in play/i);
+    expect(res.body.manual_entry_required).toBe(true);
+    expect(res.body.parsed.source).toBe('livescore');
+  });
+
+  test('an unreachable feed is reported as unreachable, not as a bad link', async () => {
+    jest.spyOn(matchFeed, 'resolveFeedMatch').mockResolvedValue({
+      match: null, source_ok: false, source_error: 'network down', reason: null,
+    });
+    const res = await request(buildApp()).post('/api/live/resolve').send({ link: LS_LINK });
+    expect(res.body.status).toBe('none');
+    expect(res.body.reason).toMatch(/could not be reached/i);
+  });
+
+  test('a FlashScore link is routed to the FlashScore feed', async () => {
+    const spy = jest.spyOn(matchFeed, 'resolveFeedMatch').mockResolvedValue({
+      match: feedMatch({ id: 'flashscore:abc123', source: 'flashscore', source_name: 'FlashScore' }),
+      source_ok: true, source_error: null, reason: null,
+    });
+    const res = await request(buildApp())
+      .post('/api/live/resolve').send({ link: 'https://www.flashscore.com/match/abc123/' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('matched');
+    expect(res.body.parsed.source).toBe('flashscore');
+    expect(res.body.parsed.provider_id).toBe('abc123');
+    expect(res.body.game.game_id).toBe('flashscore:abc123');
+    expect(spy).toHaveBeenCalledWith({ source: 'flashscore', providerId: 'abc123' });
+  });
+
+  test('a score-site link resolves even with no ESPN matcher configured', async () => {
+    // buildApp() passes matcher:null, so this proves the platform branch runs
+    // BEFORE the `!liveMatcher` 503.
+    jest.spyOn(matchFeed, 'resolveFeedMatch').mockResolvedValue({
+      match: feedMatch(), source_ok: true, source_error: null, reason: null,
+    });
+    const res = await request(buildApp()).post('/api/live/resolve').send({ link: LS_LINK });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('matched');
   });
 });
 

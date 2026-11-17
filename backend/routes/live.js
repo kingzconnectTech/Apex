@@ -78,6 +78,10 @@ function parsedSummary(parsed) {
     away_raw: parsed.away_raw || null,
     league_hint: parsed.league_hint || null,
     confidence: parsed.confidence != null ? parsed.confidence : null,
+    // Present only for a LiveScore / FlashScore match page: the site and the
+    // canonical match id the link was identified by.
+    source: parsed.source || null,
+    provider_id: parsed.provider_id || null,
     notes: parsed.notes || [],
   };
 }
@@ -404,6 +408,60 @@ function createLiveRouter({
         return res.json({
           status: 'none',
           reason: parsed.reason || 'The link could not be understood.',
+          parsed: parsedSummary(parsed),
+          manual_entry_required: true,
+          disclaimer: DISCLAIMER,
+        });
+      }
+
+      // A pasted LiveScore / FlashScore MATCH page is identified by its own
+      // canonical match id, and resolved against the SAME live feed the
+      // /live/matches list is built from — the ESPN sweep below cannot see these
+      // two sites. This runs before the matcher check, so a score-site link
+      // still works on a server with no ESPN provider configured.
+      if (parsed.platform && parsed.provider_id) {
+        const feed = await matchFeed.resolveFeedMatch({
+          source: parsed.platform, providerId: parsed.provider_id,
+        });
+
+        if (feed.match) {
+          const game = matchFeed.toLiveGame(feed.match, { now, fetchedAt: now });
+          rememberGame(game, now);
+          const contextView = await liveContext.getContext({ espn, game, now, traceId });
+          const analysis = putCachedAnalysis(
+            game.game_id,
+            buildAnalysis({ game, contextView, now, fetchedAt: now, tester }),
+            tester ? 'testers' : 'public',
+            now,
+          );
+          recordForwardTest({ game, analysis, now });
+          statsStore.record('matched', { sport: game.sport, league: null });
+          logger?.log('info', '[LIVE] resolve (score-site link)', {
+            traceId, status: 'matched', source: parsed.platform,
+          });
+          return res.json({
+            status: 'matched',
+            parsed: parsedSummary(parsed),
+            game,
+            analysis,
+            disclaimer: DISCLAIMER,
+          });
+        }
+
+        // Distinguish "that match is not in play" from "the site is down", so
+        // the UI can say which. Either way the honest answer is `none`.
+        const siteName = parsed.source_name
+          || (parsed.platform === 'livescore' ? 'LiveScore' : 'FlashScore');
+        const reason = feed.source_ok
+          ? `That ${siteName} match is not in play right now, so there is no live data for it yet.`
+          : `The ${siteName} live feed could not be reached just now. Please try again.`;
+        statsStore.record('parse_failed', { domain, sport });
+        logger?.log('info', '[LIVE] resolve (score-site link)', {
+          traceId, status: 'none', source: parsed.platform, source_ok: feed.source_ok,
+        });
+        return res.json({
+          status: 'none',
+          reason,
           parsed: parsedSummary(parsed),
           manual_entry_required: true,
           disclaimer: DISCLAIMER,

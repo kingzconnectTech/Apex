@@ -22,6 +22,7 @@ const {
   PATH_SEPARATORS,
   NOISE_SEGMENTS,
   DOMAIN_PATTERNS,
+  PLATFORM_PATTERNS,
   GENERIC_PATTERNS,
   SPORT_HINTS,
   AMERICAN_FOOTBALL_MARKERS,
@@ -113,6 +114,64 @@ function matchDomain(host) {
     if (host === domain || host.endsWith('.' + domain)) return pattern;
   }
   return null;
+}
+
+function matchPlatform(host) {
+  for (const [domain, pattern] of Object.entries(PLATFORM_PATTERNS)) {
+    if (host === domain || host.endsWith('.' + domain)) return pattern;
+  }
+  return null;
+}
+
+/**
+ * Recognise a LiveScore / FlashScore MATCH page and pull out the unique match
+ * id (and, when the URL states it, the sport). Returns null for any host we do
+ * not handle, or a URL of that host that carries no match id — so a listing
+ * page or a bare domain falls through to the generic team-name rules.
+ *
+ * No network access: the id is read from the URL text alone.
+ */
+function detectPlatform(url) {
+  const pattern = matchPlatform(url.hostname.toLowerCase());
+  if (!pattern) return null;
+
+  const pathname = url.pathname || '';
+  const hit = pathname.match(pattern.idPattern);
+  const providerId = hit && hit[1];
+  if (!providerId) return null;
+
+  let sport = null;
+  if (pattern.sportSegments) {
+    for (const seg of decodeSeg(pathname).toLowerCase().split('/')) {
+      if (pattern.sportSegments[seg]) { sport = pattern.sportSegments[seg]; break; }
+    }
+  }
+  return {
+    source: pattern.source,
+    name: pattern.name,
+    note: pattern.note || null,
+    provider_id: providerId,
+    sport,
+  };
+}
+
+/**
+ * Best-effort team slugs from a platform match URL, so the UI can echo the
+ * names the user pasted. The feed is the authority for names and scores; a slug
+ * that cannot be split honestly (a multi-token team name) yields null rather
+ * than a guess.
+ */
+function platformSlug(url, platform) {
+  if (platform.source !== 'livescore') return null;
+  const segs = decodeSeg(url.pathname || '').split('/').filter(Boolean);
+  const idAt = segs.indexOf(platform.provider_id);
+  const slug = idAt > 0 ? segs[idAt - 1] : null;
+  if (!slug) return null;
+  const hit = splitSegmentOnSeparator(slug, PATH_SEPARATORS);
+  if (hit) return hit;
+  const tokens = slug.split('-').filter(Boolean);
+  if (tokens.length !== 2) return null;
+  return { home_raw: tokens[0], away_raw: tokens[1] };
 }
 
 function pathSegments(url) {
@@ -342,6 +401,35 @@ function parseLink(input) {
       ]);
     }
 
+    // A LiveScore / FlashScore MATCH page carries a canonical match id, so the
+    // game is identified from that id rather than by guessing team names out of
+    // the path. This is the one case where team text is not required.
+    const platform = detectPlatform(url);
+    if (platform) {
+      const slug = platformSlug(url, platform);
+      const notes = [`Recognised a ${platform.name} match page.`];
+      if (platform.note) notes.push(platform.note);
+      notes.push(`Match id: ${platform.provider_id}.`);
+      return {
+        recognised: true,
+        sport: platform.sport && SUPPORTED_SPORTS.includes(platform.sport) ? platform.sport : null,
+        league_hint: null,
+        home_raw: slug ? slug.home_raw : null,
+        away_raw: slug ? slug.away_raw : null,
+        home_resolved: null,
+        away_resolved: null,
+        confidence: CFG.platformConfidence,
+        parse_notes: capNotes(notes),
+        matched_rule: `platform:${platform.source}`,
+        reason: null,
+        manual_entry_required: false,
+        platform: platform.source,
+        source: platform.source,
+        source_name: platform.name,
+        provider_id: platform.provider_id,
+      };
+    }
+
     const segments = pathSegments(url);
     const params = readParams(url);
     const hintText = normalizeKey(
@@ -487,6 +575,7 @@ module.exports = {
   detectSport,
   detectLeagueHint,
   resolveLeagueValue,
+  detectPlatform,
   paramKey,
   stripIdTokens,
   splitSegmentOnSeparator,

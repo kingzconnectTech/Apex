@@ -38,6 +38,7 @@ const {
   refreshSeconds,
   shouldPoll,
   candidateOptions,
+  isAutoResolvableLink,
 } = require('../utils/liveAnalysisView');
 
 /** An analysis payload from the backend, gate CLOSED (the current state). */
@@ -339,4 +340,31 @@ test('a missing context block degrades to empty sections rather than throwing', 
   assert.deepEqual(injuries(a), []);
   assert.equal(pregameContext(a), null);
   assert.equal(hasContext(a), false);
+});
+
+test('isAutoResolvableLink fires only for a complete LiveScore / FlashScore link', () => {
+  // The two score sites — the ones the live feed can answer for — auto-resolve.
+  assert.equal(isAutoResolvableLink(
+    'https://www.livescore.com/en/football/england/premier-league/group-stage/arsenal-chelsea/12345/',
+  ), true);
+  assert.equal(isAutoResolvableLink('https://www.flashscore.com/match/abc123/'), true);
+  // Sub-domains and http both count.
+  assert.equal(isAutoResolvableLink('https://m.flashscore.com/match/abc123/'), true);
+  assert.equal(isAutoResolvableLink('http://www.livescore.com/en/football/england/x/1/'), true);
+  // Surrounding whitespace from a paste is tolerated.
+  assert.equal(isAutoResolvableLink('  https://www.livescore.com/en/football/england/x/1/  '), true);
+
+  // A bare host with no path is a link still being typed, not a paste.
+  assert.equal(isAutoResolvableLink('https://www.livescore.com'), false);
+  assert.equal(isAutoResolvableLink('https://www.livescore.com/'), false);
+  // Other sites keep waiting for the Analyse button.
+  assert.equal(isAutoResolvableLink('https://example.com/football/a-vs-b'), false);
+  // Near-miss hosts that merely CONTAIN the name are not the site.
+  assert.equal(isAutoResolvableLink('https://notlivescore.com/en/x/1/'), false);
+  assert.equal(isAutoResolvableLink('https://livescore.com.evil.example/en/x/1/'), false);
+  // Junk and non-strings are refused, never thrown.
+  assert.equal(isAutoResolvableLink('not a link'), false);
+  assert.equal(isAutoResolvableLink(''), false);
+  assert.equal(isAutoResolvableLink(null), false);
+  assert.equal(isAutoResolvableLink(undefined), false);
 });

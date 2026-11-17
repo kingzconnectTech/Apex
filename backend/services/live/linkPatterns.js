@@ -80,6 +80,40 @@ const DOMAIN_PATTERNS = {
 };
 
 /**
+ * Score-site match pages. These two hosts are not bookmakers: they publish a
+ * CANONICAL match page whose URL carries a unique match id, and the server can
+ * read that same match from its own public feed (../matchFeed.js). So for these
+ * hosts the game is identified from the id, not guessed from team-name text.
+ *
+ * The parser executes these; each entry says how to pull the id and the sport
+ * out of the URL:
+ *   idPattern     regex over the PATHNAME; capture group 1 is the match id
+ *   sportSegments optional path-segment -> sport map (LiveScore encodes the
+ *                 sport in the path; FlashScore match URLs do not, so its sport
+ *                 is left to the feed)
+ *   name          display name used in reasons and notes
+ */
+const PLATFORM_PATTERNS = {
+  'livescore.com': {
+    source: 'livescore',
+    name: 'LiveScore',
+    note: 'LiveScore match page; the trailing numeric segment is the match id.',
+    // /en/<sport>/<country>/<competition>/<stage>/<home>-<away>/<id>/
+    idPattern: /\/(\d{4,})\/?$/,
+    sportSegments: { football: 'soccer', soccer: 'soccer', basketball: 'basketball' },
+  },
+  'flashscore.com': {
+    source: 'flashscore',
+    name: 'FlashScore',
+    note: 'FlashScore match page; the path segment after /match/ is the match id.',
+    // /match/<id>/...  (the id is alphanumeric)
+    idPattern: /\/match\/([A-Za-z0-9]{6,})(?:\/|$)/,
+    // FlashScore match URLs do not encode the sport; the feed supplies it.
+    sportSegments: null,
+  },
+};
+
+/**
  * Generic fallback rules, tried in order. The first rule that extracts a
  * plausible home/away pair wins, so the most reliable shape is listed first.
  */
@@ -203,6 +237,7 @@ module.exports = {
   PATH_SEPARATORS,
   NOISE_SEGMENTS,
   DOMAIN_PATTERNS,
+  PLATFORM_PATTERNS,
   GENERIC_PATTERNS,
   SPORT_HINTS,
   AMERICAN_FOOTBALL_MARKERS,

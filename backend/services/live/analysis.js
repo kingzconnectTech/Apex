@@ -28,6 +28,14 @@ const M = require('./liveMath');
 
 const CFG = CONFIG.liveApi;
 
+/**
+ * Game sources that belong to the external score-site feed (matchFeed.js)
+ * rather than the ESPN sweep. A game from one of these carries a
+ * `<source>:<provider_id>` game_id and is refreshed against the feed itself,
+ * never against the ESPN matcher.
+ */
+const FEED_SOURCES = new Set(['livescore', 'flashscore']);
+
 /** UI display modes. `context_only` means no model figure is shown at all. */
 const DISPLAY_MODES = {
   FULL: 'full',
@@ -476,13 +484,21 @@ async function analyseLiveGame({ gameId, matcher = null, espn = null, now = Date
   }
 
   let game = hit.game;
-  const canRefresh = matcher
+  const sourceId = String(gameId).includes(':')
+    ? String(gameId).split(':').slice(1).join(':')
+    : null;
+  const canRefreshEspn = matcher
     && typeof matcher.refreshCandidate === 'function'
     && game.source !== 'manual'
     && game.league && game.league.id;
+  // A LiveScore / FlashScore game carries no ESPN league id, so it cannot be
+  // refreshed through the ESPN matcher; it is refreshed from the score-site feed
+  // it came from, by its own match id.
+  const canRefreshFeed = !canRefreshEspn
+    && FEED_SOURCES.has(game.source)
+    && Boolean(sourceId);
 
-  if (canRefresh) {
-    const sourceId = String(gameId).includes(':') ? String(gameId).split(':').slice(1).join(':') : null;
+  if (canRefreshEspn) {
     const refreshed = await matcher.refreshCandidate({
       sport: game.sport,
       league: game.league.id,
@@ -504,6 +520,24 @@ async function analyseLiveGame({ gameId, matcher = null, espn = null, now = Date
     } else {
       // Provider had nothing this tick: keep the last known state but let the
       // freshness block tell the truth about how old it is.
+      game = { ...game, freshness: require('./liveGame').staleness(hit.cached_at, now) };
+    }
+  } else if (canRefreshFeed) {
+    // Re-read the SAME feed the /live/matches list is built from, by match id.
+    // A miss (match ended or the site is unreachable) keeps the last known state
+    // and only the freshness block reports how old it is.
+    // Lazily required: matchFeed depends on this module, so requiring it at load
+    // time would be a cycle.
+    const feed = require('./matchFeed');
+    const resolved = await feed.resolveFeedMatch({
+      source: game.source, providerId: sourceId, now,
+    });
+    if (resolved && resolved.match) {
+      game = feed.toLiveGame(resolved.match, { now, fetchedAt: now });
+      game.link = hit.game.link || null;
+      game.match = hit.game.match || game.match;
+      rememberGame(game, now);
+    } else {
       game = { ...game, freshness: require('./liveGame').staleness(hit.cached_at, now) };
     }
   }

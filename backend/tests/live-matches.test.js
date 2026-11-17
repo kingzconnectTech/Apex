@@ -704,3 +704,137 @@ describe('withRetry', () => {
     expect(n).toBe(3);
   });
 });
+
+/* =============== pasted score-site links (identify + resolve) ============= */
+
+describe('buildMatch links', () => {
+  test('each link carries the provider id read from the row id', () => {
+    const [m] = matchFeed.parseLiveScoreDate(livescoreDoc(), { sport: 'soccer' });
+    expect(m.links).toHaveLength(1);
+    expect(m.links[0].source).toBe('livescore');
+    expect(m.links[0].source_id).toBe('12345');
+  });
+
+  test('a FlashScore link carries its alphanumeric match id', () => {
+    const [m] = matchFeed.parseFlashScoreFeed(FLASHSCORE_TEXT, { sport: 'soccer' });
+    expect(m.links[0].source).toBe('flashscore');
+    expect(m.links[0].source_id).toBe('abc123');
+  });
+});
+
+describe('matchHasProviderId', () => {
+  test('matches the row id, or any carried link, for the right source only', () => {
+    const m = {
+      id: 'livescore:7',
+      links: [
+        { source: 'livescore', source_id: '7', url: 'https://www.livescore.com/en/7/' },
+        { source: 'flashscore', source_id: 'abc123', url: 'https://www.flashscore.com/match/abc123/' },
+      ],
+    };
+    expect(matchFeed.matchHasProviderId(m, 'livescore', '7')).toBe(true);
+    // A FlashScore link still finds a row LiveScore won during de-duplication.
+    expect(matchFeed.matchHasProviderId(m, 'flashscore', 'abc123')).toBe(true);
+    expect(matchFeed.matchHasProviderId(m, 'livescore', '8')).toBe(false);
+    expect(matchFeed.matchHasProviderId(m, 'flashscore', '7')).toBe(false);
+    expect(matchFeed.matchHasProviderId(null, 'livescore', '7')).toBe(false);
+  });
+
+  test('falls back to the URL text for a link built before source_id existed', () => {
+    const m = {
+      id: 'x',
+      links: [{ source: 'flashscore', url: 'https://www.flashscore.com/match/abc123/' }],
+    };
+    expect(matchFeed.matchHasProviderId(m, 'flashscore', 'abc123')).toBe(true);
+    expect(matchFeed.matchHasProviderId(m, 'flashscore', 'nope')).toBe(false);
+  });
+});
+
+describe('resolveFeedMatch', () => {
+  const liveDoc = (id = '7') => ({
+    Stages: [{
+      CompN: 'Serie A', CompD: 'Italy',
+      Events: [{
+        Eid: id, Epr: 1, Eps: "67'", Esid: 3, Tr1: '1', Tr2: '0',
+        T1: [{ Nm: 'Inter' }], T2: [{ Nm: 'Milan' }],
+      }],
+    }],
+  });
+
+  /** A fetch stub answering by URL; can fail the first `failures` calls. */
+  function stubFetch({ failures = 0, id = '7' } = {}) {
+    let calls = 0;
+    const impl = async (url) => {
+      calls += 1;
+      if (calls <= failures) throw new Error('network down');
+      const body = url.includes('flashscore') ? '' : JSON.stringify(liveDoc(id));
+      return { ok: true, status: 200, text: async () => body };
+    };
+    impl.calls = () => calls;
+    return impl;
+  }
+
+  /** Pin both sources to soccer for the duration of `fn`. */
+  function soccerOnly(fn) {
+    const prevLs = CONFIG.live.matchFeed.sources.livescore.sports;
+    const prevFs = CONFIG.live.matchFeed.sources.flashscore.sports;
+    CONFIG.live.matchFeed.sources.livescore.sports = ['soccer'];
+    CONFIG.live.matchFeed.sources.flashscore.sports = ['soccer'];
+    return Promise.resolve().then(fn).finally(() => {
+      CONFIG.live.matchFeed.sources.livescore.sports = prevLs;
+      CONFIG.live.matchFeed.sources.flashscore.sports = prevFs;
+    });
+  }
+
+  test('a pasted id resolves against the same feed the list is built from', async () => {
+    await soccerOnly(async () => {
+      const r = await matchFeed.resolveFeedMatch({
+        source: 'livescore', providerId: '7', fetchImpl: stubFetch(), force: true,
+      });
+      expect(r.match).not.toBeNull();
+      expect(r.match.id).toBe('livescore:7');
+      expect(r.source_ok).toBe(true);
+      expect(r.reason).toBeNull();
+    });
+  });
+
+  test('an id that is not in play is a miss, with the source still healthy', async () => {
+    await soccerOnly(async () => {
+      const r = await matchFeed.resolveFeedMatch({
+        source: 'livescore', providerId: '999', fetchImpl: stubFetch(), force: true,
+      });
+      expect(r.match).toBeNull();
+      expect(r.source_ok).toBe(true);
+    });
+  });
+
+  test('an unknown source is reported, never thrown', async () => {
+    const r = await matchFeed.resolveFeedMatch({ source: 'foo', providerId: '1' });
+    expect(r.match).toBeNull();
+    expect(r.source_ok).toBe(false);
+    expect(r.reason).toBe('unknown_source');
+  });
+
+  test('a missing id is reported as unknown_source', async () => {
+    const r = await matchFeed.resolveFeedMatch({ source: 'livescore', providerId: '' });
+    expect(r.reason).toBe('unknown_source');
+  });
+
+  test('an unreachable feed is reported as source not ok, and never throws', async () => {
+    const prevRetry = { ...CONFIG.live.matchFeed.retry };
+    CONFIG.live.matchFeed.retry = { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 };
+    try {
+      await soccerOnly(async () => {
+        const r = await matchFeed.resolveFeedMatch({
+          source: 'livescore', providerId: '7',
+          fetchImpl: async () => { throw new Error('network down'); },
+          sleepImpl: async () => {}, force: true,
+        });
+        expect(r.match).toBeNull();
+        expect(r.source_ok).toBe(false);
+        expect(r.source_error).toBeTruthy();
+      });
+    } finally {
+      CONFIG.live.matchFeed.retry = prevRetry;
+    }
+  });
+});

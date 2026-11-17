@@ -15,6 +15,7 @@ const {
   paramKey,
   stripIdTokens,
   splitSegmentOnSeparator,
+  detectPlatform,
 } = require('../services/live/linkParser');
 const {
   normalizeKey,
@@ -255,5 +256,105 @@ describe('Result shape contract', () => {
 
   test('parsing is pure — the same input twice gives the same result', () => {
     expect(parseLink(url)).toEqual(parseLink(url));
+  });
+});
+
+describe('Shape 6 — LiveScore / FlashScore match pages', () => {
+  const LIVESCORE =
+    'https://www.livescore.com/en/football/england/premier-league/group-stage/arsenal-chelsea/12345/';
+
+  test('a LiveScore match URL yields the site, the match id and the sport', () => {
+    const r = parseLink(LIVESCORE);
+    expect(r.recognised).toBe(true);
+    expect(r.matched_rule).toBe('platform:livescore');
+    expect(r.platform).toBe('livescore');
+    expect(r.source).toBe('livescore');
+    expect(r.source_name).toBe('LiveScore');
+    expect(r.provider_id).toBe('12345');
+    expect(r.sport).toBe('soccer');
+    // The slug is echoed best-effort; the feed is the authority for names/scores.
+    expect(r.home_raw).toBe('arsenal');
+    expect(r.away_raw).toBe('chelsea');
+    expect(r.confidence).toBeGreaterThanOrEqual(CFG.linkParser.tiers.high);
+    expect(r.manual_entry_required).toBe(false);
+  });
+
+  test('a LiveScore basketball match URL maps the sport to basketball', () => {
+    const r = parseLink(
+      'https://www.livescore.com/en/basketball/usa/nba/eastern-conference/heat-celtics/98765/',
+    );
+    expect(r.recognised).toBe(true);
+    expect(r.platform).toBe('livescore');
+    expect(r.provider_id).toBe('98765');
+    expect(r.sport).toBe('basketball');
+    expect(r.home_raw).toBe('heat');
+    expect(r.away_raw).toBe('celtics');
+  });
+
+  test('a multi-token slug that cannot be split honestly is left null', () => {
+    const r = parseLink(
+      'https://www.livescore.com/en/basketball/usa/nba/los-angeles-lakers-boston-celtics/4242/',
+    );
+    expect(r.recognised).toBe(true);
+    expect(r.provider_id).toBe('4242');
+    expect(r.sport).toBe('basketball');
+    expect(r.home_raw).toBeNull();
+    expect(r.away_raw).toBeNull();
+  });
+
+  test('a LiveScore sub-domain is still recognised', () => {
+    const r = parseLink(LIVESCORE.replace('www.', 'm.'));
+    expect(r.recognised).toBe(true);
+    expect(r.platform).toBe('livescore');
+    expect(r.provider_id).toBe('12345');
+  });
+
+  test('a FlashScore match URL yields the site and id (the feed supplies the sport)', () => {
+    const r = parseLink('https://www.flashscore.com/match/abc123/');
+    expect(r.recognised).toBe(true);
+    expect(r.matched_rule).toBe('platform:flashscore');
+    expect(r.platform).toBe('flashscore');
+    expect(r.source).toBe('flashscore');
+    expect(r.source_name).toBe('FlashScore');
+    expect(r.provider_id).toBe('abc123');
+    // FlashScore match URLs do not encode the sport; it is not guessed here.
+    expect(r.sport).toBeNull();
+    expect(r.manual_entry_required).toBe(false);
+  });
+
+  test('a FlashScore sub-domain is still recognised', () => {
+    const r = parseLink('https://m.flashscore.com/match/abc123/');
+    expect(r.platform).toBe('flashscore');
+    expect(r.provider_id).toBe('abc123');
+  });
+
+  test('a sport LiveScore does not carry is left unresolved, never guessed', () => {
+    const r = parseLink(
+      'https://www.livescore.com/en/tennis/atp/indian-wells/player-a-player-b/55555/',
+    );
+    expect(r.recognised).toBe(true);
+    expect(r.platform).toBe('livescore');
+    expect(r.provider_id).toBe('55555');
+    expect(r.sport).toBeNull();
+  });
+
+  test('a listing page (no match id) is NOT presented as a match page', () => {
+    const ls = parseLink('https://www.livescore.com/en/football/');
+    expect(ls.platform).toBeUndefined();
+    expect(ls.provider_id).toBeUndefined();
+
+    const fs = parseLink('https://www.flashscore.com/football/england/premier-league/');
+    expect(fs.platform).toBeUndefined();
+    expect(fs.provider_id).toBeUndefined();
+  });
+
+  test('detectPlatform reads the id from the URL text alone, and ignores other hosts', () => {
+    const p = detectPlatform(
+      new URL('https://www.livescore.com/en/football/england/x/arsenal-chelsea/5555/'),
+    );
+    expect(p.source).toBe('livescore');
+    expect(p.provider_id).toBe('5555');
+    expect(detectPlatform(new URL('https://www.livescore.com/en/football/'))).toBeNull();
+    expect(detectPlatform(new URL('https://example.com/match/abc123/'))).toBeNull();
   });
 });
