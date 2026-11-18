@@ -25,6 +25,8 @@ const liveCalibrator = require('./liveCalibrator');
 const forwardTest = require('./forwardTest');
 const shadowCandidates = require('./shadowCandidates');
 const liveContext = require('./liveContext');
+const liveStats = require('./liveStats');
+const liveMarkets = require('./liveMarkets');
 const M = require('./liveMath');
 
 const CFG = CONFIG.liveApi;
@@ -187,7 +189,7 @@ function projectionFor(model, game) {
  * stories, and no event we never received (we have no play-by-play here, so we
  * never claim "red card at 34'").
  */
-function buildFactors({ game, model, context = {} }) {
+function buildFactors({ game, model, context = {}, stats = null }) {
   const factors = [];
   const homeName = (game.home && game.home.name) || 'Home';
   const awayName = (game.away && game.away.name) || 'Away';
@@ -221,6 +223,20 @@ function buildFactors({ game, model, context = {} }) {
     });
   }
 
+  // Live-stat facts (only what the provider actually reported).
+  if (stats && stats.home && stats.away) {
+    const h = stats.home, a = stats.away;
+    const statFact = (label, hv, av, unit = '') => {
+      if (hv != null && av != null) {
+        factors.push({ label, detail: `${hv}${unit} - ${av}${unit} (${homeName} vs ${awayName}).` });
+      }
+    };
+    statFact('Possession', h.possession_pct, a.possession_pct, '%');
+    statFact('Shots', h.shots, a.shots);
+    statFact('Shots on target', h.shots_on_target, a.shots_on_target);
+    statFact('Corners', h.corners, a.corners);
+    statFact('Cards', h.cards_total, a.cards_total);
+  }
   const rc = context.red_cards;
   if (rc && (rc.home || rc.away)) {
     const down = rc.home ? homeName : awayName;
@@ -233,6 +249,74 @@ function buildFactors({ game, model, context = {} }) {
     model.notes.forEach(note => factors.push({ label: 'Model note', detail: note }));
   }
   return factors;
+}
+
+/* ------------------------------------------------------- explanations */
+
+/**
+ * "Why Apex predicts this" — short factual bullets generated ONLY from data
+ * that actually arrived (live stats, momentum deltas, model notes). Nothing
+ * is inferred beyond what the numbers say.
+ */
+function buildWhy({ game, model, stats = null, momentum = null }) {
+  const why = [];
+  const h = stats && stats.home;
+  const a = stats && stats.away;
+  const has = f => h && a && h[f] != null && a[f] != null;
+
+  if (has('shots_on_target')) {
+    if (h.shots_on_target > a.shots_on_target) why.push(`Home leads shots on target ${h.shots_on_target}-${a.shots_on_target}.`);
+    else if (a.shots_on_target > h.shots_on_target) why.push(`Away leads shots on target ${a.shots_on_target}-${h.shots_on_target}.`);
+  }
+  if (has('shots')) {
+    if (h.shots > a.shots) why.push(`Home has more total shots (${h.shots} vs ${a.shots}).`);
+    else if (a.shots > h.shots) why.push(`Away has more total shots (${a.shots} vs ${h.shots}).`);
+  }
+  if (has('corners') && Math.abs((h.corners || 0) - (a.corners || 0)) >= 3) {
+    why.push(`Corner pressure favours ${h.corners > a.corners ? 'home' : 'away'} (${h.corners || 0}-${a.corners || 0}).`);
+  }
+  if (has('possession_pct') && Math.abs((h.possession_pct || 0) - (a.possession_pct || 0)) >= 10) {
+    why.push(`Possession favours ${h.possession_pct > a.possession_pct ? 'home' : 'away'} (${h.possession_pct}% vs ${a.possession_pct}%).`);
+  }
+  const rcH = h && h.red_cards, rcA = a && a.red_cards;
+  if ((rcH || 0) > 0 || (rcA || 0) > 0) {
+    why.push(rcH > rcA ? 'Home is playing with fewer players (red card).' : 'Away is playing with fewer players (red card).');
+  }
+  if (momentum && momentum.pressure_share_home != null && momentum.window_minutes >= 3) {
+    const share = momentum.pressure_share_home;
+    if (share >= 0.65) why.push(`Recent attacking pressure favours home over the last ${momentum.window_minutes} min.`);
+    else if (share <= 0.35) why.push(`Recent attacking pressure favours away over the last ${momentum.window_minutes} min.`);
+  }
+  if (model && model.inputs && model.inputs.elapsed_minutes != null && model.inputs.elapsed_minutes >= 70) {
+    why.push(`Late in the match (${model.inputs.elapsed_minutes} min) — the current score carries most of the signal.`);
+  }
+  if (!why.length && model && Array.isArray(model.notes) && model.notes.length) {
+    model.notes.slice(0, 3).forEach(n => why.push(n));
+  }
+  if (!why.length) why.push('Only score and clock are available — no live statistics to explain the projection.');
+  return why.slice(0, 6);
+}
+
+/**
+ * Confidence in the MODEL's inputs — deliberately separate from the outcome
+ * probabilities and from data quality. High only when the tier is trusted,
+ * real stats exist, and enough of the match has been played.
+ */
+function confidenceFor({ game, model, dataQuality }) {
+  if (!model || (model.status !== 'live' && model.status !== 'prior_only')) {
+    return { level: 'unavailable', basis: 'No usable model output.' };
+  }
+  const tierW = { full_live: 1, score_time_only: 0.5, user_entered: 0.35 }[game.data_tier] || 0.3;
+  const statsScore = dataQuality ? Math.min(1, (dataQuality.stats_available || 0) / 12) : 0;
+  const elapsed = model.inputs && model.inputs.elapsed_minutes;
+  const timeScore = Number.isFinite(elapsed) ? Math.min(1, elapsed / 60) : 0;
+  const score = tierW * 0.4 + statsScore * 0.35 + timeScore * 0.25;
+  const level = score >= 0.7 ? 'high' : score >= 0.4 ? 'medium' : 'low';
+  return {
+    level,
+    score: M.round(score, 3),
+    basis: `tier ${game.data_tier || 'unknown'}, ${dataQuality ? dataQuality.stats_available : 0} stat pairs, ${Number.isFinite(elapsed) ? elapsed : '?'} min played`,
+  };
 }
 
 /* ------------------------------------------------------------------ payload */
@@ -259,9 +343,20 @@ function calibrateModel(model, sport) {
   const clip = CONFIG.live.probabilityClip || { lower: 0.01, upper: 0.99 };
   const homeWin = M.round(M.clamp(calibrated, clip.lower, clip.upper), 4);
   if (homeWin === raw) return model;
+  // Rebalance draw/away proportionally so the three outcomes still sum to 1 —
+  // overwriting away_win with (1 - homeWin) would silently erase the draw.
+  const p = model.probabilities;
+  const others = (p.draw || 0) + (p.away_win || 0);
+  const scale = others > 0 ? (1 - homeWin) / others : 1;
+  const draw = M.round((p.draw || 0) * scale, 4);
   return {
     ...model,
-    probabilities: { ...model.probabilities, home_win: homeWin, away_win: M.round(1 - homeWin, 4) },
+    probabilities: {
+      ...p,
+      home_win: homeWin,
+      draw,
+      away_win: M.round(1 - homeWin - draw, 4),
+    },
     calibration: calibrated !== raw
       ? { applied: true, market, raw_home_win: raw }
       : (model.calibration || null),
@@ -280,15 +375,22 @@ function calibrateModel(model, sport) {
  * @param {boolean} [args.tester] true when the caller is a recognised tester
  * @returns {Object} the analysis payload
  */
-function buildAnalysis({ game, context = {}, contextView = null, now = Date.now(), fetchedAt = null, tester = false } = {}) {
+function buildAnalysis({ game, context = {}, contextView = null, statsView = null, now = Date.now(), fetchedAt = null, tester = false } = {}) {
   if (!game || !game.sport) throw new Error('buildAnalysis requires a LiveGame.');
 
   const leagueId = (game.league && game.league.id) || null;
   const manual = Boolean(game.manual);
+  // Normalised live statistics (liveStats.js) ride inside `context` for the
+  // model; `statsView` is the same fetch kept for display/markets/quality.
+  const stats = statsView && statsView.stats ? statsView.stats : (context.stats || null);
+  const momentum = statsView && statsView.momentum ? statsView.momentum : (context.momentum || null);
+  const dataQuality = statsView && statsView.data_quality
+    ? statsView.data_quality
+    : liveStats.dataQuality(stats, { now });
   // A hand-typed game carries no provider events we are allowed to trust, so any
-  // supplied context (red cards, shots) is dropped before it can influence the
-  // model or the factors.
-  const usableContext = manual ? {} : context;
+  // supplied context (red cards, shots, stats) is dropped before it can
+  // influence the model or the factors.
+  const usableContext = manual ? {} : { ...context, stats, momentum };
   const ship = mayShipPick({ sport: game.sport, league: leagueId, manual, tester });
   const rawModel = predictLive({ game, context: usableContext });
   // Phase 9 — serve the validated calibrated column, not the raw one.
@@ -303,7 +405,14 @@ function buildAnalysis({ game, context = {}, contextView = null, now = Date.now(
   // Phase 11 — the recommended picks, derived from the SAME model output the
   // probabilities come from. Withheld (null) whenever the gate withholds the
   // figures, so a pick can never appear beside a withheld probability.
-  const picks = showFigures ? derivePicks({ sport: game.sport, model, game }) : null;
+  const markets = showFigures && game.sport === 'soccer' && modelUsable
+    ? liveMarkets.buildSoccerMarkets({
+        model, game, stats,
+        elapsed: model.inputs && model.inputs.elapsed_minutes,
+        remaining: model.inputs && model.inputs.remaining_minutes,
+      })
+    : null;
+  const picks = showFigures ? derivePicks({ sport: game.sport, model, game, markets }) : null;
 
   const payload = {
     game_id: game.game_id,
@@ -353,6 +462,16 @@ function buildAnalysis({ game, context = {}, contextView = null, now = Date.now(
     // Phase 11 — the recommended picks (match result + Over/Under), each with the
     // model's own probability as its confidence. Null when the gate withholds.
     picks,
+    // Live statistics (facts, never predictions) — shown whenever they exist,
+    // including context-only mode. Missing fields are null, never zero.
+    stats,
+    data_quality: dataQuality,
+    confidence: confidenceFor({ game, model, dataQuality }),
+    // Market states for soccer (available/won/lost/unavailable). Withheld
+    // entirely when the gate withholds probabilities.
+    markets,
+    // "Why Apex predicts this" — factual bullets from real stats only.
+    explanation: showFigures ? buildWhy({ game, model, stats, momentum }) : null,
     probabilities_note: showFigures
       ? (model.status === 'prior_only'
         ? 'No in-game clock, so this is the pre-game projection, not a live one.'
@@ -364,7 +483,7 @@ function buildAnalysis({ game, context = {}, contextView = null, now = Date.now(
     // client (and the forward log) can tell a calibrated column from a raw one.
     calibration: showFigures && model.calibration ? model.calibration : null,
 
-    factors: buildFactors({ game, model, context: usableContext }),
+    factors: buildFactors({ game, model, context: usableContext, stats }),
     refresh: {
       suggested_seconds: CFG.refresh.suggestedSeconds,
       min_seconds: CFG.refresh.minSeconds,
@@ -558,8 +677,11 @@ async function analyseLiveGame({ gameId, matcher = null, espn = null, now = Date
   // (key events + injuries); a failure leaves the pre-game block alone. Shared
   // across pollers by the liveContext cache and by the analysis cache below.
   const contextView = await liveContext.getContext({ espn, game, now, traceId });
+  // Live statistics (shots, possession, corners, cards) from the same cached
+  // ESPN summary read — shared cache means this costs no extra HTTP call.
+  const statsView = await liveStats.getLiveStats({ espn, game, now, traceId });
 
-  const analysis = buildAnalysis({ game, contextView, now, fetchedAt: now, tester });
+  const analysis = buildAnalysis({ game, contextView, statsView, now, fetchedAt: now, tester });
   recordForwardTest({ game, analysis, now });
   putCachedAnalysis(gameId, analysis, audience, now);
   return { analysis, cached: false };
@@ -576,6 +698,8 @@ module.exports = {
   recordForwardTest,
   settleForwardTest,
   calibrateModel,
+  buildWhy,
+  confidenceFor,
   rememberGame,
   recallGame,
   getCachedAnalysis,

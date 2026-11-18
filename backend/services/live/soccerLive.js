@@ -15,9 +15,12 @@
  * minute 0 equals the pre-game projection — there is no jump when play starts.
  * Every knob lives in ./config (liveModel.soccer). Nothing is invented here.
  *
- * Inputs are the Phase 3 LiveGame plus an OPTIONAL `context`
- * ({ red_cards: {home,away}, shots_on_target: {home,away} }). When the context
- * is missing the corresponding adjustment is skipped and said so in `notes`.
+ * Inputs are the Phase 3 LiveGame plus an OPTIONAL `context`:
+ *   - red_cards / shots_on_target (legacy flat fields),
+ *   - stats: normalised live statistics from liveStats.js ({home,away}),
+ *   - momentum: recorded stat deltas ({pressure_share_home, ...}).
+ * When a context piece is missing the corresponding adjustment is skipped
+ * and said so in `notes`.
  */
 
 const CONFIG = require('./config');
@@ -67,6 +70,60 @@ function applyShotPressure(lambdaHome, lambdaAway, sot) {
   const baseShare = lambdaHome / combined;
   const share = (1 - S.shotPressure.weight) * baseShare + S.shotPressure.weight * observed;
   return { home: combined * share, away: combined * (1 - share) };
+}
+
+/**
+ * Weighted attacking-threat share for one side from normalised live stats.
+ * Only components present for BOTH sides count; weights are renormalised over
+ * what is available so a missing stat never counts as zero.
+ */
+function threatShare(stats) {
+  const cfg = S.threatShare || {};
+  const comps = cfg.components || {};
+  if (!stats || !stats.home || !stats.away) return null;
+  const h = stats.home;
+  const a = stats.away;
+  let wSum = 0;
+  let hSum = 0;
+  for (const [field, w] of Object.entries(comps)) {
+    const hv = h[field];
+    const av = a[field];
+    if (hv == null || av == null || !(hv + av > 0)) continue;
+    wSum += w;
+    hSum += w * (hv / (hv + av));
+  }
+  const evidence = wSum > 0 ? Object.keys(comps).filter(f => h[f] != null && a[f] != null && (h[f] + a[f]) > 0).length : 0;
+  if (wSum <= 0 || evidence < (cfg.minEvidence || 0)) return null;
+  return { homeShare: hSum / wSum, evidence };
+}
+
+/**
+ * Blend the observed threat share into the base rate split, keeping the
+ * combined rate unchanged (redistribute, never inflate).
+ */
+function applyThreatShare(lambdaHome, lambdaAway, share, weight) {
+  const combined = lambdaHome + lambdaAway;
+  if (!(combined > 0)) return null;
+  const baseShare = lambdaHome / combined;
+  const blended = (1 - weight) * baseShare + weight * share.homeShare;
+  return { home: combined * blended, away: combined * (1 - blended) };
+}
+
+/**
+ * Scale both remaining-goal rates toward the observed scoring tempo.
+ * Returns a multiplier in [scaleMin, scaleMax] or 1 when there is not
+ * enough elapsed match / expected goals to judge.
+ */
+function tempoScale(elapsed, curHome, curAway) {
+  const cfg = S.tempo || {};
+  if (elapsed == null || elapsed < (cfg.minElapsed || 0)) return 1;
+  const expectedSoFar = (S.baseHomeGoals + S.baseAwayGoals) * (elapsed / S.regulationMinutes);
+  const actual = (curHome || 0) + (curAway || 0);
+  if (expectedSoFar < 1) return 1;
+  const ratio = actual / expectedSoFar;
+  const w = cfg.weight != null ? cfg.weight : 0.5;
+  const raw = 1 + (ratio - 1) * w;
+  return M.clamp(raw, cfg.scaleMin != null ? cfg.scaleMin : 0.8, cfg.scaleMax != null ? cfg.scaleMax : 1.3);
 }
 
 /**
@@ -158,8 +215,8 @@ function summarize(o) {
 /**
  * @param {Object} args
  * @param {Object} args.game    Phase 3 LiveGame
- * @param {Object} [args.context] { red_cards, shots_on_target } — ignored for a
- *   hand-typed game, which carries no provider events
+ * @param {Object} [args.context] { red_cards, shots_on_target, stats, momentum }
+ *   — ignored for a hand-typed game, which carries no provider events
  * @param {number} args.weight  live-vs-prior blend weight (from liveModel.tierWeight)
  * @param {boolean} [args.manual] true for a hand-typed game (wider bands)
  */
@@ -220,7 +277,14 @@ function predictSoccer({ game, context = {}, weight = 1, manual = false } = {}) 
   lambdaAway *= multAway;
   if (multHome !== 1 || multAway !== 1) notes.push('Score effect applied.');
 
-  const rc = context.red_cards;
+  // Normalised live stats (liveStats.js) supply the same signals under
+  // friendlier names; fall back to them when the legacy fields are absent.
+  const stats = context.stats || null;
+  const statSide = side => (stats && stats[side]) || {};
+  const rc = context.red_cards || {
+    home: statSide('home').red_cards,
+    away: statSide('away').red_cards,
+  };
   if (rc && (rc.home != null || rc.away != null)) {
     const shift = redCardShift(rc.home || 0, rc.away || 0);
     lambdaHome *= (1 - shift.own) * (1 + shift.opp);
@@ -230,7 +294,12 @@ function predictSoccer({ game, context = {}, weight = 1, manual = false } = {}) 
     notes.push('No red-card data available.');
   }
 
-  const sot = context.shots_on_target;
+  const sotSideH = statSide('home').shots_on_target;
+  const sotSideA = statSide('away').shots_on_target;
+  const sot = context.shots_on_target || {
+    home: sotSideH != null || sotSideA != null ? (sotSideH || 0) : null,
+    away: sotSideA != null || sotSideH != null ? (sotSideA || 0) : null,
+  };
   const pressured = applyShotPressure(lambdaHome, lambdaAway, sot);
   if (pressured) {
     lambdaHome = pressured.home;
@@ -238,6 +307,37 @@ function predictSoccer({ game, context = {}, weight = 1, manual = false } = {}) 
     notes.push('Shot-pressure adjustment applied.');
   } else {
     notes.push('No shot data (or too few shots) — shot pressure not applied.');
+  }
+
+  // --- Live-statistics adjustments (only when real stats arrived) ---
+  const share = threatShare(stats);
+  if (share) {
+    const tilted = applyThreatShare(lambdaHome, lambdaAway, share, S.threatShare.weight);
+    if (tilted) {
+      lambdaHome = tilted.home;
+      lambdaAway = tilted.away;
+      notes.push(`Live-stat threat share applied (${share.evidence} components).`);
+    }
+  }
+
+  const scale = tempoScale(elapsed, curHome, curAway);
+  if (scale !== 1) {
+    lambdaHome *= scale;
+    lambdaAway *= scale;
+    notes.push(scale > 1 ? 'Match is more open than baseline — goal rates scaled up.' : 'Match is tighter than baseline — goal rates scaled down.');
+  }
+
+  const mt = context.momentum;
+  if (mt && mt.pressure_share_home != null) {
+    const t = (mt.pressure_share_home - 0.5) * 2 * (S.momentum.maxTilt || 0.08);
+    if (Math.abs(t) >= 0.005) {
+      const combined = lambdaHome + lambdaAway;
+      const baseShareH = lambdaHome / combined;
+      const shareH = M.clamp(baseShareH + t / 2, 0.02, 0.98);
+      lambdaHome = combined * shareH;
+      lambdaAway = combined * (1 - shareH);
+      notes.push('Momentum adjustment applied from recorded stat deltas.');
+    }
   }
 
   const liveOutcome = outcomes(remainingMatrix(lambdaHome, lambdaAway), curHome, curAway);

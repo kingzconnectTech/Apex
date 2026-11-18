@@ -866,6 +866,26 @@ const CONFIG = {
       redCard: { rateShift: 0.35, maxShift: 0.6 },
       // Blend the observed shots-on-target share into the rate split.
       shotPressure: { weight: 0.25, minShots: 6 },
+
+      // --- Live-statistics engine (liveStats.js -> context.stats) ---
+      // Weighted threat share over available components; tilts the
+      // home/away rate split without changing the combined goal rate.
+      threatShare: {
+        weight: 0.35,
+        minEvidence: 4,
+        components: {
+          shots_on_target: 0.4,
+          shots: 0.2,
+          corners: 0.2,
+          possession_pct: 0.1,
+          passes: 0.1,
+        },
+      },
+      // Goal-rate calibration: scale both remaining-goal rates toward the
+      // observed scoring tempo once enough of the match has elapsed.
+      tempo: { minElapsed: 20, weight: 0.5, scaleMin: 0.8, scaleMax: 1.3 },
+      // Momentum tilt from recorded stat snapshots (bounded).
+      momentum: { maxTilt: 0.08 },
     },
 
     basketball: {

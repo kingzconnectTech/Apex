@@ -42,6 +42,7 @@ const policy = require('../services/live/policy');
 const liveCalibrator = require('../services/live/liveCalibrator');
 const forwardTest = require('../services/live/forwardTest');
 const liveContext = require('../services/live/liveContext');
+const liveStats = require('../services/live/liveStats');
 const stats = require('../services/live/stats');
 const shadowHealth = require('../services/live/shadowHealth');
 const ledger = require('../services/live/ledger');
@@ -428,9 +429,10 @@ function createLiveRouter({
           const game = matchFeed.toLiveGame(feed.match, { now, fetchedAt: now });
           rememberGame(game, now);
           const contextView = await liveContext.getContext({ espn, game, now, traceId });
+          const statsView = await liveStats.getLiveStats({ espn, game, now, traceId });
           const analysis = putCachedAnalysis(
             game.game_id,
-            buildAnalysis({ game, contextView, now, fetchedAt: now, tester }),
+            buildAnalysis({ game, contextView, statsView, now, fetchedAt: now, tester }),
             tester ? 'testers' : 'public',
             now,
           );
@@ -494,9 +496,10 @@ function createLiveRouter({
           // without waiting for the first poll. Best-effort: a failure degrades to
           // pre-game only.
           const contextView = await liveContext.getContext({ espn, game: games[0], now, traceId });
+          const statsView = await liveStats.getLiveStats({ espn, game: games[0], now, traceId });
           const analysis = putCachedAnalysis(
             games[0].game_id,
-            buildAnalysis({ game: games[0], contextView, now, fetchedAt: now, tester }),
+            buildAnalysis({ game: games[0], contextView, statsView, now, fetchedAt: now, tester }),
             tester ? 'testers' : 'public',
             now,
           );

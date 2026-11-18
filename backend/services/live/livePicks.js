@@ -92,9 +92,18 @@ function matchResultPick(sport, probabilities) {
 }
 
 /** The Over/Under pick against the fixed line, or null when it cannot be priced. */
-function overUnderPick(sport, model, game) {
+function overUnderPick(sport, model, game, markets) {
   const line = overUnderLine(sport, game);
   if (line == null) return null;
+
+  // A settled market is never a fresh pick: if the market layer reports the
+  // line already won or lost, there is nothing to recommend.
+  if (sport === 'soccer' && Array.isArray(markets)) {
+    const tag = String(line);
+    const settled = markets.some(m => m && m.market === 'total_goals' && m.line === line
+      && (m.status === 'won' || m.status === 'lost'));
+    if (settled) return null;
+  }
 
   let overProb = null;
   if (sport === 'soccer') {
@@ -128,13 +137,13 @@ function overUnderPick(sport, model, game) {
  * @param {Object} args.model  a predictLive output (status live | prior_only)
  * @param {Object} [args.game] the LiveGame
  */
-function derivePicks({ sport, model, game } = {}) {
+function derivePicks({ sport, model, game, markets } = {}) {
   if (!CFG || CFG.enabled === false) return null;
   if (!sport || !model) return null;
   if (model.status !== 'live' && model.status !== 'prior_only') return null;
 
   const matchResult = matchResultPick(sport, model.probabilities);
-  const overUnder = overUnderPick(sport, model, game || {});
+  const overUnder = overUnderPick(sport, model, game || {}, markets);
   if (!matchResult && !overUnder) return null;
   return { match_result: matchResult, over_under: overUnder };
 }

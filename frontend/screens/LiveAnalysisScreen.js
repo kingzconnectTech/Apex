@@ -25,6 +25,11 @@ import {
   pickRows,
   projectionRows,
   factors,
+  statRows,
+  marketRows,
+  explanationRows,
+  dataQualityLabel,
+  confidenceLabel,
   keyEvents,
   injuries,
   pregameContext,
@@ -324,6 +329,11 @@ function AnalysisCard({ analysis, styles, theme }) {
   const picks = pickRows(analysis);
   const projections = projectionRows(analysis);
   const facts = factors(analysis);
+  const statsCmp = statRows(analysis);
+  const markets = marketRows(analysis);
+  const why = explanationRows(analysis);
+  const dataQuality = dataQualityLabel(analysis);
+  const confidence = confidenceLabel(analysis);
   const withheld = withheldNotice(analysis);
   const age = stalenessLabel(analysis);
   const badge = manualBadge(analysis);
@@ -361,6 +371,12 @@ function AnalysisCard({ analysis, styles, theme }) {
         {tier ? <Text style={styles.tierText}>{tier}</Text> : null}
         {contextAge ? <Text style={styles.contextAgeText}>{contextAge}</Text> : null}
       </View>
+      {(dataQuality || confidence) ? (
+        <View style={styles.metaRow}>
+          {dataQuality ? <Text style={styles.contextAgeText}>{dataQuality}</Text> : null}
+          {confidence ? <Text style={styles.contextAgeText}>{confidence}</Text> : null}
+        </View>
+      ) : null}
 
       {picks.length > 0 ? (
         <View style={styles.section}>
@@ -446,6 +462,55 @@ function AnalysisCard({ analysis, styles, theme }) {
               <Text style={styles.rowLabel}>{line.label}</Text>
               <Text style={styles.rowValue}>{line.value}</Text>
             </View>
+          ))}
+        </View>
+      )}
+
+      {statsCmp.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Live statistics</Text>
+          {statsCmp.map(row => (
+            <View key={row.key} style={styles.statRow}>
+              <Text style={styles.statHome}>{row.home}</Text>
+              <View style={styles.statBarWrap}>
+                <View style={styles.statBarTrack}>
+                  {row.share != null ? (
+                    <View style={[styles.statBarFill, { width: `${Math.round(row.share * 100)}%` }]} />
+                  ) : null}
+                </View>
+                <Text style={styles.statLabel}>{row.label}</Text>
+              </View>
+              <Text style={styles.statAway}>{row.away}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {markets.rows.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Markets</Text>
+          {markets.rows.map(row => (
+            <View key={row.key} style={styles.pickRow}>
+              <View style={styles.pickInfo}>
+                <Text style={styles.pickMarket}>{row.market}</Text>
+                <Text style={styles.pickSelection}>{row.label}</Text>
+              </View>
+              <Text style={styles.pickConfidence}>{row.display}</Text>
+            </View>
+          ))}
+          {markets.settledCount > 0 ? (
+            <Text style={styles.marketSettled}>
+              {markets.settledCount} market{markets.settledCount === 1 ? '' : 's'} already decided — not shown as picks.
+            </Text>
+          ) : null}
+        </View>
+      )}
+
+      {why.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Why Apex predicts this</Text>
+          {why.map((w, i) => (
+            <Text key={`why-${i}`} style={styles.whyText}>• {w}</Text>
           ))}
         </View>
       )}
@@ -756,6 +821,57 @@ const createStyles = (theme) => StyleSheet.create({
     fontSize: getResponsiveFontSize(11),
     marginTop: verticalScale(8),
     lineHeight: getResponsiveFontSize(16),
+  },
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: verticalScale(4),
+    borderTopWidth: 1,
+    borderTopColor: theme.border,
+  },
+  statHome: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(13),
+    fontWeight: '700',
+    width: horizontalScale(56),
+    textAlign: 'right',
+  },
+  statAway: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(13),
+    fontWeight: '700',
+    width: horizontalScale(56),
+    textAlign: 'left',
+  },
+  statBarWrap: { flex: 1, alignItems: 'center', paddingHorizontal: horizontalScale(8) },
+  statBarTrack: {
+    width: '100%',
+    height: moderateScale(5),
+    borderRadius: moderateScale(3),
+    backgroundColor: theme.border,
+    overflow: 'hidden',
+  },
+  statBarFill: {
+    height: '100%',
+    backgroundColor: theme.accent,
+    borderRadius: moderateScale(3),
+  },
+  statLabel: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(10),
+    marginTop: verticalScale(2),
+  },
+  marketSettled: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(11),
+    marginTop: verticalScale(8),
+    fontStyle: 'italic',
+  },
+  whyText: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(12),
+    marginBottom: verticalScale(4),
+    lineHeight: getResponsiveFontSize(17),
   },
   factorRow: { marginBottom: verticalScale(8) },
   factorLabel: { color: theme.accent, fontSize: getResponsiveFontSize(12), fontWeight: '600' },

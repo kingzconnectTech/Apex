@@ -256,6 +256,36 @@ async function getContext({ espn = null, game = null, now = Date.now(), traceId 
   return buildContext({ game, summary, fetchedAt: now, now });
 }
 
+
+/**
+ * Cached ESPN match-summary read for the stats pipeline (liveStats.js).
+ * Returns `{ summary, fetched_at }` or null when no provider/event is
+ * resolvable or the read fails. Shares the same short-TTL cache as
+ * getContext, so the context view and the stats read cost one HTTP call.
+ */
+async function getSummary({ espn = null, game = null, now = Date.now(), traceId = null } = {}) {
+  if (!espn || !game || !game.game_id || game.manual) return null;
+  const league = game.league && game.league.id;
+  const eventId = eventIdOf(game.game_id);
+  if (!league || !eventId) return null;
+
+  const hit = cacheGet(game.game_id, now);
+  if (hit) return { summary: hit.summary, fetched_at: hit.fetched_at };
+
+  let summary = null;
+  try {
+    summary = await espn.getMatchSummary(game.sport, league, eventId, {
+      traceId,
+      ttl: CFG.contextTtlMs,
+    });
+  } catch (err) {
+    summary = null;
+  }
+  if (!summary) return null;
+  cachePut(game.game_id, summary, now);
+  return { summary, fetched_at: now };
+}
+
 /** Test/dev helper — clear the in-process summary cache. */
 function resetCache() {
   cache.clear();
@@ -263,6 +293,7 @@ function resetCache() {
 
 module.exports = {
   getContext,
+  getSummary,
   buildContext,
   pregameContext,
   extractKeyEvents,

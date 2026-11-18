@@ -280,6 +280,135 @@ function projectionRows(analysis) {
   return rows;
 }
 
+/* --------------------------------------------------------- live statistics */
+
+/** Fields worth a comparison row, in display order. */
+const STAT_ROWS = [
+  ['possession_pct', 'Possession', '%'],
+  ['shots', 'Shots', ''],
+  ['shots_on_target', 'Shots on target', ''],
+  ['shots_off_target', 'Shots off target', ''],
+  ['corners', 'Corners', ''],
+  ['passes', 'Passes', ''],
+  ['tackles', 'Tackles', ''],
+  ['interceptions', 'Interceptions', ''],
+  ['saves', 'Saves', ''],
+  ['yellow_cards', 'Yellow cards', ''],
+  ['red_cards', 'Red cards', ''],
+  ['fouls', 'Fouls', ''],
+];
+
+function fmtStat(v, unit) {
+  if (v == null || !Number.isFinite(v)) return '—';
+  return `${v}${unit || ''}`;
+}
+
+/**
+ * Live-stat comparison rows (home vs away). A missing value renders as '—',
+ * never 0. `share` is the home fraction of the pair (0..1) for the bar, or
+ * null when the pair cannot be compared.
+ */
+function statRows(analysis) {
+  const stats = analysis && analysis.stats;
+  if (!stats || !stats.home || !stats.away) return [];
+  const h = stats.home, a = stats.away;
+  const rows = [];
+  for (const [field, label, unit] of STAT_ROWS) {
+    const hv = h[field], av = a[field];
+    if (hv == null && av == null) continue;
+    const total = (hv || 0) + (av || 0);
+    rows.push({
+      key: field,
+      label,
+      home: fmtStat(hv, unit),
+      away: fmtStat(av, unit),
+      share: total > 0 ? (hv || 0) / total : null,
+    });
+  }
+  return rows;
+}
+
+/* ------------------------------------------------------------- markets */
+
+const MARKET_LABELS = {
+  total_goals: 'Goals',
+  team_goals: 'Team goals',
+  double_chance: 'Double chance',
+  corners: 'Corners',
+  team_corners: 'Team corners',
+  cards: 'Cards',
+  team_cards: 'Team cards',
+};
+
+function marketSideLabel(m, home, away) {
+  const sideName = s => (s === 'home' ? home : s === 'away' ? away : null);
+  switch (m.market) {
+    case 'total_goals': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} goals`;
+    case 'team_goals': return `${sideName(m.side) || m.side} to score`;
+    case 'double_chance': return `Double chance ${m.side}`;
+    case 'corners': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} corners`;
+    case 'team_corners': return `${sideName(m.side) || m.side} over ${m.line} corners`;
+    case 'cards': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} cards`;
+    case 'team_cards': return `${sideName(m.side) || m.side} over ${m.line} cards`;
+    default: return m.side || m.market;
+  }
+}
+
+/**
+ * Available prediction markets, grouped to one row per (market, line) — the
+ * side the model favours. Settled markets (won/lost) are counted, never shown
+ * as predictions. Returns { rows, settledCount }.
+ */
+function marketRows(analysis) {
+  const markets = analysis && analysis.markets;
+  if (!Array.isArray(markets)) return { rows: [], settledCount: 0 };
+  const { home, away } = teamNames(analysis);
+  let settledCount = 0;
+  const groups = new Map();
+  for (const m of markets) {
+    if (!m) continue;
+    if (m.status === 'won' || m.status === 'lost') { settledCount += 1; continue; }
+    if (m.status !== 'available' || !Number.isFinite(m.probability)) continue;
+    const gk = `${m.market}|${m.line == null ? '' : m.line}`;
+    const cur = groups.get(gk);
+    if (!cur || m.probability > cur.probability) {
+      groups.set(gk, { ...m });
+    }
+  }
+  const rows = [...groups.values()]
+    .sort((x, y) => y.probability - x.probability)
+    .slice(0, 12)
+    .map(m => ({
+      key: m.key,
+      market: MARKET_LABELS[m.market] || m.market,
+      label: marketSideLabel(m, home, away),
+      display: formatPercent(m.probability),
+    }));
+  return { rows, settledCount };
+}
+
+/** "Why Apex predicts this" bullets, or []. */
+function explanationRows(analysis) {
+  const list = analysis && analysis.explanation;
+  return Array.isArray(list) ? list.filter(x => typeof x === 'string' && x) : [];
+}
+
+/** Data-quality label, e.g. "Live stats: 12/19 fields". */
+function dataQualityLabel(analysis) {
+  const dq = analysis && analysis.data_quality;
+  if (!dq) return null;
+  if (dq.level === 'none' || !dq.stats_available) return 'Score and clock only — no live statistics';
+  const stale = dq.stale ? ' (may be stale)' : '';
+  return `Live stats: ${dq.stats_available}/${dq.stats_tracked} fields${stale}`;
+}
+
+/** Confidence label for the model inputs, or null. */
+function confidenceLabel(analysis) {
+  const c = analysis && analysis.confidence;
+  if (!c || !c.level || c.level === 'unavailable') return null;
+  return `Model confidence: ${c.level}`;
+}
+
 /** Factual bullets the backend supplied (never generated here). */
 function factors(analysis) {
   return Array.isArray(analysis && analysis.factors) ? analysis.factors : [];
@@ -456,6 +585,11 @@ module.exports = {
   pickRows,
   projectionRows,
   factors,
+  statRows,
+  marketRows,
+  explanationRows,
+  dataQualityLabel,
+  confidenceLabel,
   contextBlock,
   keyEvents,
   injuries,
