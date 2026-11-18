@@ -314,13 +314,20 @@ describe('Phase 11 — the live picks (match result + Over/Under)', () => {
     });
   });
 
-  test('a shipped basketball game prices the O/U against the league line', () => {
+  test('a shipped basketball game prices totals across the evaluation lines', () => {
     withShippedLeague('basketball', 'nba', () => {
       const a = buildAnalysis({ game: basketball() });
       expect(a.display.shows_probabilities).toBe(true);
       expect(a.picks.match_result.market).toBe('moneyline');
-      expect(a.picks.over_under.line).toBe(234.5);
-      expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(0.5);
+      // Totals are priced on every evaluation line in both directions, and a
+      // pick only exists when a side clears the 75% bar — never a ~51% coin flip.
+      expect(Array.isArray(a.markets)).toBe(true);
+      const totals = a.markets.filter(m => m.market === 'total_points');
+      expect(totals.length).toBeGreaterThan(0);
+      if (a.picks.over_under) {
+        expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(0.75);
+        expect([209.5, 214.5, 219.5, 224.5, 229.5, 234.5]).toContain(a.picks.over_under.line);
+      }
     });
   });
 

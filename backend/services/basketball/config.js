@@ -277,6 +277,9 @@ const CONFIG = {
     // Implied probability used in place of bookmaker de-vigged fair probability.
     // 0.5 means no edge exists a priori; model must earn its probability.
     impliedProb: 0.50,
+    // Evaluation lines: every supported total is priced Over AND Under off the
+    // projection so consumers can see the full curve, not just one pick.
+    totalsEvaluationLines: [209.5, 214.5, 219.5, 224.5, 229.5, 234.5],
     // No data quality threshold - show all model line predictions
     minDataQuality: 0.0,
   },

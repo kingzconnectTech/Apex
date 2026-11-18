@@ -332,6 +332,7 @@ function statRows(analysis) {
 
 const MARKET_LABELS = {
   total_goals: 'Goals',
+  total_points: 'Total points',
   team_goals: 'Team goals',
   double_chance: 'Double chance',
   corners: 'Corners',
@@ -344,6 +345,7 @@ function marketSideLabel(m, home, away) {
   const sideName = s => (s === 'home' ? home : s === 'away' ? away : null);
   switch (m.market) {
     case 'total_goals': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} goals`;
+    case 'total_points': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} points`;
     case 'team_goals': return `${sideName(m.side) || m.side} to score`;
     case 'double_chance': return `Double chance ${m.side}`;
     case 'corners': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} corners`;

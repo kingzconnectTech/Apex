@@ -20,6 +20,7 @@
 const CONFIG = require('./config');
 const M = require('./liveMath');
 const { leagueParams } = require('./basketballLive');
+const liveMarkets = require('./liveMarkets');
 
 const CFG = CONFIG.live.pickMarkets;
 
@@ -128,6 +129,38 @@ function overUnderPick(sport, model, game, markets) {
 }
 
 /**
+ * Basketball total-points pick: price EVERY configured evaluation line (Over
+ * AND Under) off the model's expected final total and sigma, drop lines the
+ * current score has already decided, then take the strongest remaining side —
+ * but only when its probability clears the configured basketball bar
+ * (pickMarkets.overUnder.basketball.minPickProbability, 0.75). Below the bar
+ * there is no pick: a ~51% coin flip is not a prediction.
+ *
+ * This replaces the old behaviour of pinning one fixed line and reporting
+ * whichever side sat a hair above 50% — the source of the constant
+ * "Over 219.5" reads on games the model had no real read on.
+ */
+function basketballTotalsPick(model, game, markets) {
+  const cfg = (CFG.overUnder && CFG.overUnder.basketball) || {};
+  const minProb = Number.isFinite(cfg.minPickProbability) ? cfg.minPickProbability : 0.75;
+  const list = Array.isArray(markets) && markets.length
+    ? markets
+    : liveMarkets.buildBasketballTotalMarkets({ model, game });
+  const best = liveMarkets.bestBasketballTotal(list);
+  if (!best || best.probability < minProb) return null;
+  const overEntry = list.find(m => m.market === 'total_points' && m.line === best.line && m.side === 'over');
+  const underEntry = list.find(m => m.market === 'total_points' && m.line === best.line && m.side === 'under');
+  return {
+    market: 'over_under',
+    line: best.line,
+    selection: best.side,
+    probability: best.probability,
+    over: overEntry ? overEntry.probability : null,
+    under: underEntry ? underEntry.probability : null,
+  };
+}
+
+/**
  * Derive the picks for one live model output. Returns `{ match_result, over_under }`
  * — each key is an object or null (a null means that market could not be priced,
  * never a placeholder). Returns null overall when the model is not usable.
@@ -143,9 +176,11 @@ function derivePicks({ sport, model, game, markets } = {}) {
   if (model.status !== 'live' && model.status !== 'prior_only') return null;
 
   const matchResult = matchResultPick(sport, model.probabilities);
-  const overUnder = overUnderPick(sport, model, game || {}, markets);
+  const overUnder = sport === 'basketball'
+    ? basketballTotalsPick(model, game || {}, markets)
+    : overUnderPick(sport, model, game || {}, markets);
   if (!matchResult && !overUnder) return null;
   return { match_result: matchResult, over_under: overUnder };
 }
 
-module.exports = { derivePicks, overUnderLine, matchResultPick, overUnderPick, soccerOver, basketballOver };
+module.exports = { derivePicks, overUnderLine, matchResultPick, overUnderPick, basketballTotalsPick, soccerOver, basketballOver };

@@ -233,6 +233,58 @@ function cardMarkets(stats, elapsed, remaining) {
   return out;
 }
 
+/* ------------------------------------------- basketball total points */
+
+/** P(final total > line) for a normal total (half-point line, no push). */
+function probOverNormal(mean, sigma, line) {
+  if (!Number.isFinite(mean) || !Number.isFinite(sigma) || !(sigma > 0) || !Number.isFinite(line)) return null;
+  return M.clamp(1 - M.normalCdf((line - mean) / sigma), 0.0001, 0.9999);
+}
+
+/**
+ * Basketball total-points markets. Every configured line is priced
+ * independently — Over AND Under — from the model's expected final total and
+ * sigma. Lines already decided by the current score are marked won/lost and
+ * are never presented as fresh predictions.
+ *
+ * @param {Object} args
+ * @param {Object} args.model  predictLive output (expected.total, sigma.total)
+ * @param {Object} args.game   LiveGame (current score)
+ * @param {number[]} [args.lines] evaluation lines (defaults to config)
+ */
+function buildBasketballTotalMarkets({ model, game, lines = null } = {}) {
+  const cfg = (CONFIG.live.pickMarkets.overUnder || {}).basketball || {};
+  const evalLines = Array.isArray(lines) && lines.length ? lines : (cfg.evaluationLines || []);
+  const mean = model && model.expected ? model.expected.total : null;
+  const sigma = model && model.sigma ? model.sigma.total : null;
+  const curTotal = ((game && game.home && game.home.score) || 0) + ((game && game.away && game.away.score) || 0);
+
+  const out = [];
+  for (const line of evalLines) {
+    const overProb = probOverNormal(mean, sigma, line);
+    if (overProb == null) {
+      out.push(entry(`bball_over_${line}`, 'total_points', line, 'over', null, STATUS.UNAVAILABLE));
+      out.push(entry(`bball_under_${line}`, 'total_points', line, 'under', null, STATUS.UNAVAILABLE));
+      continue;
+    }
+    const st = overUnderStatus(curTotal, line);
+    out.push(entry(`bball_over_${line}`, 'total_points', line, 'over', overProb, st.over));
+    out.push(entry(`bball_under_${line}`, 'total_points', line, 'under', 1 - overProb, st.under));
+  }
+  return out;
+}
+
+/** The single strongest AVAILABLE total-points side across all lines, or null. */
+function bestBasketballTotal(markets) {
+  let best = null;
+  for (const m of markets || []) {
+    if (!m || m.market !== 'total_points' || m.status !== STATUS.AVAILABLE) continue;
+    if (!Number.isFinite(m.probability)) continue;
+    if (!best || m.probability > best.probability) best = m;
+  }
+  return best;
+}
+
 /* ------------------------------------------------------------------ main */
 
 /**
@@ -267,6 +319,8 @@ function availableMarkets(markets) {
 module.exports = {
   STATUS,
   buildSoccerMarkets,
+  buildBasketballTotalMarkets,
+  bestBasketballTotal,
   availableMarkets,
   probOverTotal,
   probOverCount,

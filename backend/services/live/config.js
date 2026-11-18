@@ -109,7 +109,18 @@ const CONFIG = {
         // the league's own mean total (basketball/leagues.js) rounded to the
         // nearest half point, so it stays a fixed per-league constant;
         // `defaultLine` covers a league basketball/leagues.js does not know.
-        basketball: { line: null, defaultLine: 219.5 },
+        basketball: {
+          line: null,
+          defaultLine: 219.5,
+          // Multi-line totals evaluation: every supported line is priced
+          // independently (Over AND Under) off the model's expected total and
+          // sigma, with settled-market statuses. A pick is only emitted for
+          // the strongest available side, and only when its probability
+          // clears `minPickProbability` — the same 75% bar basketball
+          // predictions already use elsewhere. Below it: no pick, no guess.
+          evaluationLines: [209.5, 214.5, 219.5, 224.5, 229.5, 234.5],
+          minPickProbability: 0.75,
+        },
       },
     },
 

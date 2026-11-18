@@ -306,6 +306,19 @@ function formatPrediction(result) {
   if (!result) return null;
   const { game, projection, selection, dataQuality } = result;
 
+  // Full totals curve: Over/Under probability at every evaluation line, priced
+  // off the same projection + sigma the picks use. Evaluation only — these are
+  // not picks and carry no line settlement state (pre-match there is none).
+  const { totalsProbability } = require('./probability');
+  const evalLines = Array.isArray(cfg_evalLines()) ? cfg_evalLines() : [];
+  function cfg_evalLines() { return CONFIG.modelLines.totalsEvaluationLines; }
+  const totalsEvaluation = (projection && Number.isFinite(projection.total) && Number.isFinite(projection.sigmaTotal))
+    ? evalLines.map(line => {
+        const r = totalsProbability({ line, projTotal: projection.total, sigmaTotal: projection.sigmaTotal, cfg: CONFIG });
+        return { line, over: r.over, under: r.under, push: r.push };
+      })
+    : null;
+
   const picks = (selection.picks || []).map(p => ({
     market: p.market,
     selection: p.selection,
@@ -346,6 +359,7 @@ function formatPrediction(result) {
     // snapshot can record the de-viggable market rather than only the side the
     // engine happened to pick. Null when ESPN supplied no line.
     marketOdds: buildMarketOdds(game.odds),
+    totals_evaluation: totalsEvaluation,
     noPick: selection.noPick,
     noPickLabel: selection.noPick ? selection.noPickLabel : null,
     key_factors: keyFactors(result),

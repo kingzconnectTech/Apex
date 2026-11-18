@@ -405,12 +405,16 @@ function buildAnalysis({ game, context = {}, contextView = null, statsView = nul
   // Phase 11 — the recommended picks, derived from the SAME model output the
   // probabilities come from. Withheld (null) whenever the gate withholds the
   // figures, so a pick can never appear beside a withheld probability.
-  const markets = showFigures && game.sport === 'soccer' && modelUsable
-    ? liveMarkets.buildSoccerMarkets({
-        model, game, stats,
-        elapsed: model.inputs && model.inputs.elapsed_minutes,
-        remaining: model.inputs && model.inputs.remaining_minutes,
-      })
+  const markets = showFigures && modelUsable
+    ? (game.sport === 'soccer'
+      ? liveMarkets.buildSoccerMarkets({
+          model, game, stats,
+          elapsed: model.inputs && model.inputs.elapsed_minutes,
+          remaining: model.inputs && model.inputs.remaining_minutes,
+        })
+      : game.sport === 'basketball'
+        ? liveMarkets.buildBasketballTotalMarkets({ model, game })
+        : null)
     : null;
   const picks = showFigures ? derivePicks({ sport: game.sport, model, game, markets }) : null;
 
