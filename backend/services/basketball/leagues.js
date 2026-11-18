@@ -89,6 +89,15 @@ const ALIASES = {
   eur: 'euroleague',
   euro: 'euroleague',
   'basketball/eur': 'euroleague',
+  // ESPN league ids the live feed already produces but that have no fitted
+  // league of their own — mapped to the closest configured competition rather
+  // than the 220-pt live fallback (which flattened every total pick onto 219.5).
+  eurocup: 'euroleague',
+  acb: 'euroleague',
+  'womens-college-basketball': 'ncaa',
+  'nba-development': 'nba',
+  'nba-g-league': 'nba',
+  'g-league': 'nba',
 };
 
 /**

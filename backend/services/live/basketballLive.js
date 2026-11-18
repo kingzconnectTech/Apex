@@ -5,8 +5,10 @@
  *
  * Approach: project the REMAINING points as a normal distribution and add it to
  * the current score.
- *   - Remaining scoring rate comes from the league's own total mean
- *     (basketball/probability.leagueMeanTotal) prorated by the minutes left.
+ *   - Remaining scoring rate blends the league's own total mean
+ *     (basketball/probability.leagueMeanTotal) with the rate the game itself
+ *     is actually producing (observed pts/min shrunk toward the league rate),
+ *     prorated by the minutes left.
  *   - The remaining-margin mean is the league home-court edge prorated by the
  *     same fraction.
  *   - Sigma scales with sqrt(time): sigma_remaining = sigma_full * sqrt(fraction),
@@ -169,9 +171,31 @@ function predictBasketball({ game, weight = 1, manual = false } = {}) {
   const sigmaMultiplier = endgame ? B.endgame.sigmaMultiplier : 1;
   if (endgame) notes.push('Endgame adjustment applied (foul game).');
 
-  const ratePerMinute = params.gameMinutes > 0 ? params.totalMean / params.gameMinutes : 0;
+  const leagueRate = params.gameMinutes > 0 ? params.totalMean / params.gameMinutes : 0;
+
+  // Observed scoring rate. The league mean alone made every game in a league —
+  // and every unknown league — project the SAME total, which is what produced
+  // the constant "Over 219.5" reads. Instead the rate is estimated from the
+  // game's own points/minute, shrunk toward the league rate by `priorMinutes`
+  // of pseudo-evidence:
+  //     rate = (curTotal + K * leagueRate) / (elapsed + K)
+  // Early in the game K dominates (the league prior); as minutes accumulate the
+  // game's real pace takes over. The result is clamped so one anomalous stretch
+  // cannot dominate the projection.
+  let rate = leagueRate;
+  if (elapsed > 0 && leagueRate > 0) {
+    const K = B.observedRate ? B.observedRate.priorMinutes : 15;
+    const lo = leagueRate * (B.observedRate ? B.observedRate.minFactor : 0.55);
+    const hi = leagueRate * (B.observedRate ? B.observedRate.maxFactor : 1.8);
+    rate = M.clamp((curTotal + K * leagueRate) / (elapsed + K), lo, hi);
+    const observed = curTotal / elapsed;
+    if (Math.abs(rate - leagueRate) / leagueRate > 0.08) {
+      notes.push(`Scoring pace estimated from the game itself (${observed.toFixed(2)} pts/min vs league ${leagueRate.toFixed(2)}).`);
+    }
+  }
+
   const live = {
-    total: curTotal + ratePerMinute * remaining * rateMultiplier,
+    total: curTotal + rate * remaining * rateMultiplier,
     margin: curMargin + params.homeCourtPoints * fraction,
     sigmaTotal: params.totalStd * Math.sqrt(fraction) * sigmaMultiplier,
     sigmaMargin: params.marginStd * Math.sqrt(fraction) * sigmaMultiplier,
@@ -201,7 +225,7 @@ function predictBasketball({ game, weight = 1, manual = false } = {}) {
       remaining_minutes: M.round(remaining, 2),
       period: game.live.period,
       clock: game.live.clock,
-      rate_per_minute: M.round(ratePerMinute, 3),
+      rate_per_minute: M.round(rate, 3),
     },
     expected: expectedFrom(total, margin),
     probabilities: { home_win: M.round(homeWin, 4), away_win: M.round(1 - homeWin, 4) },

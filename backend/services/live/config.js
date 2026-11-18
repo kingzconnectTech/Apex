@@ -118,6 +118,10 @@ const CONFIG = {
           // the strongest available side, and only when its probability
           // clears `minPickProbability` — the same 75% bar basketball
           // predictions already use elsewhere. Below it: no pick, no guess.
+          // Fallback grid used only when the model produced no expected total.
+          // Normally lines are generated per match around expected.total
+          // (liveMarkets.basketballTotalLines) so every competition is priced
+          // on its own scale.
           evaluationLines: [209.5, 214.5, 219.5, 224.5, 229.5, 234.5],
           // The pick is the line NEAREST the expected total (the main total),
           // side = argmax(Over, Under). No minimum-probability gate: a totals
@@ -616,9 +620,15 @@ const CONFIG = {
           'WNBA': 'wnba',
           'NCAA Men': 'mens-college-basketball',
           'NCAA Women': 'womens-college-basketball',
+          'NCAA Basketball': 'mens-college-basketball',
+          'College Basketball': 'mens-college-basketball',
           'EuroLeague': 'euroleague',
           'EuroCup': 'eurocup',
+          'EuroCup Basketball': 'eurocup',
           'Liga ACB (Spain)': 'acb',
+          'ACB': 'acb',
+          'G League': 'nba-development',
+          'NBA G League': 'nba-development',
         },
       },
       /**
@@ -916,6 +926,16 @@ const CONFIG = {
       },
       // Final minutes: deliberate fouling lifts both scoring rate and variance.
       endgame: { minutes: 2, rateMultiplier: 1.15, sigmaMultiplier: 1.35 },
+      // Observed scoring rate: the model estimates points/minute from the
+      // game itself, blended with the league rate. priorMinutes is the strength
+      // of the league prior (pseudo-minutes of league-average scoring); the
+      // observed rate is clamped to [minFactor, maxFactor] x league rate so a
+      // single crazy quarter cannot run away with the projection.
+      observedRate: {
+        priorMinutes: 15,
+        minFactor: 0.55,
+        maxFactor: 1.8,
+      },
     },
   },
 

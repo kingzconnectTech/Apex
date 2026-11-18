@@ -129,12 +129,11 @@ function overUnderPick(sport, model, game, markets) {
 }
 
 /**
- * Basketball total-points pick: price EVERY configured evaluation line (Over
- * AND Under) off the model's expected final total and sigma, drop lines the
- * current score has already decided, then take the strongest remaining side —
- * but only when its probability clears the configured basketball bar
- * (pickMarkets.overUnder.basketball.minPickProbability, 0.75). Below the bar
- * there is no pick: a ~51% coin flip is not a prediction.
+ * Basketball total-points pick: price EVERY evaluation line (Over AND Under)
+ * — lines generated around THIS match's expected total — off the model's
+ * normal distribution, drop lines the current score has already decided, then
+ * take the side at the line NEAREST the expected total (the "main" total),
+ * argmax of Over vs Under. Settled lines are never fresh picks.
  *
  * This replaces the old behaviour of pinning one fixed line and reporting
  * whichever side sat a hair above 50% — the source of the constant

@@ -242,20 +242,39 @@ function probOverNormal(mean, sigma, line) {
 }
 
 /**
- * Basketball total-points markets. Every configured line is priced
- * independently — Over AND Under — from the model's expected final total and
- * sigma. Lines already decided by the current score are marked won/lost and
+ * The six evaluation lines for a basketball total, centred on the match's own
+ * expected final total. A single fixed grid cannot serve every competition —
+ * NCAA (~145) and the pros (~235) need different lines, which is exactly why
+ * the old fixed grid produced meaningless picks. The anchor is
+ * floor(mean) + 0.5 so one line always sits within half a point of the
+ * projection — the market's "main total". Falls back to the configured grid
+ * when no expectation exists.
+ */
+function basketballTotalLines(mean, fallback = null) {
+  if (!Number.isFinite(mean)) return Array.isArray(fallback) ? fallback : [];
+  const base = Math.floor(mean) + 0.5;
+  return [-10, -5, 0, 5, 10, 15].map(d => M.round(base + d, 1));
+}
+
+/**
+ * Basketball total-points markets. Every line is priced independently —
+ * Over AND Under — from the model's expected final total and sigma. Lines are
+ * generated around THIS match's expected total (see basketballTotalLines), so
+ * a slow NCAA game and a high-scoring NBA game are evaluated on their own
+ * scale. Lines already decided by the current score are marked won/lost and
  * are never presented as fresh predictions.
  *
  * @param {Object} args
  * @param {Object} args.model  predictLive output (expected.total, sigma.total)
  * @param {Object} args.game   LiveGame (current score)
- * @param {number[]} [args.lines] evaluation lines (defaults to config)
+ * @param {number[]} [args.lines] explicit evaluation lines (tests/callers)
  */
 function buildBasketballTotalMarkets({ model, game, lines = null } = {}) {
   const cfg = (CONFIG.live.pickMarkets.overUnder || {}).basketball || {};
-  const evalLines = Array.isArray(lines) && lines.length ? lines : (cfg.evaluationLines || []);
   const mean = model && model.expected ? model.expected.total : null;
+  const evalLines = Array.isArray(lines) && lines.length
+    ? lines
+    : basketballTotalLines(mean, cfg.evaluationLines || []);
   const sigma = model && model.sigma ? model.sigma.total : null;
   const curTotal = ((game && game.home && game.home.score) || 0) + ((game && game.away && game.away.score) || 0);
 
@@ -320,6 +339,7 @@ module.exports = {
   STATUS,
   buildSoccerMarkets,
   buildBasketballTotalMarkets,
+  basketballTotalLines,
   bestBasketballTotal,
   availableMarkets,
   probOverTotal,
