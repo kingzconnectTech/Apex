@@ -72,39 +72,41 @@ describe('buildBasketballTotalMarkets', () => {
 });
 
 describe('basketballTotalsPick — no forced Over', () => {
-  test('a read with no side above the bar produces NO pick (the 219.5 fix)', () => {
-    // High-variance game centred on the line grid: no side reaches 75%.
-    const pick = basketballTotalsPick(modelFor(222, 22), bgame({ league: 'unknown-league' }));
-    expect(pick).toBeNull();
+  test('the pick is at the line NEAREST the expected total, side = argmax', () => {
+    // Expected 225 -> nearest line 224.5; over prob > under? 225 vs 224.5 => over.
+    const pick = basketballTotalsPick(modelFor(225, 18), bgame());
+    expect(pick).not.toBeNull();
+    expect(pick.line).toBe(224.5);
+    expect(pick.selection).toBe('over');
+    expect(pick.probability).toBeGreaterThanOrEqual(pick.under);
+    // Expected 200 -> nearest line 209.5; under is the argmax side.
+    const low = basketballTotalsPick(modelFor(200, 18), bgame());
+    expect(low.line).toBe(209.5);
+    expect(low.selection).toBe('under');
   });
 
-  test('a mid-range total still cannot manufacture an Over 219.5 coin flip', () => {
-    // The OLD bug: one fixed line, argmax at ~51% => "Over". Now every line is
-    // priced and the pick must clear 75% — verify no pick claims 219.5 at ~51%.
-    const ms = liveMarkets.buildBasketballTotalMarkets({ model: modelFor(219.5, 18), game: bgame() });
-    const over2195 = ms.find(m => m.line === 219.5 && m.side === 'over');
-    expect(over2195.probability).toBeCloseTo(0.5, 1);
+  test('a mid-range total picks the honest ~50/50 side, not a forced Over', () => {
+    // Expected total dead-centre: Over 219.5 is ~50%, and the pick must be the
+    // argmax at the NEAREST line — never an automatic Over.
     const pick = basketballTotalsPick(modelFor(219.5, 18), bgame());
-    // Whatever is picked must be a genuinely supported side, never the ~51% line.
-    if (pick) {
-      expect(pick.probability).toBeGreaterThanOrEqual(0.75);
-      expect(pick.line === 219.5 && pick.probability < 0.6).toBe(false);
-    }
+    expect(pick).not.toBeNull();
+    expect(pick.line).toBe(219.5);
+    expect(['over', 'under']).toContain(pick.selection);
+    expect(Math.abs(pick.probability - 0.5)).toBeLessThan(0.1);
   });
 
   test('a strong Over is selected when the stats support it', () => {
-    const pick = basketballTotalsPick(modelFor(245, 15), bgame());
+    const pick = basketballTotalsPick(modelFor(248, 15), bgame());
     expect(pick).not.toBeNull();
     expect(pick.selection).toBe('over');
-    expect(pick.probability).toBeGreaterThanOrEqual(0.75);
     expect(LINES).toContain(pick.line);
   });
 
   test('a strong Under is selected when the stats support it', () => {
-    const pick = basketballTotalsPick(modelFor(195, 15), bgame());
+    const pick = basketballTotalsPick(modelFor(192, 15), bgame());
     expect(pick).not.toBeNull();
     expect(pick.selection).toBe('under');
-    expect(pick.probability).toBeGreaterThanOrEqual(0.75);
+    expect(LINES).toContain(pick.line);
   });
 
   test('different matches get different lines and directions', () => {
@@ -119,10 +121,12 @@ describe('basketballTotalsPick — no forced Over', () => {
     const model = { ...modelFor(245, 15), status: 'live' };
     const picks = derivePicks({ sport: 'basketball', model, game: bgame() });
     expect(picks.over_under).not.toBeNull();
-    expect(picks.over_under.probability).toBeGreaterThanOrEqual(0.75);
+    expect(picks.over_under.probability).toBeGreaterThanOrEqual(picks.over_under.under || 0);
     // A weak read yields no O/U pick at all.
     const weak = derivePicks({ sport: 'basketball', model: modelFor(222, 22), game: bgame({ league: 'unknown' }) });
-    expect(weak.over_under).toBeNull();
+    // Argmax at the nearest line: 222 -> 219.5 or 224.5 (equidistant -> first).
+    expect(weak.over_under).not.toBeNull();
+    expect(weak.over_under.probability).toBeGreaterThanOrEqual(weak.over_under.under ?? 0);
   });
 
   test('the legacy single-line pricer still works for callers that use it', () => {
@@ -143,7 +147,7 @@ describe('live model integration', () => {
     // Tip-off projection ~235 vs lines up to 234.5: best available may clear 75%
     // on the low lines or produce no pick — either is honest, never forced.
     if (picks.over_under) {
-      expect(picks.over_under.probability).toBeGreaterThanOrEqual(0.75);
+      expect(picks.over_under.probability).toBeGreaterThanOrEqual(picks.over_under.under || 0);
       const m = markets.find(x => x.line === picks.over_under.line && x.side === picks.over_under.selection);
       expect(m.status).toBe('available');
     }
@@ -155,7 +159,7 @@ describe('live model integration', () => {
     expect(Array.isArray(a.markets)).toBe(true);
     expect(a.markets.every(m => ['available', 'won', 'lost', 'unavailable'].includes(m.status))).toBe(true);
     if (a.picks && a.picks.over_under) {
-      expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(0.75);
+      expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(a.picks.over_under.under ?? 0);
     }
   });
 });

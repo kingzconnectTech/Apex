@@ -320,12 +320,13 @@ describe('Phase 11 — the live picks (match result + Over/Under)', () => {
       expect(a.display.shows_probabilities).toBe(true);
       expect(a.picks.match_result.market).toBe('moneyline');
       // Totals are priced on every evaluation line in both directions, and a
-      // pick only exists when a side clears the 75% bar — never a ~51% coin flip.
+      // pick sits at the line NEAREST the expected total with the argmax side —
+      // never the most extreme profitable line.
       expect(Array.isArray(a.markets)).toBe(true);
       const totals = a.markets.filter(m => m.market === 'total_points');
       expect(totals.length).toBeGreaterThan(0);
       if (a.picks.over_under) {
-        expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(0.75);
+        expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(a.picks.over_under.under ?? 0);
         expect([209.5, 214.5, 219.5, 224.5, 229.5, 234.5]).toContain(a.picks.over_under.line);
       }
     });

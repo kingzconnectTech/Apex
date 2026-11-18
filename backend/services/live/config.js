@@ -119,7 +119,12 @@ const CONFIG = {
           // clears `minPickProbability` — the same 75% bar basketball
           // predictions already use elsewhere. Below it: no pick, no guess.
           evaluationLines: [209.5, 214.5, 219.5, 224.5, 229.5, 234.5],
-          minPickProbability: 0.75,
+          // The pick is the line NEAREST the expected total (the main total),
+          // side = argmax(Over, Under). No minimum-probability gate: a totals
+          // pick at the main line is legitimately ~50/50, and suppressing it
+          // would hide the model's honest read. Settled lines are still
+          // excluded — a decided market is never a fresh pick.
+          minPickProbability: 0.0,
         },
       },
     },

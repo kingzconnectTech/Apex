@@ -142,21 +142,46 @@ function overUnderPick(sport, model, game, markets) {
  */
 function basketballTotalsPick(model, game, markets) {
   const cfg = (CFG.overUnder && CFG.overUnder.basketball) || {};
-  const minProb = Number.isFinite(cfg.minPickProbability) ? cfg.minPickProbability : 0.75;
+  const minProb = Number.isFinite(cfg.minPickProbability) ? cfg.minPickProbability : 0;
   const list = Array.isArray(markets) && markets.length
     ? markets
     : liveMarkets.buildBasketballTotalMarkets({ model, game });
-  const best = liveMarkets.bestBasketballTotal(list);
-  if (!best || best.probability < minProb) return null;
-  const overEntry = list.find(m => m.market === 'total_points' && m.line === best.line && m.side === 'over');
-  const underEntry = list.find(m => m.market === 'total_points' && m.line === best.line && m.side === 'under');
+  const mean = model && model.expected ? model.expected.total : null;
+
+  // Candidate lines: AVAILABLE only (settled markets are never fresh picks),
+  // each carrying both sides' probabilities.
+  const byLine = new Map();
+  for (const m of list) {
+    if (!m || m.market !== 'total_points' || m.status !== 'available') continue;
+    if (!Number.isFinite(m.probability)) continue;
+    const cur = byLine.get(m.line) || { line: m.line, over: null, under: null };
+    if (m.side === 'over') cur.over = m.probability; else cur.under = m.probability;
+    byLine.set(m.line, cur);
+  }
+  const candidates = [...byLine.values()].filter(c => c.over != null && c.under != null);
+  if (!candidates.length) return null;
+
+  // The pick line is the one NEAREST the expected total — the market's "main"
+  // total — not the most extreme profitable line. This is what makes the pick
+  // meaningful: it answers "over or under the projected total?", not "which
+  // tail is safest?".
+  let line;
+  if (Number.isFinite(mean)) {
+    line = candidates.reduce((a, b) => (Math.abs(b.line - mean) < Math.abs(a.line - mean) ? b : a)).line;
+  } else {
+    line = candidates[0].line;
+  }
+  const chosen = byLine.get(line);
+  const selection = chosen.over >= chosen.under ? 'over' : 'under';
+  const probability = selection === 'over' ? chosen.over : chosen.under;
+  if (probability < minProb) return null;
   return {
     market: 'over_under',
-    line: best.line,
-    selection: best.side,
-    probability: best.probability,
-    over: overEntry ? overEntry.probability : null,
-    under: underEntry ? underEntry.probability : null,
+    line,
+    selection,
+    probability,
+    over: chosen.over,
+    under: chosen.under,
   };
 }
 
