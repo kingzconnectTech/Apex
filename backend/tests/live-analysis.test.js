@@ -56,6 +56,21 @@ function withShippedLeague(sport, league, fn) {
   }
 }
 
+/**
+ * Run `fn` with a sport pushed back into the SHADOW hold by emptying its public
+ * allowlist. The owner opened every league on 2026-11-18, so nothing is held by
+ * default; this keeps the hold path itself under test.
+ */
+function withShadowSport(sport, fn) {
+  const original = CONFIG.live.picks[sport];
+  CONFIG.live.picks[sport] = [];
+  try {
+    return fn();
+  } finally {
+    CONFIG.live.picks[sport] = original;
+  }
+}
+
 // Point the forward log at a throwaway file so no test can touch the committed
 // artifact (settle() writes through to disk), and give it a benchmark so the
 // shadow summary has something to compare against. recordForwardTest also
@@ -147,33 +162,37 @@ describe('projectionFor', () => {
 
 describe('buildAnalysis — the ship gate is the single chokepoint', () => {
   test('with the gate closed, every figure is null and the reason is surfaced', () => {
-    const a = buildAnalysis({ game: game(), now: Date.parse('2026-10-26T18:00:00Z') });
+    withShadowSport('soccer', () => {
+      const a = buildAnalysis({ game: game(), now: Date.parse('2026-10-26T18:00:00Z') });
 
-    expect(a.display.mode).toBe(DISPLAY_MODES.CONTEXT_ONLY);
-    expect(a.display.shows_probabilities).toBe(false);
-    expect(a.ship_gate.decision).toBe('withheld');
-    expect(a.ship_gate.allowed).toBe(false);
-    // Soccer is shadow-held (Phase 10), so the reason names that plainly.
-    expect(a.ship_gate.reason).toMatch(/still being validated on live games/i);
+      expect(a.display.mode).toBe(DISPLAY_MODES.CONTEXT_ONLY);
+      expect(a.display.shows_probabilities).toBe(false);
+      expect(a.ship_gate.decision).toBe('withheld');
+      expect(a.ship_gate.allowed).toBe(false);
+      // The sport is shadow-held here, so the reason names that plainly.
+      expect(a.ship_gate.reason).toMatch(/still being validated on live games/i);
 
-    // Withheld, not zeroed.
-    expect(a.probabilities).toBeNull();
-    expect(a.projection).toBeNull();
-    expect(a.uncertainty).toBeNull();
+      // Withheld, not zeroed.
+      expect(a.probabilities).toBeNull();
+      expect(a.projection).toBeNull();
+      expect(a.uncertainty).toBeNull();
 
-    // Facts still ship: the score, the clock, the tier.
-    expect(a.home.score).toBe(0);
-    expect(a.away.score).toBe(0);
-    expect(a.live.clock).toBe("34'");
-    expect(a.data_tier).toBe('full_live');
-    expect(a.probabilities_note).toMatch(/ship gate|validated/i);
+      // Facts still ship: the score, the clock, the tier.
+      expect(a.home.score).toBe(0);
+      expect(a.away.score).toBe(0);
+      expect(a.live.clock).toBe("34'");
+      expect(a.data_tier).toBe('full_live');
+      expect(a.probabilities_note).toMatch(/ship gate|validated/i);
+    });
   });
 
   test('the payload reports the model it would have run, without its numbers', () => {
-    const a = buildAnalysis({ game: game() });
-    expect(a.model.status).toBe('live');
-    expect(a.model.name).toBeTruthy();
-    expect(a.probabilities).toBeNull();
+    withShadowSport('soccer', () => {
+      const a = buildAnalysis({ game: game() });
+      expect(a.model.status).toBe('live');
+      expect(a.model.name).toBeTruthy();
+      expect(a.probabilities).toBeNull();
+    });
   });
 
   test('once a league passes, the live probability ships', () => {
@@ -286,6 +305,12 @@ describe('analyseLiveGame — resolution, caching and honest 404', () => {
 });
 
 describe('Phase 9 — the shadow hold logs evidence without serving it', () => {
+  // The owner opened every league on 2026-11-18, so basketball now ships. Force
+  // the hold back on for this suite so the shadow evidence path stays covered.
+  let savedPicks;
+  beforeEach(() => { savedPicks = CONFIG.live.picks.basketball; CONFIG.live.picks.basketball = []; });
+  afterEach(() => { CONFIG.live.picks.basketball = savedPicks; });
+
   const basketball = (over = {}) => game({
     sport: 'basketball', league: { id: 'nba', name: 'NBA' },
     clock: '7:24', period: 3, homeScore: 70, awayScore: 66, status: 'live', ...over,
@@ -419,6 +444,12 @@ describe('Phase 9 amendment 1 — the log-loss-gain-vs-scoreTime clause', () => 
 });
 
 describe('Phase 10 round D — the confirmation dataset and rollout progress', () => {
+  // The confirmation dataset is built from SHADOW rows only, so force basketball
+  // back into the hold (the owner opened every league on 2026-11-18).
+  let savedPicks;
+  beforeEach(() => { savedPicks = CONFIG.live.picks.basketball; CONFIG.live.picks.basketball = []; });
+  afterEach(() => { CONFIG.live.picks.basketball = savedPicks; });
+
   const basketball = (over = {}) => game({
     sport: 'basketball', league: { id: 'nba', name: 'NBA' },
     clock: '7:24', period: 3, homeScore: 70, awayScore: 66, status: 'live', ...over,

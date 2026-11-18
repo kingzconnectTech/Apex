@@ -506,13 +506,23 @@ describe('toLiveGame', () => {
     expect(game.game_id).toBe('livescore:12345');
     expect(game.sport).toBe('soccer');
     expect(game.source).toBe('livescore');
-    expect(game.league).toEqual({ id: null, name: 'Premier League' });
+    // The score-site league NAME resolves to the ESPN id the ship gate keys on.
+    expect(game.league).toEqual({ id: 'eng.1', name: 'Premier League' });
     expect(game.live.status).toBe('live');
     expect(game.live.is_live).toBe(true);
     expect(game.live.clock).toBe("67'");
     expect(game.live.period).toBe(2);
     expect(game.data_tier).toBe('full_live');
     expect(game.manual).toBe(false);
+  });
+
+  test('an unrecognised competition keeps a null league id — never a guess', () => {
+    const game = matchFeed.toLiveGame({
+      id: 'flashscore:abc', source: 'flashscore', sport: 'soccer', league: 'Some Lower Cup',
+      home: { name: 'A', score: 0 }, away: { name: 'B', score: 0 },
+      status: { code: 'live', label: 'Live', live: true }, clock: null, period: 0,
+    });
+    expect(game.league).toEqual({ id: null, name: 'Some Lower Cup' });
   });
 
   test('a clock-less row is score_time_only — never dressed up as full live', () => {
@@ -522,6 +532,35 @@ describe('toLiveGame', () => {
       status: { code: 'live', label: 'Live', live: true }, clock: null, period: 0,
     });
     expect(game.data_tier).toBe('score_time_only');
+  });
+});
+
+describe('resolveLeagueId', () => {
+  test('maps a score-site league NAME to the ESPN id the gate keys on', () => {
+    expect(matchFeed.resolveLeagueId('soccer', 'Premier League')).toBe('eng.1');
+    expect(matchFeed.resolveLeagueId('soccer', 'Serie A')).toBe('ita.1');
+    expect(matchFeed.resolveLeagueId('soccer', 'Champions League')).toBe('uefa.champions');
+    expect(matchFeed.resolveLeagueId('basketball', 'NBA')).toBe('nba');
+    expect(matchFeed.resolveLeagueId('basketball', 'WNBA')).toBe('wnba');
+  });
+
+  test('matches regardless of case, punctuation and accents', () => {
+    expect(matchFeed.resolveLeagueId('soccer', 'premier league')).toBe('eng.1');
+    expect(matchFeed.resolveLeagueId('soccer', '2. Bundesliga')).toBe('ger.2');
+    expect(matchFeed.resolveLeagueId('soccer', 'Brasileirao Serie A')).toBe('bra.1');
+    expect(matchFeed.resolveLeagueId('soccer', 'Super Lig')).toBe('tur.1');
+  });
+
+  test('an unknown competition resolves to null, never a guessed id', () => {
+    expect(matchFeed.resolveLeagueId('soccer', 'Some Lower Cup')).toBeNull();
+    expect(matchFeed.resolveLeagueId('soccer', '')).toBeNull();
+    expect(matchFeed.resolveLeagueId('soccer', null)).toBeNull();
+    expect(matchFeed.resolveLeagueId('tennis', 'Premier League')).toBeNull();
+  });
+
+  test('a name from the wrong sport is not resolved', () => {
+    expect(matchFeed.resolveLeagueId('basketball', 'Premier League')).toBeNull();
+    expect(matchFeed.resolveLeagueId('soccer', 'NBA')).toBeNull();
   });
 });
 
@@ -539,26 +578,26 @@ describe('predictForMatch', () => {
     };
   }
 
-  test('a game with a real clock is modelled live, but the ship gate withholds the figure', () => {
+  test('a game with a real clock is modelled live, and the open gate ships the figure', () => {
     const p = matchFeed.predictForMatch(soccerMatch());
     expect(p.available).toBe(true);
     // The model DID analyse the live state ...
     expect(p.model.status).toBe('live');
-    // ... but the gate refuses to show it, with its own reason.
-    expect(p.ship_gate.decision).toBe('withheld');
-    expect(p.ship_gate.reason).toMatch(/validat/i);
-    expect(p.probabilities).toBeNull();
-    expect(p.projection).toBeNull();
-    expect(p.display.mode).toBe('context_only');
-    expect(p.display.shows_probabilities).toBe(false);
+    // ... and, since every mapped league is on the allowlist (owner override
+    // 2026-11-18), 'Serie A' -> 'ita.1' clears the gate and ships.
+    expect(p.ship_gate.decision).toBe('shipped');
+    expect(p.probabilities).not.toBeNull();
+    expect(p.display.mode).toBe('full');
+    expect(p.display.shows_probabilities).toBe(true);
   });
 
-  test('a clock-less game degrades to the pre-game projection (still withheld)', () => {
+  test('a clock-less game degrades to the pre-game projection, never a live number', () => {
     const p = matchFeed.predictForMatch(soccerMatch({ clock: null, period: 0 }));
     expect(p.available).toBe(true);
     expect(p.model.status).toBe('prior_only');
-    expect(p.probabilities).toBeNull();
-    expect(p.ship_gate.decision).toBe('withheld');
+    expect(p.display.mode).toBe('prior_only');
+    expect(p.ship_gate.decision).toBe('shipped');
+    expect(p.probabilities).not.toBeNull();
   });
 
   test('an unsupported sport is reported, never guessed', () => {
@@ -622,7 +661,7 @@ describe('fetchLiveMatches with predictions + retry', () => {
     });
   }
 
-  test('each listed match carries sources_seen and a gated prediction', async () => {
+  test('each listed match carries sources_seen and a gated, shipped prediction', async () => {
     await withSoccerOnly(async () => {
       const payload = await matchFeed.fetchLiveMatches({
         sources: ['livescore'], fetchImpl: stubFetch(), force: true,
@@ -631,8 +670,9 @@ describe('fetchLiveMatches with predictions + retry', () => {
       const m = payload.matches[0];
       expect(m.sources_seen).toEqual(['livescore']);
       expect(m.prediction).toBeDefined();
-      expect(m.prediction.probabilities).toBeNull();
-      expect(m.prediction.ship_gate.decision).toBe('withheld');
+      // 'Serie A' -> 'ita.1' is on the allowlist, so the list shows the figure.
+      expect(m.prediction.probabilities).not.toBeNull();
+      expect(m.prediction.ship_gate.decision).toBe('shipped');
     });
   });
 

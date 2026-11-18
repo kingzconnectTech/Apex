@@ -37,18 +37,36 @@ const CONFIG = {
      * SHIP GATE (Phase 5 -> Phase 6 hand-off).
      *
      * The only sports/leagues whose backtest PASSED, i.e. the only places a live
-     * PROBABILITY (or any model projection) may be shown. Empty is the honest
-     * default and the current state: nothing has cleared the gate yet, so every
-     * sport shows score, clock and context only.
+     * PROBABILITY (or any model projection) may be shown.
      *
-     * To enable a league, add its ESPN league id here AND record the passing
-     * backtest in docs/PHASE_5_LIVE_VALIDATION.md. Never hand-edit this list to
-     * make a number appear — services/live/policy.js turns it into a refusal
-     * with the reason, and tests assert the refusal.
+     * ⚠️ DELIBERATELY OPENED — OWNER OVERRIDE (2026-11-18). Normally this list
+     * is built league-by-league for competitions that have passed the Phase 5
+     * gate, and the rule below forbids editing it to make a number appear. At
+     * the owner's explicit request it is opened to EVERY league we can identify
+     * so picks are visible now. The gate criteria are NOT met (confirmation
+     * dataset 0/500 for both sports) — see docs/PHASE_5_LIVE_VALIDATION.md.
+     *
+     * To RESTORE the honest hold: empty both arrays. `shadow.sports` below
+     * still lists both, and `policy.shadowSports()` excludes any sport that is
+     * shipping, so emptying a sport's `picks` here puts it straight back under
+     * the hold — no second edit needed. Values are ESPN league ids and must
+     * mirror the values in `matchFeed.leagueIds` (the name -> id bridge for
+     * score-site games); a league missing from that map can never resolve from a
+     * score site.
      */
     picks: {
-      soccer: [],
-      basketball: [],
+      soccer: [
+        'eng.1', 'eng.2', 'eng.3', 'eng.4', 'esp.1', 'esp.2', 'ita.1', 'ita.2',
+        'ger.1', 'ger.2', 'ned.1', 'ned.2', 'por.1', 'por.2', 'tur.1', 'rus.1',
+        'ukr.1', 'bel.1', 'sct.1', 'sct.2', 'aut.1', 'grc.1', 'dnk.1', 'swe.1',
+        'nor.1', 'cze.1', 'mex.1', 'bra.1', 'usa.1', 'jpn.1', 'kor.1', 'chn.1',
+        'saudi.1', 'conmebol.libertadores', 'uefa.champions', 'uefa.europa',
+        'uefa.europaconference',
+      ],
+      basketball: [
+        'nba', 'wnba', 'mens-college-basketball', 'womens-college-basketball',
+        'euroleague', 'eurocup', 'acb',
+      ],
     },
 
     /**
@@ -472,6 +490,76 @@ const CONFIG = {
       sources: {
         livescore: { enabled: true, sports: ['soccer', 'basketball'] },
         flashscore: { enabled: true, sports: ['soccer', 'basketball'] },
+      },
+      /**
+       * LEAGUE IDENTITY — the bridge from a score-site's league NAME to the ESPN
+       * league id the ship gate keys on.
+       *
+       * Both sites publish only a competition NAME ("Premier League", "NBA"),
+       * never the ESPN id the gate compares against. Without this map a listed
+       * game carries `league.id = null` and can NEVER clear the gate — even for a
+       * league that has been released — so "no final-outcome prediction" is a
+       * structural dead end rather than a policy refusal.
+       *
+       * Values are the ESPN league slugs already used across the product (see the
+       * matcher `sweep` above and the app's league catalogue). A name that is not
+       * listed resolves to null: it is left UNKNOWN rather than guessed, so an
+       * unrecognised competition is honestly withheld instead of mis-labelled.
+       * Populating this never releases a pick — the ship gate still decides.
+       */
+      leagueIds: {
+        soccer: {
+          'Premier League': 'eng.1',
+          'Championship': 'eng.2',
+          'League One': 'eng.3',
+          'League Two': 'eng.4',
+          'La Liga': 'esp.1',
+          'La Liga 2': 'esp.2',
+          'Segunda División': 'esp.2',
+          'Serie A': 'ita.1',
+          'Serie B': 'ita.2',
+          'Bundesliga': 'ger.1',
+          '2. Bundesliga': 'ger.2',
+          'Eredivisie': 'ned.1',
+          'Eerste Divisie': 'ned.2',
+          'Liga Portugal': 'por.1',
+          'Primeira Liga': 'por.1',
+          'Liga Portugal 2': 'por.2',
+          'Super Lig': 'tur.1',
+          'Russian Premier League': 'rus.1',
+          'Ukrainian Premier League': 'ukr.1',
+          'Belgian Pro League': 'bel.1',
+          'Scottish Premiership': 'sct.1',
+          'Scottish Championship': 'sct.2',
+          'Austrian Bundesliga': 'aut.1',
+          'Super League Greece': 'grc.1',
+          'Danish Superliga': 'dnk.1',
+          'Allsvenskan': 'swe.1',
+          'Eliteserien': 'nor.1',
+          'Czech First League': 'cze.1',
+          'Liga MX': 'mex.1',
+          'Brasileirão Série A': 'bra.1',
+          'MLS': 'usa.1',
+          'J1 League': 'jpn.1',
+          'K League 1': 'kor.1',
+          'Chinese Super League': 'chn.1',
+          'Saudi Pro League': 'saudi.1',
+          'Copa Libertadores': 'conmebol.libertadores',
+          'Champions League': 'uefa.champions',
+          'UEFA Champions League': 'uefa.champions',
+          'Europa League': 'uefa.europa',
+          'UEFA Europa League': 'uefa.europa',
+          'Europa Conference League': 'uefa.europaconference',
+        },
+        basketball: {
+          'NBA': 'nba',
+          'WNBA': 'wnba',
+          'NCAA Men': 'mens-college-basketball',
+          'NCAA Women': 'womens-college-basketball',
+          'EuroLeague': 'euroleague',
+          'EuroCup': 'eurocup',
+          'Liga ACB (Spain)': 'acb',
+        },
       },
       /**
        * Transient-failure retry for each upstream read. Only network errors,

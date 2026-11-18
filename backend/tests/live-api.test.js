@@ -67,6 +67,21 @@ function buildApp({ matcher = null, rateLimitMiddleware = null, manualRateLimitM
   return app;
 }
 
+/**
+ * Run async `fn` with a sport pushed back into the SHADOW hold by emptying its
+ * public allowlist. The owner opened every league on 2026-11-18, so nothing is
+ * held by default; this keeps the hold-dependent routes under test.
+ */
+async function withShadowSport(sport, fn) {
+  const original = CONFIG.live.picks[sport];
+  CONFIG.live.picks[sport] = [];
+  try {
+    return await fn();
+  } finally {
+    CONFIG.live.picks[sport] = original;
+  }
+}
+
 // This suite polls /api/live/analysis/espn:900, which records a shadow row
 // through forwardTest — and that writes the row, the durable ledger's first
 // post-freeze entry and the health state. Redirect ALL three to throwaway files
@@ -117,15 +132,17 @@ describe('GET /api/live/capabilities', () => {
     expect(res.body).toEqual(expect.objectContaining({
       enabled: true,
       supported_sports: ['soccer', 'basketball'],
-      shipping: [],
+      shipping: ['soccer', 'basketball'],
       manual_entry: true,
       disclaimer: DISCLAIMER,
     }));
     expect(res.body.refresh).toEqual(CONFIG.liveApi.refresh);
     expect(res.body.sports).toEqual({ soccer: true, basketball: true });
-    // Phase 9/10 hold: basketball (a candidate awaiting 500 fresh games) and
-    // soccer (its frozen candidates are observed) are shadowed; neither ships.
-    expect(res.body.shadow).toEqual(['basketball', 'soccer']);
+    // Owner override (2026-11-18): every mapped league ships, so both sports
+    // leave the Phase 9/10 shadow hold — `shadowSports()` excludes shipping
+    // sports. The hold can be restored per sport by emptying its `live.picks`
+    // entry (see the config note); the tests below do exactly that.
+    expect(res.body.shadow).toEqual([]);
     expect(res.body.rollout).toEqual({ testers_only: true, sports: {} });
   });
 });
@@ -157,27 +174,31 @@ describe('POST /api/live/resolve', () => {
       refreshCandidate: jest.fn().mockResolvedValue(null),
     };
 
-    const res = await request(buildApp({ matcher }))
-      .post('/api/live/resolve').send({ link: LINK });
+    // The owner opened every league (2026-11-18); empty soccer's allowlist to
+    // exercise the hold/refusal path this test documents.
+    await withShadowSport('soccer', async () => {
+      const res = await request(buildApp({ matcher }))
+        .post('/api/live/resolve').send({ link: LINK });
 
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('matched');
-    expect(res.body.parsed).toEqual(expect.objectContaining({ recognised: true, sport: 'soccer' }));
-    expect(res.body.game.game_id).toBe('espn:900');
-    expect(res.body.game.home.name).toBe('Manchester United');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('matched');
+      expect(res.body.parsed).toEqual(expect.objectContaining({ recognised: true, sport: 'soccer' }));
+      expect(res.body.game.game_id).toBe('espn:900');
+      expect(res.body.game.home.name).toBe('Manchester United');
 
-    const a = res.body.analysis;
-    expect(a.ship_gate.decision).toBe('withheld');
-    expect(a.display.mode).toBe('context_only');
-    expect(a.probabilities).toBeNull();
-    expect(a.projection).toBeNull();
-    expect(a.uncertainty).toBeNull();
-    expect(a.disclaimer).toBe(DISCLAIMER);
+      const a = res.body.analysis;
+      expect(a.ship_gate.decision).toBe('withheld');
+      expect(a.display.mode).toBe('context_only');
+      expect(a.probabilities).toBeNull();
+      expect(a.projection).toBeNull();
+      expect(a.uncertainty).toBeNull();
+      expect(a.disclaimer).toBe(DISCLAIMER);
 
-    // The resolved game can now be polled without resolving again.
-    const poll = await request(buildApp({ matcher })).get('/api/live/analysis/espn:900');
-    expect(poll.status).toBe(200);
-    expect(poll.body.game_id).toBe('espn:900');
+      // The resolved game can now be polled without resolving again.
+      const poll = await request(buildApp({ matcher })).get('/api/live/analysis/espn:900');
+      expect(poll.status).toBe(200);
+      expect(poll.body.game_id).toBe('espn:900');
+    });
   });
 
   test('an ambiguous link returns candidates for confirmation', async () => {
@@ -247,8 +268,13 @@ describe('POST /api/live/resolve — score-site match pages', () => {
     expect(res.body.parsed.provider_id).toBe('12345');
     expect(res.body.game.game_id).toBe('livescore:12345');
     expect(res.body.game.home.name).toBe('Arsenal');
-    expect(res.body.analysis.ship_gate.decision).toBe('withheld');
-    expect(res.body.analysis.probabilities).toBeNull();
+    // The structural blocker this test guards: the score-site feed carries only
+    // a league NAME, so `toLiveGame` resolves it to a real ESPN id ('Premier
+    // League' -> 'eng.1'); that id is on the allowlist, so the gate SHIPS the
+    // figure instead of withholding it for a null league.
+    expect(res.body.game.league.id).toBe('eng.1');
+    expect(res.body.analysis.ship_gate.decision).toBe('shipped');
+    expect(res.body.analysis.probabilities).not.toBeNull();
     expect(res.body.disclaimer).toBe(DISCLAIMER);
     // The link's own id is what the feed was asked for.
     expect(spy).toHaveBeenCalledWith({ source: 'livescore', providerId: '12345' });
@@ -323,14 +349,16 @@ describe('GET /api/live/analysis/:gameId', () => {
       refreshCandidate: jest.fn().mockResolvedValue(null),
     };
     const app = buildApp({ matcher });
-    await request(app).post('/api/live/resolve').send({ link: LINK });
+    await withShadowSport('soccer', async () => {
+      await request(app).post('/api/live/resolve').send({ link: LINK });
 
-    const res = await request(app).get('/api/live/analysis/espn:900');
-    expect(res.status).toBe(200);
-    expect(res.body.display.shows_probabilities).toBe(false);
-    expect(res.body.probabilities).toBeNull();
-    expect(res.body.factors.length).toBeGreaterThan(0);
-    expect(res.body.freshness).toBeDefined();
+      const res = await request(app).get('/api/live/analysis/espn:900');
+      expect(res.status).toBe(200);
+      expect(res.body.display.shows_probabilities).toBe(false);
+      expect(res.body.probabilities).toBeNull();
+      expect(res.body.factors.length).toBeGreaterThan(0);
+      expect(res.body.freshness).toBeDefined();
+    });
   });
 });
 
@@ -520,40 +548,48 @@ describe('GET /api/live/stats', () => {
   });
 
   test('surfaces the Phase 9 calibrator and the shadow hold, without a number', async () => {
-    const res = await authed(buildApp({ matcher: {} }));
-    expect(res.status).toBe(200);
-    // The served calibrator column, described — never a coefficient value.
-    expect(res.body.calibrator).toEqual(expect.objectContaining({
-      enabled: true, market: 'home_win',
-    }));
-    // A held sport has a SHADOW verdict and never a served one.
-    expect(res.body.forward_test.verdicts).toEqual({});
-    expect(res.body.forward_test.shadow).toEqual(expect.objectContaining({
-      basketball: expect.objectContaining({
-        shadow: true, sport: 'basketball', ready: expect.any(Boolean),
-      }),
-    }));
+    // Owner override (2026-11-18) ships every league, so nothing is shadowed by
+    // default; hold basketball to exercise the shadow-verdict branch.
+    await withShadowSport('basketball', async () => {
+      const res = await authed(buildApp({ matcher: {} }));
+      expect(res.status).toBe(200);
+      // The served calibrator column, described — never a coefficient value.
+      expect(res.body.calibrator).toEqual(expect.objectContaining({
+        enabled: true, market: 'home_win',
+      }));
+      // A held sport has a SHADOW verdict and never a served one.
+      expect(res.body.forward_test.verdicts).toEqual({});
+      expect(res.body.forward_test.shadow).toEqual(expect.objectContaining({
+        basketball: expect.objectContaining({
+          shadow: true, sport: 'basketball', ready: expect.any(Boolean),
+        }),
+      }));
+    });
   });
 
   test('surfaces the confirmation dataset and the rollout progress', async () => {
-    const res = await authed(buildApp({ matcher: {} }));
-    expect(res.status).toBe(200);
-    // Only rows logged after the freeze count, and the one-shot run waits for
-    // the ship gate's 500 settled GAMES per sport.
-    expect(res.body.forward_test.confirmation).toEqual(expect.objectContaining({
-      basketball: expect.objectContaining({
-        dataset: expect.any(String),
-        min_settled_games: 500,
-        settled_games: expect.any(Number),
-        evaluated: false,
-      }),
-    }));
-    // Settled GAMES per sport and per league, with an ETA toward the 500 target.
-    expect(res.body.forward_test.progress).toEqual(expect.objectContaining({
-      target: 500,
-      per_sport: expect.any(Object),
-      per_league: expect.any(Object),
-    }));
+    // The confirmation dataset is built for SHADOW sports only; hold basketball
+    // to keep the held-sport window under test.
+    await withShadowSport('basketball', async () => {
+      const res = await authed(buildApp({ matcher: {} }));
+      expect(res.status).toBe(200);
+      // Only rows logged after the freeze count, and the one-shot run waits for
+      // the ship gate's 500 settled GAMES per sport.
+      expect(res.body.forward_test.confirmation).toEqual(expect.objectContaining({
+        basketball: expect.objectContaining({
+          dataset: expect.any(String),
+          min_settled_games: 500,
+          settled_games: expect.any(Number),
+          evaluated: false,
+        }),
+      }));
+      // Settled GAMES per sport and per league, with an ETA toward the 500 target.
+      expect(res.body.forward_test.progress).toEqual(expect.objectContaining({
+        target: 500,
+        per_sport: expect.any(Object),
+        per_league: expect.any(Object),
+      }));
+    });
   });
 
   test('reports the health block with the durable-read cache TTL (round H item 3)', async () => {
@@ -602,17 +638,21 @@ describe('POST /api/live/sweep', () => {
 
   test('dry_run runs matching and grid gating but writes nothing', async () => {
     const app = buildApp({ matcher: sweepMatcher() });
-    const res = await request(app).post('/api/live/sweep?dry_run=true')
-      .set('Authorization', `Bearer ${SECRET}`);
+    // The sweep iterates `shadowSports()`, which is empty now that every league
+    // ships; hold basketball so the sweep has a sport to walk and log.
+    await withShadowSport('basketball', async () => {
+      const res = await request(app).post('/api/live/sweep?dry_run=true')
+        .set('Authorization', `Bearer ${SECRET}`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.dry_run).toBe(true);
-    // It reports the row it WOULD log...
-    expect(res.body.would_log).toBe(1);
-    // ...and writes nothing: no shadow row, no forward file.
-    expect(res.body.logged).toBe(0);
-    expect(forwardTest.status().shadowRows).toBe(0);
-    expect(fs.existsSync(TMP_FORWARD_FILE)).toBe(false);
+      expect(res.status).toBe(200);
+      expect(res.body.dry_run).toBe(true);
+      // It reports the row it WOULD log...
+      expect(res.body.would_log).toBe(1);
+      // ...and writes nothing: no shadow row, no forward file.
+      expect(res.body.logged).toBe(0);
+      expect(forwardTest.status().shadowRows).toBe(0);
+      expect(fs.existsSync(TMP_FORWARD_FILE)).toBe(false);
+    });
   });
 
   test('is secret-gated exactly like the stats route', async () => {
@@ -658,17 +698,20 @@ describe('POST /api/live/reconcile (round J item 5)', () => {
 
   test('recounts the rows and reports NO drift on a clean store', async () => {
     const app = buildApp({ matcher: matcher() });
-    // One real sweep logs a grid row, so the recount has something to count.
-    await request(app).post('/api/live/sweep').set('Authorization', `Bearer ${SECRET}`);
+    // The sweep iterates `shadowSports()`, empty now that every league ships;
+    // hold basketball so the real sweep logs a grid row for the recount.
+    await withShadowSport('basketball', async () => {
+      await request(app).post('/api/live/sweep').set('Authorization', `Bearer ${SECRET}`);
 
-    const res = await request(app).post('/api/live/reconcile').set('Authorization', `Bearer ${SECRET}`);
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.drift_detected).toBe(false);
-    // Counters agree with the recount, and the reconcile is recorded in health.
-    expect(res.body.total_rows.counters).toBe(res.body.total_rows.recount);
-    expect(res.body.total_rows.recount).toBeGreaterThanOrEqual(1);
-    expect(shadowHealth.snapshot().last_reconcile_at).toBeTruthy();
+      const res = await request(app).post('/api/live/reconcile').set('Authorization', `Bearer ${SECRET}`);
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.drift_detected).toBe(false);
+      // Counters agree with the recount, and the reconcile is recorded in health.
+      expect(res.body.total_rows.counters).toBe(res.body.total_rows.recount);
+      expect(res.body.total_rows.recount).toBeGreaterThanOrEqual(1);
+      expect(shadowHealth.snapshot().last_reconcile_at).toBeTruthy();
+    });
   });
 });
 
@@ -747,15 +790,19 @@ describe('stats are recorded from real requests', () => {
       refreshCandidate: jest.fn().mockResolvedValue(null),
     };
     const app = buildApp({ matcher });
-    await request(app).post('/api/live/resolve').send({ link: LINK });
-    await request(app).get('/api/live/analysis/espn:900');
+    // Hold soccer so the served analysis is a gate REFUSAL and the
+    // `ship_gate_refusals` counter actually moves.
+    await withShadowSport('soccer', async () => {
+      await request(app).post('/api/live/resolve').send({ link: LINK });
+      await request(app).get('/api/live/analysis/espn:900');
 
-    const snap = stats.snapshot();
-    expect(snap.resolve_total).toBe(1);
-    expect(snap.resolve_matched).toBe(1);
-    expect(snap.analyses_served).toBe(1);
-    expect(snap.ship_gate_refusals).toBe(1);
-    expect(snap.by_domain).toEqual({ 'example.com': 1 });
+      const snap = stats.snapshot();
+      expect(snap.resolve_total).toBe(1);
+      expect(snap.resolve_matched).toBe(1);
+      expect(snap.analyses_served).toBe(1);
+      expect(snap.ship_gate_refusals).toBe(1);
+      expect(snap.by_domain).toEqual({ 'example.com': 1 });
+    });
   });
 });
 

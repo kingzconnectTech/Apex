@@ -28,19 +28,33 @@ function withShippedLeague(sport, league, fn) {
   }
 }
 
+/**
+ * Run `fn` with a sport pushed back into the SHADOW hold by emptying its public
+ * allowlist. The owner opened every league on 2026-11-18, so nothing is held by
+ * default; this keeps the hold path itself under test.
+ */
+function withShadowSport(sport, fn) {
+  const original = CONFIG.live.picks[sport];
+  CONFIG.live.picks[sport] = [];
+  try {
+    return fn();
+  } finally {
+    CONFIG.live.picks[sport] = original;
+  }
+}
+
 describe('policy — feature switches vs ship gate', () => {
-  test('featureState reports the supported sports and no shipping sports by default', () => {
+  test('featureState reports the supported sports and the open ship-gate allowlist', () => {
     const state = policy.featureState();
     expect(state.enabled).toBe(true);
     expect(state.supported_sports).toEqual(['soccer', 'basketball']);
     expect(state.sports).toEqual({ soccer: true, basketball: true });
     expect(state.manual_entry).toBe(true);
-    // The honest current state: nothing has cleared the Phase 5 gate.
-    expect(state.shipping).toEqual([]);
-    // Phase 9/10 hold: basketball is observed in SHADOW — computed and logged as
-    // evidence, shown to nobody — and soccer joins it so its frozen candidate
-    // columns can be scored on fresh data. Neither is previewed to any tester.
-    expect(state.shadow).toEqual(['basketball', 'soccer']);
+    // OWNER OVERRIDE (2026-11-18): every mapped league is open, so both sports
+    // report as shipping.
+    expect(state.shipping).toEqual(['soccer', 'basketball']);
+    // Nothing is shadow-held while every observed sport ships.
+    expect(state.shadow).toEqual([]);
     expect(state.rollout).toEqual({ testers_only: true, sports: {} });
   });
 
@@ -78,12 +92,14 @@ describe('policy — feature switches vs ship gate', () => {
   });
 
   test('mayShipPick refuses a shadow-held sport with a plain reason', () => {
-    const out = policy.mayShipPick({ sport: 'soccer', league: 'eng.1' });
-    expect(out.allowed).toBe(false);
-    // Soccer joined the shadow hold in Phase 10, so the reason names it.
-    expect(out.reason).toMatch(/still being validated on live games/i);
-    expect(out.sport).toBe('soccer');
-    expect(out.league).toBe('eng.1');
+    withShadowSport('soccer', () => {
+      const out = policy.mayShipPick({ sport: 'soccer', league: 'eng.1' });
+      expect(out.allowed).toBe(false);
+      // While held, the reason says so plainly rather than quoting the gate.
+      expect(out.reason).toMatch(/still being validated on live games/i);
+      expect(out.sport).toBe('soccer');
+      expect(out.league).toBe('eng.1');
+    });
   });
 
   test('mayShipPick refuses an unknown sport, a disabled sport and an unlisted league', () => {
@@ -113,8 +129,8 @@ describe('policy — feature switches vs ship gate', () => {
     withShippedLeague('soccer', 'eng.1', () => {
       const out = policy.mayShipPick({ sport: 'soccer', league: 'eng.1' });
       expect(out).toEqual({ allowed: true, reason: null, audience: 'public', sport: 'soccer', league: 'eng.1' });
-      expect(policy.shippingSports()).toEqual(['soccer']);
-      expect(policy.featureState().shipping).toEqual(['soccer']);
+      expect(policy.shippingSports()).toContain('soccer');
+      expect(policy.featureState().shipping).toContain('soccer');
     });
   });
 
@@ -134,27 +150,37 @@ describe('policy — feature switches vs ship gate', () => {
 
 describe('policy — Phase 9 shadow hold', () => {
   test('shadowSports lists the observed-but-withheld sports', () => {
-    expect(policy.shadowSports()).toEqual(['basketball', 'soccer']);
+    // Both sports are open, so nothing is held by default.
+    expect(policy.shadowSports()).toEqual([]);
+    // Forcing the hold back on (emptying the allowlist) lists it again.
+    withShadowSport('soccer', () => {
+      expect(policy.shadowSports()).toEqual(['soccer']);
+    });
   });
 
   test('a held sport ships to nobody, public and tester alike', () => {
-    const pub = policy.mayShipPick({ sport: 'basketball', league: 'nba' });
-    const tester = policy.mayShipPick({ sport: 'basketball', league: 'nba', tester: true });
-    expect(pub.allowed).toBe(false);
-    expect(tester.allowed).toBe(false);
-    expect(pub.audience).toBeNull();
-    expect(tester.audience).toBeNull();
-    expect(pub.reason).toMatch(/still being validated/i);
-    expect(pub.reason).toMatch(/not shown/i);
+    withShadowSport('basketball', () => {
+      const pub = policy.mayShipPick({ sport: 'basketball', league: 'nba' });
+      const tester = policy.mayShipPick({ sport: 'basketball', league: 'nba', tester: true });
+      expect(pub.allowed).toBe(false);
+      expect(tester.allowed).toBe(false);
+      expect(pub.audience).toBeNull();
+      expect(tester.audience).toBeNull();
+      expect(pub.reason).toMatch(/still being validated/i);
+      expect(pub.reason).toMatch(/not shown/i);
+    });
   });
 
   test('a sport that starts shipping leaves the shadow list', () => {
-    withShippedLeague('basketball', 'nba', () => {
-      expect(policy.shadowSports()).not.toContain('basketball');
-      expect(policy.shippingSports()).toContain('basketball');
+    withShadowSport('basketball', () => {
+      expect(policy.shadowSports()).toContain('basketball');
+      withShippedLeague('basketball', 'nba', () => {
+        expect(policy.shadowSports()).not.toContain('basketball');
+        expect(policy.shippingSports()).toContain('basketball');
+      });
+      // The hold is unchanged once the temporary allowlist is gone.
+      expect(policy.shadowSports()).toContain('basketball');
     });
-    // The hold is unchanged once the temporary allowlist is gone.
-    expect(policy.shadowSports()).toContain('basketball');
   });
 
   test('the shadow list is empty when the hold switch is off', () => {

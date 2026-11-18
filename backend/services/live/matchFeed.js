@@ -405,6 +405,44 @@ function dedupeMatches(list) {
   return [...byKey.values()];
 }
 
+/* --------------------------------------------------------- league identity */
+
+/**
+ * Normalise a league name to a lookup key: diacritics stripped, lowercased,
+ * `&` -> `and`, and every remaining non-alphanumeric character removed. So
+ * "Brasileirão Série A", "2. Bundesliga" and "Süper Lig" each collapse to one
+ * stable key regardless of the punctuation or accents a score site happens to
+ * use.
+ */
+function leagueKey(name) {
+  return String(name == null ? '' : name)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * The ESPN league id for a score-site (sport, league name) pair, or null.
+ *
+ * Both score sites publish only a competition NAME, while the ship gate keys on
+ * the ESPN league id, so this is the bridge that lets a listed game be gated at
+ * all. The name is resolved against config.live.matchFeed.leagueIds; a name we
+ * do not recognise stays null — never guessed — so an unknown competition is
+ * withheld honestly rather than mis-labelled as one that cleared the gate.
+ */
+function resolveLeagueId(sport, name) {
+  const sportMap = (CFG.leagueIds && CFG.leagueIds[sport]) || null;
+  if (!sportMap) return null;
+  const wanted = leagueKey(name);
+  if (!wanted) return null;
+  for (const [known, id] of Object.entries(sportMap)) {
+    if (leagueKey(known) === wanted) return id;
+  }
+  return null;
+}
+
 /* -------------------------------------------------------------- predictions */
 
 function predictionsEnabled() {
@@ -426,9 +464,10 @@ function sourcesSeen(m) {
  *
  * The provider id is the part after the `<source>:` prefix `buildMatch` added,
  * and `buildLiveGame` re-attaches it, giving back the identical `game_id`. The
- * league carries only its DISPLAY name: we do not have the ESPN league id the
- * ship gate keys on, so it is left null rather than filled with a name that
- * would silently fail every allow-list check.
+ * league carries its DISPLAY name plus the ESPN league id the ship gate keys
+ * on, resolved from the name via `resolveLeagueId`. A competition we do not
+ * recognise keeps `id: null` — never a guessed value — so the gate withholds it
+ * honestly rather than silently failing every allow-list check.
  */
 function toLiveGame(match, { now = Date.now(), fetchedAt = now } = {}) {
   const id = String((match && match.id) || '');
@@ -450,7 +489,7 @@ function toLiveGame(match, { now = Date.now(), fetchedAt = now } = {}) {
         },
         homeTeam: { name: match.home && match.home.name, score: match.home && match.home.score },
         awayTeam: { name: match.away && match.away.name, score: match.away && match.away.score },
-        league: { id: null, name: match.league || null },
+        league: { id: resolveLeagueId(match.sport, match.league), name: match.league || null },
       },
     },
     fetchedAt,
@@ -845,6 +884,7 @@ module.exports = {
   parseFlashScoreFeed,
   dedupeMatches,
   toLiveGame,
+  resolveLeagueId,
   predictForMatch,
   predictionsEnabled,
   summarizePrediction,
