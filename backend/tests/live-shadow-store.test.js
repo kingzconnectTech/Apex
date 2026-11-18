@@ -39,7 +39,14 @@ const TMP_LEDGER_FILE = path.join(os.tmpdir(), `rg-ledger-${stamp}.json`);
 
 function rm(file) { try { fs.unlinkSync(file); } catch (err) { /* absent is fine */ } }
 
+// OWNER OVERRIDE (2026-11-18): every league ships, so `shadowSports()` is empty by
+// default and the sweep would walk nothing. This whole suite is about the SWEEP of
+// shadow sports, so force basketball back into the hold while it runs.
+let savedPicksBasketball;
+
 beforeEach(() => {
+  savedPicksBasketball = CONFIG.live.picks.basketball;
+  CONFIG.live.picks.basketball = [];
   rm(TMP_FORWARD_FILE); rm(TMP_HEALTH_FILE); rm(TMP_LEDGER_FILE);
   CONFIG.live.forwardTest.file = TMP_FORWARD_FILE;
   CONFIG.live.health.file = TMP_HEALTH_FILE;
@@ -55,6 +62,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  CONFIG.live.picks.basketball = savedPicksBasketball;
   CONFIG.live.forwardTest.file = COMMITTED_FORWARD_FILE;
   CONFIG.live.health.file = COMMITTED_HEALTH_FILE;
   CONFIG.live.store.ledger.file = COMMITTED_LEDGER_FILE;

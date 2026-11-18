@@ -70,6 +70,24 @@ const CONFIG = {
     },
 
     /**
+     * OWNER OVERRIDE (2026-11-18) — LIVE-ALWAYS.
+     *
+     * When true, `policy.mayShipPick` ships a live probability or projection for
+     * ANY live game in a supported sport — including a competition that does not
+     * map to an ESPN league id (the score sites name leagues we have no id for).
+     * This is what makes live match analysis ALWAYS return a stats-based
+     * prediction instead of degrading to score-and-clock-only.
+     *
+     * It deliberately does NOT override: the global/per-sport feature switches,
+     * the refusal of hand-typed games, or the Phase 9 SHADOW hold below — a sport
+     * whose `picks` entry is empty and that is listed in `shadow.sports` is still
+     * withheld, so the honest hold (and the tests that exercise it) survive.
+     *
+     * Set false to fall back to the league-by-league `picks` allowlist above.
+     */
+    shipAllLive: true,
+
+    /**
      * Phase 9 — SHIP ROLLOUT (testers-only bridge).
      *
      * `live.picks` above is the PUBLIC allowlist: populating it ships a pick to

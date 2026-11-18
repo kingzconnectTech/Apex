@@ -6,9 +6,11 @@
  * Two independent questions, deliberately kept apart:
  *   1. Is the FEATURE on? (`live.enabled`, `live.sports[sport]`) — a product
  *      switch. Off means the endpoint 404s/503s and the UI hides the entry.
- *   2. May a live PROBABILITY ship? (`live.picks`) — the Phase 5 ship gate.
- *      A sport can be fully enabled and still ship nothing, because its
- *      backtest has not cleared the bar. That is the current state.
+ *   2. May a live PROBABILITY ship? (`live.shipAllLive`, else `live.picks`) —
+ *      the Phase 5 ship gate. Normally a sport can be fully enabled and still
+ *      ship nothing because its backtest has not cleared the bar; the owner has
+ *      turned `live.shipAllLive` ON (2026-11-18) to ship every live game, so a
+ *      sport ships unless it is held in SHADOW.
  *
  * Nothing here ever returns a number. It only returns permission, plus the
  * reason when permission is refused, so the API and the UI can say why rather
@@ -184,16 +186,6 @@ function mayShipPick({ sport = null, league = null, manual = false, tester = fal
     }
   }
 
-  const publicLeagues = CONFIG.live.picks[sport];
-  if (!Array.isArray(publicLeagues)) {
-    return {
-      ...base,
-      allowed: false,
-      audience: null,
-      reason: `no ship-gate allowlist is configured for ${sport}`,
-    };
-  }
-
   // SHADOW hold (Phase 9). The sport's live probability is computed and logged
   // as evidence but is withheld from EVERY client while it is still being
   // validated on live games. Say that plainly (rather than quoting the internal
@@ -206,6 +198,26 @@ function mayShipPick({ sport = null, league = null, manual = false, tester = fal
       allowed: false,
       audience: null,
       reason: `live probabilities for ${sport} are still being validated on live games and are not shown yet`,
+    };
+  }
+
+  // LIVE-ALWAYS (owner override, 2026-11-18). Ship a figure for EVERY live game
+  // in a supported sport, including a competition whose ESPN league id could not
+  // be established (score sites name leagues we have no id for). The shadow hold
+  // above still wins and hand-typed games were refused above, so the two honest
+  // refusals are untouched; the feature switches still apply. Set
+  // `live.shipAllLive` false to return to the league-by-league allowlist.
+  if (CONFIG.live.shipAllLive) {
+    return { ...base, allowed: true, audience: 'public', reason: null };
+  }
+
+  const publicLeagues = CONFIG.live.picks[sport];
+  if (!Array.isArray(publicLeagues)) {
+    return {
+      ...base,
+      allowed: false,
+      audience: null,
+      reason: `no ship-gate allowlist is configured for ${sport}`,
     };
   }
 

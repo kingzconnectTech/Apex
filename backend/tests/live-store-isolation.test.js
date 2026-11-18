@@ -46,7 +46,14 @@ function pointAtCommittedPaths() {
   CONFIG.live.store.kind = 'file';
 }
 
+// OWNER OVERRIDE (2026-11-18): every league ships, so `shadowSports()` is empty by
+// default and the canary sweep would log nothing. Force basketball back into the
+// hold while these tests run so the sweep still writes a shadow row.
+let savedPicksBasketball;
+
 beforeEach(() => {
+  savedPicksBasketball = CONFIG.live.picks.basketball;
+  CONFIG.live.picks.basketball = [];
   rm(TEMP_FORWARD_FILE); rm(TEMP_HEALTH_FILE); rm(TEMP_LEDGER_FILE);
   pointAtCommittedPaths();
   store.resetStore();
@@ -61,6 +68,7 @@ beforeEach(() => {
 afterEach(() => {
   // Restore the committed config and drop the temp files so no later suite in
   // this worker inherits leftover rows from the guard's temp directory.
+  CONFIG.live.picks.basketball = savedPicksBasketball;
   pointAtCommittedPaths();
   store.resetStore();
   forwardTest.reset();

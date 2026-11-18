@@ -45,14 +45,20 @@ function game({
   };
 }
 
-/** Run `fn` with a league temporarily passing the ship gate. */
+/**
+ * Run `fn` with a league temporarily passing the ship gate AND the LIVE-ALWAYS
+ * override off, so the league-by-league allowlist path is exercised.
+ */
 function withShippedLeague(sport, league, fn) {
   const original = CONFIG.live.picks[sport];
+  const originalAll = CONFIG.live.shipAllLive;
   CONFIG.live.picks[sport] = [league];
+  CONFIG.live.shipAllLive = false;
   try {
     fn();
   } finally {
     CONFIG.live.picks[sport] = original;
+    CONFIG.live.shipAllLive = originalAll;
   }
 }
 

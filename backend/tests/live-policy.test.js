@@ -17,14 +17,21 @@ const {
   createRateLimiter, createRateLimitMiddleware, clientIp,
 } = require('../services/live/rateLimit');
 
-/** Run `fn` with `league` temporarily added to a sport's ship-gate allowlist. */
+/**
+ * Run `fn` with `league` temporarily added to a sport's ship-gate allowlist AND
+ * the LIVE-ALWAYS override turned off, so the league-by-league allowlist (which
+ * the override otherwise short-circuits) is the path actually exercised.
+ */
 function withShippedLeague(sport, league, fn) {
   const original = CONFIG.live.picks[sport];
+  const originalAll = CONFIG.live.shipAllLive;
   CONFIG.live.picks[sport] = [league];
+  CONFIG.live.shipAllLive = false;
   try {
     fn();
   } finally {
     CONFIG.live.picks[sport] = original;
+    CONFIG.live.shipAllLive = originalAll;
   }
 }
 
@@ -123,6 +130,24 @@ describe('policy — feature switches vs ship gate', () => {
       expect(policy.mayShipPick({ sport: 'soccer', league: 'esp.1' }).reason)
         .toMatch(/soccer\/esp\.1 has not passed/i);
     });
+  });
+
+  test('LIVE-ALWAYS ships any live game, even in an unmapped competition', () => {
+    // The score sites name leagues we have no ESPN id for: `league:null` — and a
+    // league that is simply not on the allowlist — still ship.
+    const unmapped = policy.mayShipPick({ sport: 'soccer', league: null });
+    expect(unmapped).toEqual({ allowed: true, reason: null, audience: 'public', sport: 'soccer', league: null });
+    expect(policy.mayShipPick({ sport: 'soccer', league: 'not.a.real.league' }).allowed).toBe(true);
+
+    // The honest refusals are NOT overridden: hand-typed games ...
+    expect(policy.mayShipPick({ sport: 'soccer', league: 'eng.1', manual: true }).allowed).toBe(false);
+    // ... and a sport held in SHADOW (allowlist emptied) still ships to nobody.
+    withShadowSport('soccer', () => {
+      expect(policy.mayShipPick({ sport: 'soccer', league: 'eng.1' }).allowed).toBe(false);
+      expect(policy.mayShipPick({ sport: 'soccer', league: null }).allowed).toBe(false);
+    });
+    // The feature switches still apply above the override.
+    expect(policy.mayShipPick({ sport: 'tennis', league: null }).allowed).toBe(false);
   });
 
   test('mayShipPick allows exactly the listed league once it has passed', () => {
