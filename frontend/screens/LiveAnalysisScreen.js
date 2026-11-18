@@ -35,6 +35,8 @@ import {
   shouldPoll,
   candidateOptions,
   isAutoResolvableLink,
+  SCORE_SITE_LABELS,
+  WITHHELD_HINT,
 } from '../utils/liveAnalysisView';
 
 const SPORTS = [
@@ -198,7 +200,8 @@ export default function LiveAnalysisScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Live Game Analysis</Text>
         <Text style={styles.subtitle}>
-          Paste a bookmaker link to identify a game. The link is used to find the match only.
+          Paste a match link from LiveScore or FlashScore to load a live game.
+          The link is used to find the match only.
         </Text>
 
         {featureOff && (
@@ -212,13 +215,25 @@ export default function LiveAnalysisScreen({ navigation }) {
             style={styles.input}
             value={link}
             onChangeText={handleChangeLink}
-            placeholder="https://bookmaker.example/game/..."
+            placeholder="https://www.livescore.com/...  or  https://www.flashscore.com/match/..."
             placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
             editable={!disabled && !featureOff}
             maxLength={2048}
           />
+        </View>
+
+        {/* Tell the reader which links the analysis can answer for. These are the
+            only two score sites the feed resolves, so the prompt names them. */}
+        <View style={styles.siteHintRow}>
+          <Text style={styles.siteHintLead}>Use a link from:</Text>
+          {SCORE_SITE_LABELS.map(site => (
+            <View key={site.host} style={styles.siteHintChip}>
+              <Ionicons name="link-outline" size={moderateScale(13)} color={theme.primary} />
+              <Text style={styles.siteHintText}>{site.host}</Text>
+            </View>
+          ))}
         </View>
 
         <TouchableOpacity
@@ -365,6 +380,7 @@ function AnalysisCard({ analysis, styles, theme }) {
         <View style={styles.withheldBox}>
           <Text style={styles.withheldTitle}>Score and context only</Text>
           <Text style={styles.withheldText}>{withheld}</Text>
+          <Text style={styles.withheldHint}>{WITHHELD_HINT}</Text>
         </View>
       )}
 
@@ -527,7 +543,26 @@ const createStyles = (theme) => StyleSheet.create({
     marginTop: verticalScale(6),
     marginBottom: verticalScale(16),
   },
-  inputRow: { marginBottom: verticalScale(12) },
+  inputRow: { marginBottom: verticalScale(10) },
+  siteHintRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: horizontalScale(6),
+    marginBottom: verticalScale(14),
+  },
+  siteHintLead: { color: theme.textSecondary, fontSize: getResponsiveFontSize(12) },
+  siteHintChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: horizontalScale(4),
+    paddingHorizontal: horizontalScale(9),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(12),
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  siteHintText: { color: theme.text, fontSize: getResponsiveFontSize(12), fontWeight: '600' },
   input: {
     backgroundColor: theme.cardBg,
     borderRadius: moderateScale(10),
@@ -672,6 +707,12 @@ const createStyles = (theme) => StyleSheet.create({
   },
   withheldTitle: { color: theme.text, fontWeight: '700', fontSize: getResponsiveFontSize(14) },
   withheldText: { color: theme.textSecondary, fontSize: getResponsiveFontSize(12), marginTop: verticalScale(4) },
+  withheldHint: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(11),
+    marginTop: verticalScale(8),
+    lineHeight: getResponsiveFontSize(16),
+  },
   factorRow: { marginBottom: verticalScale(8) },
   factorLabel: { color: theme.accent, fontSize: getResponsiveFontSize(12), fontWeight: '600' },
   factorDetail: { color: theme.textSecondary, fontSize: getResponsiveFontSize(12), marginTop: 2 },

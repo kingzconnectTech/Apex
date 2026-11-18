@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
+import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../context/ThemeContext';
 import { horizontalScale, verticalScale, moderateScale, getResponsiveFontSize } from '../utils/responsive';
 import { fetchLiveCapabilities, fetchLiveMatches, validateSiteLink } from '../services/api';
@@ -129,7 +130,7 @@ export default function LiveMatchesScreen() {
       <Text style={styles.title}>Live Matches</Text>
       <Text style={styles.subtitle}>
         Games in play now, read from FlashScore and LiveScore. Open any match in the
-        in-app browser, or add your own link below.
+        in-app browser, copy a match link, or add your own link below.
       </Text>
 
       {featureOff ? (
@@ -289,6 +290,20 @@ export default function LiveMatchesScreen() {
 /** One in-play match: league, teams, score, live phase, and its site links. */
 function MatchCard({ match, styles, theme, onOpen }) {
   const primary = match.url || (match.links[0] && match.links[0].url) || null;
+  // Which link chip was last copied, so its button can say "Copied" for a beat.
+  const [copiedKey, setCopiedKey] = useState(null);
+  const copyTimer = useRef(null);
+
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
+
+  const copyLink = async (url, key) => {
+    if (!url) return;
+    await Clipboard.setStringAsync(url);
+    setCopiedKey(key);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopiedKey(null), 1500);
+  };
+
   return (
     <TouchableOpacity
       style={styles.card}
@@ -319,18 +334,34 @@ function MatchCard({ match, styles, theme, onOpen }) {
 
       {match.links.length > 0 ? (
         <View style={styles.linkChipRow}>
-          {match.links.map((link, i) => (
-            link.url ? (
-              <TouchableOpacity
-                key={`${match.id}-${link.source}-${i}`}
-                style={styles.linkChip}
-                onPress={() => onOpen(link.url, link.sourceName)}
-              >
-                <Ionicons name="open-outline" size={moderateScale(13)} color={theme.primary} />
-                <Text style={styles.linkChipText}>{link.sourceName || 'Open'}</Text>
-              </TouchableOpacity>
-            ) : null
-          ))}
+          {match.links.map((link, i) => {
+            if (!link.url) return null;
+            const key = `${match.id}-${link.source}-${i}`;
+            const copied = copiedKey === key;
+            return (
+              <View key={key} style={styles.linkChip}>
+                <TouchableOpacity
+                  style={styles.linkOpen}
+                  onPress={() => onOpen(link.url, link.sourceName)}
+                  accessibilityLabel={`Open ${link.sourceName || 'match'} link`}
+                >
+                  <Ionicons name="open-outline" size={moderateScale(13)} color={theme.primary} />
+                  <Text style={styles.linkChipText}>{link.sourceName || 'Open'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.linkCopy}
+                  onPress={() => copyLink(link.url, key)}
+                  accessibilityLabel={`Copy ${link.sourceName || 'match'} link`}
+                >
+                  <Ionicons
+                    name={copied ? 'checkmark' : 'copy-outline'}
+                    size={moderateScale(13)}
+                    color={copied ? theme.success : theme.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
+            );
+          })}
         </View>
       ) : null}
     </TouchableOpacity>
@@ -580,13 +611,31 @@ const createStyles = (theme) => StyleSheet.create({
   linkChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: horizontalScale(4),
-    paddingHorizontal: horizontalScale(10),
-    paddingVertical: verticalScale(6),
-    borderRadius: moderateScale(16),
+    borderRadius: moderateScale(22),
     borderWidth: 1,
     borderColor: theme.border,
-    minHeight: 34,
+    overflow: 'hidden',
+    minHeight: 44,
+  },
+  linkOpen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: horizontalScale(4),
+    paddingLeft: horizontalScale(12),
+    paddingRight: horizontalScale(8),
+    paddingVertical: verticalScale(8),
+    minHeight: 44,
+  },
+  linkCopy: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: horizontalScale(10),
+    paddingVertical: verticalScale(8),
+    minHeight: 44,
+    minWidth: 44,
+    borderLeftWidth: 1,
+    borderLeftColor: theme.border,
   },
   linkChipText: { color: theme.primary, fontSize: getResponsiveFontSize(12), fontWeight: '600' },
   spinner: { marginTop: verticalScale(24) },

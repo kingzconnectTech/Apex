@@ -39,6 +39,9 @@ const {
   shouldPoll,
   candidateOptions,
   isAutoResolvableLink,
+  SCORE_SITE_HOSTS,
+  SCORE_SITE_LABELS,
+  WITHHELD_HINT,
 } = require('../utils/liveAnalysisView');
 
 /** An analysis payload from the backend, gate CLOSED (the current state). */
@@ -367,4 +370,31 @@ test('isAutoResolvableLink fires only for a complete LiveScore / FlashScore link
   assert.equal(isAutoResolvableLink(''), false);
   assert.equal(isAutoResolvableLink(null), false);
   assert.equal(isAutoResolvableLink(undefined), false);
+});
+
+test('the score-site prompt names exactly the two hosts the analysis accepts', () => {
+  // The hint the screen shows, and the host list the auto-resolve uses, must
+  // stay in lockstep — otherwise the prompt advertises a site the feed cannot
+  // answer for (or hides one it can).
+  assert.deepEqual(SCORE_SITE_LABELS.map(s => s.host), [...SCORE_SITE_HOSTS]);
+  assert.deepEqual(SCORE_SITE_HOSTS, ['livescore.com', 'flashscore.com']);
+  SCORE_SITE_LABELS.forEach(site => {
+    assert.ok(site.name);
+    assert.ok(SCORE_SITE_HOSTS.includes(site.host));
+  });
+});
+
+test('the withheld hint is present whenever the gate withholds, and absent when it ships', () => {
+  // The standing explanation is a fixed string the screen renders under the
+  // gate reason, so a reader never reads "withheld" as "broken".
+  assert.equal(typeof WITHHELD_HINT, 'string');
+  assert.ok(WITHHELD_HINT.length > 0);
+  assert.ok(/backtest/i.test(WITHHELD_HINT));
+
+  // It is the withheld (gate-closed) case that shows it; a shipped payload does
+  // not, because probabilities render instead.
+  assert.equal(showsProbabilities(withheldAnalysis()), false);
+  assert.ok(withheldNotice(withheldAnalysis()));
+  assert.equal(showsProbabilities(shippedAnalysis()), true);
+  assert.equal(withheldNotice(shippedAnalysis()), null);
 });

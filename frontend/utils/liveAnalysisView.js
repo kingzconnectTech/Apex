@@ -353,6 +353,24 @@ function candidateOptions(resolveResult) {
 const SCORE_SITE_HOSTS = ['livescore.com', 'flashscore.com'];
 
 /**
+ * The same two sites, labelled for the on-screen prompt. The Live Analysis
+ * screen tells the reader which links to paste — these are those links.
+ */
+const SCORE_SITE_LABELS = [
+  { host: 'livescore.com', name: 'LiveScore' },
+  { host: 'flashscore.com', name: 'FlashScore' },
+];
+
+/**
+ * The standing explanation shown whenever the ship gate withholds the model
+ * figures. It says plainly that this is deliberate validation rather than a
+ * failed or missing result, so a reader never mistakes "withheld" for "broken".
+ */
+const WITHHELD_HINT =
+  'Predictions appear here only after the model has passed live backtesting for this sport. '
+  + 'Until then nothing is estimated or shown — the score, clock and context above are all real.';
+
+/**
  * True when `text` is a complete http(s) link to a LiveScore / FlashScore page.
  * This is the client-side half of "paste a link and it just shows": the screen
  * auto-resolves such a link the moment it lands, so the user does not have to
@@ -405,4 +423,7 @@ module.exports = {
   shouldPoll,
   candidateOptions,
   isAutoResolvableLink,
+  SCORE_SITE_HOSTS,
+  SCORE_SITE_LABELS,
+  WITHHELD_HINT,
 };
