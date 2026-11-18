@@ -215,6 +215,49 @@ function probabilityRows(analysis) {
   return rows;
 }
 
+/** The display label for a match-result selection, or null if unrecognised. */
+function resultLabel(selection, home, away) {
+  if (selection === 'home') return `${home} win`;
+  if (selection === 'away') return `${away} win`;
+  if (selection === 'draw') return 'Draw';
+  return null;
+}
+
+/**
+ * The recommended picks (match result + Over/Under) as renderable rows, each
+ * carrying the model's probability as its confidence. Empty when the gate
+ * withholds the figures, or when a market could not be priced — the caller
+ * renders nothing rather than a placeholder.
+ */
+function pickRows(analysis) {
+  const picks = analysis && analysis.picks;
+  if (!showsProbabilities(analysis) || !picks) return [];
+  const { home, away } = teamNames(analysis);
+  const rows = [];
+
+  const mr = picks.match_result;
+  if (mr && mr.selection) {
+    rows.push({
+      key: 'match_result',
+      market: mr.market === '1x2' ? 'Match result' : 'Winner',
+      label: resultLabel(mr.selection, home, away),
+      display: formatPercent(mr.probability),
+    });
+  }
+
+  const ou = picks.over_under;
+  if (ou && ou.selection && ou.line != null) {
+    rows.push({
+      key: 'over_under',
+      market: 'Total',
+      label: `${ou.selection === 'over' ? 'Over' : 'Under'} ${ou.line}`,
+      display: formatPercent(ou.probability),
+    });
+  }
+
+  return rows;
+}
+
 /** Projection rows. Empty when the gate refuses. */
 function projectionRows(analysis) {
   const pr = analysis && analysis.projection;
@@ -409,6 +452,8 @@ module.exports = {
   shareText,
   withheldNotice,
   probabilityRows,
+  resultLabel,
+  pickRows,
   projectionRows,
   factors,
   contextBlock,

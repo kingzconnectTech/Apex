@@ -88,6 +88,32 @@ const CONFIG = {
     shipAllLive: true,
 
     /**
+     * Phase 11 — LIVE PICKS (the recommendation shown above the probabilities).
+     *
+     * The live model outputs probabilities and a projection; these settings turn
+     * them into the two picks the Live Analysis screen shows: the match-result
+     * pick (1X2 in soccer, moneyline in basketball) and the Over/Under pick.
+     *
+     * The live model has NO bookmaker line to compare against, so the O/U pick is
+     * made against a FIXED standard line per sport/league. Because the line is a
+     * constant (never the live projection), the pick's confidence moves honestly
+     * as the live game state moves the projection away from it.
+     */
+    pickMarkets: {
+      enabled: true,
+      overUnder: {
+        // Soccer: the standard main line. A half point (X.5) so a total can
+        // never push.
+        soccer: { line: 2.5 },
+        // Basketball: `line` pins every league when set. When null the line is
+        // the league's own mean total (basketball/leagues.js) rounded to the
+        // nearest half point, so it stays a fixed per-league constant;
+        // `defaultLine` covers a league basketball/leagues.js does not know.
+        basketball: { line: null, defaultLine: 219.5 },
+      },
+    },
+
+    /**
      * Phase 9 — SHIP ROLLOUT (testers-only bridge).
      *
      * `live.picks` above is the PUBLIC allowlist: populating it ships a pick to

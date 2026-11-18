@@ -22,6 +22,7 @@ import {
   manualBadgeDetail,
   withheldNotice,
   probabilityRows,
+  pickRows,
   projectionRows,
   factors,
   keyEvents,
@@ -320,6 +321,7 @@ export default function LiveAnalysisScreen({ navigation }) {
 /** The score/clock/context card, with model figures only when they are allowed. */
 function AnalysisCard({ analysis, styles, theme }) {
   const probs = probabilityRows(analysis);
+  const picks = pickRows(analysis);
   const projections = projectionRows(analysis);
   const facts = factors(analysis);
   const withheld = withheldNotice(analysis);
@@ -359,6 +361,21 @@ function AnalysisCard({ analysis, styles, theme }) {
         {tier ? <Text style={styles.tierText}>{tier}</Text> : null}
         {contextAge ? <Text style={styles.contextAgeText}>{contextAge}</Text> : null}
       </View>
+
+      {picks.length > 0 ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Pick</Text>
+          {picks.map(row => (
+            <View key={row.key} style={styles.pickRow}>
+              <View style={styles.pickInfo}>
+                <Text style={styles.pickMarket}>{row.market}</Text>
+                <Text style={styles.pickSelection}>{row.label}</Text>
+              </View>
+              <Text style={styles.pickConfidence}>{row.display}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       {probs.length > 0 ? (
         <View style={styles.section}>
@@ -697,6 +714,33 @@ const createStyles = (theme) => StyleSheet.create({
   },
   rowLabel: { color: theme.textSecondary, fontSize: getResponsiveFontSize(13) },
   rowValue: { color: theme.text, fontSize: getResponsiveFontSize(13), fontWeight: '700' },
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: verticalScale(8),
+    borderTopWidth: 1,
+    borderTopColor: theme.border,
+  },
+  pickInfo: { flex: 1 },
+  pickMarket: {
+    color: theme.textSecondary,
+    fontSize: getResponsiveFontSize(11),
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  pickSelection: {
+    color: theme.text,
+    fontSize: getResponsiveFontSize(15),
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  pickConfidence: {
+    color: theme.accent,
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '800',
+    marginLeft: horizontalScale(12),
+  },
   withheldBox: {
     marginTop: verticalScale(16),
     padding: horizontalScale(14),

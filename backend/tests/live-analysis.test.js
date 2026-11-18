@@ -283,6 +283,62 @@ describe('buildAnalysis — the ship gate is the single chokepoint', () => {
   });
 });
 
+describe('Phase 11 — the live picks (match result + Over/Under)', () => {
+  const basketball = (over = {}) => game({
+    sport: 'basketball', league: { id: 'nba', name: 'NBA' },
+    clock: '7:24', period: 3, homeScore: 70, awayScore: 66, status: 'live', ...over,
+  });
+
+  test('a shipped soccer game carries both picks, confidence = model probability', () => {
+    withShippedLeague('soccer', 'eng.1', () => {
+      const a = buildAnalysis({ game: game({ homeScore: 1, awayScore: 0 }) });
+      expect(a.display.shows_probabilities).toBe(true);
+
+      const mr = a.picks.match_result;
+      expect(mr.market).toBe('1x2');
+      expect(['home', 'draw', 'away']).toContain(mr.selection);
+      // The recommended outcome is the most likely one the probabilities show,
+      // and its confidence is exactly that probability — nothing is inflated.
+      const shown = { home: a.probabilities.home_win, draw: a.probabilities.draw, away: a.probabilities.away_win };
+      expect(mr.probability).toBeCloseTo(shown[mr.selection], 4);
+      expect(Math.max(...Object.values(shown))).toBeCloseTo(mr.probability, 4);
+
+      const ou = a.picks.over_under;
+      expect(ou.market).toBe('over_under');
+      expect(ou.line).toBe(2.5);
+      expect(['over', 'under']).toContain(ou.selection);
+      expect(ou.over + ou.under).toBeCloseTo(1, 3);
+      // Confidence is the picked side, so it is always the >= 0.5 side.
+      expect(ou.probability).toBeCloseTo(ou.selection === 'over' ? ou.over : ou.under, 4);
+      expect(ou.probability).toBeGreaterThanOrEqual(0.5);
+    });
+  });
+
+  test('a shipped basketball game prices the O/U against the league line', () => {
+    withShippedLeague('basketball', 'nba', () => {
+      const a = buildAnalysis({ game: basketball() });
+      expect(a.display.shows_probabilities).toBe(true);
+      expect(a.picks.match_result.market).toBe('moneyline');
+      expect(a.picks.over_under.line).toBe(234.5);
+      expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(0.5);
+    });
+  });
+
+  test('withheld: no pick can ride along when the gate refuses', () => {
+    withShadowSport('soccer', () => {
+      const a = buildAnalysis({ game: game() });
+      expect(a.display.shows_probabilities).toBe(false);
+      expect(a.picks).toBeNull();
+    });
+  });
+
+  test('a hand-typed game carries no picks', () => {
+    const a = buildAnalysis({ game: game({ tier: 'user_entered', league: { id: null, name: null } }) });
+    expect(a.display.shows_probabilities).toBe(false);
+    expect(a.picks).toBeNull();
+  });
+});
+
 describe('analyseLiveGame — resolution, caching and honest 404', () => {
   test('an unknown game id returns GAME_NOT_RESOLVED (404)', async () => {
     const out = await analyseLiveGame({ gameId: 'espn:999' });

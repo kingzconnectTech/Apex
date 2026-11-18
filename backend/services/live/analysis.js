@@ -20,6 +20,7 @@ const CONFIG = require('./config');
 const { buildLiveGame } = require('./liveGame');
 const { predictLive } = require('./liveModel');
 const { mayShipPick, shadowSports } = require('./policy');
+const { derivePicks } = require('./livePicks');
 const liveCalibrator = require('./liveCalibrator');
 const forwardTest = require('./forwardTest');
 const shadowCandidates = require('./shadowCandidates');
@@ -299,6 +300,10 @@ function buildAnalysis({ game, context = {}, contextView = null, now = Date.now(
     mode = model.status === 'live' ? DISPLAY_MODES.FULL : DISPLAY_MODES.PRIOR_ONLY;
   }
   const showFigures = mode !== DISPLAY_MODES.CONTEXT_ONLY;
+  // Phase 11 — the recommended picks, derived from the SAME model output the
+  // probabilities come from. Withheld (null) whenever the gate withholds the
+  // figures, so a pick can never appear beside a withheld probability.
+  const picks = showFigures ? derivePicks({ sport: game.sport, model, game }) : null;
 
   const payload = {
     game_id: game.game_id,
@@ -345,6 +350,9 @@ function buildAnalysis({ game, context = {}, contextView = null, now = Date.now(
       ? { status: model.status, name: model.model, reason: model.reason || null, notes: model.notes || [] }
       : { status: model.status, name: model.model || null, reason: model.reason || null, notes: model.notes || [] },
     probabilities: showFigures ? model.probabilities : null,
+    // Phase 11 — the recommended picks (match result + Over/Under), each with the
+    // model's own probability as its confidence. Null when the gate withholds.
+    picks,
     probabilities_note: showFigures
       ? (model.status === 'prior_only'
         ? 'No in-game clock, so this is the pre-game projection, not a live one.'

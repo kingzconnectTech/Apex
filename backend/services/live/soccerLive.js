@@ -197,6 +197,9 @@ function predictSoccer({ game, context = {}, weight = 1, manual = false } = {}) 
       inputs: { elapsed_minutes: null, remaining_minutes: null, period: game.live.period, clock: game.live.clock },
       expected: prior.expected,
       probabilities: prior.probabilities,
+      // The full final-total distribution (current score already folded in), for
+      // the Over/Under pick. [{ value, prob }], summing to 1.
+      total_distribution: priorOutcome.totalPairs,
       uncertainty: {
         level: LEVEL,
         total: band(priorOutcome.totalPairs, widen),
@@ -273,6 +276,9 @@ function predictSoccer({ game, context = {}, weight = 1, manual = false } = {}) 
       margin: M.round(M.blend(live.expected.margin, prior.expected.margin, weight), 2),
     },
     probabilities,
+    // The full final-total distribution (current score already folded in), for
+    // the Over/Under pick. [{ value, prob }], summing to 1.
+    total_distribution: liveOutcome.totalPairs,
     uncertainty: {
       level: LEVEL,
       total: band(liveOutcome.totalPairs, widen),

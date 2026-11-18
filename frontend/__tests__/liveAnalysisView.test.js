@@ -26,6 +26,8 @@ const {
   shareText,
   withheldNotice,
   probabilityRows,
+  resultLabel,
+  pickRows,
   projectionRows,
   factors,
   contextBlock,
@@ -157,6 +159,66 @@ test('basketball exposes only the two-way outcomes it actually models', () => {
   const rows = probabilityRows(a);
   assert.deepEqual(rows.map(r => r.key), ['home_win', 'away_win']);
   assert.ok(projectionRows(a).some(r => r.label === 'Total line'));
+});
+
+test('resultLabel names the picked outcome, or null when unrecognised', () => {
+  assert.equal(resultLabel('home', 'Manchester United', 'Chelsea'), 'Manchester United win');
+  assert.equal(resultLabel('away', 'Manchester United', 'Chelsea'), 'Chelsea win');
+  assert.equal(resultLabel('draw', 'Manchester United', 'Chelsea'), 'Draw');
+  assert.equal(resultLabel('x', 'A', 'B'), null);
+});
+
+test('WITHHELD: no pick rows render when the gate withholds', () => {
+  assert.deepEqual(pickRows(withheldAnalysis()), []);
+  assert.deepEqual(pickRows(null), []);
+});
+
+test('SHIPPED: the match-result and Over/Under picks render with their confidence', () => {
+  const a = shippedAnalysis({
+    picks: {
+      match_result: { market: '1x2', selection: 'home', probability: 0.62 },
+      over_under: { market: 'over_under', line: 2.5, selection: 'over', probability: 0.54, over: 0.54, under: 0.46 },
+    },
+  });
+  const rows = pickRows(a);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].key, 'match_result');
+  assert.equal(rows[0].market, 'Match result');
+  assert.equal(rows[0].label, 'Manchester United win');
+  assert.equal(rows[0].display, '62.0%');
+  assert.equal(rows[1].key, 'over_under');
+  assert.equal(rows[1].market, 'Total');
+  assert.equal(rows[1].label, 'Over 2.5');
+  assert.equal(rows[1].display, '54.0%');
+});
+
+test('a basketball pick labels the winner market without a draw', () => {
+  const a = shippedAnalysis({
+    sport: 'basketball',
+    probabilities: { home_win: 0.58, away_win: 0.42 },
+    picks: {
+      match_result: { market: 'moneyline', selection: 'away', probability: 0.42 },
+      over_under: { market: 'over_under', line: 218.5, selection: 'under', probability: 0.6 },
+    },
+  });
+  const rows = pickRows(a);
+  assert.equal(rows[0].market, 'Winner');
+  assert.equal(rows[0].label, 'Chelsea win');
+  assert.equal(rows[0].display, '42.0%');
+  assert.equal(rows[1].label, 'Under 218.5');
+  assert.equal(rows[1].display, '60.0%');
+});
+
+test('a pick that could not be priced is omitted, never a placeholder', () => {
+  const a = shippedAnalysis({
+    picks: {
+      match_result: null,
+      over_under: { market: 'over_under', line: 2.5, selection: 'over', probability: 0.54 },
+    },
+  });
+  const rows = pickRows(a);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].key, 'over_under');
 });
 
 test('formatPercent is null-safe and honest about missing numbers', () => {
