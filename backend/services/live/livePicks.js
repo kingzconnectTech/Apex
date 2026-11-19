@@ -1,9 +1,10 @@
 /**
  * live/livePicks.js
  *
- * Phase 11 — turn a live model output into the two picks the Live Analysis
- * screen shows: the match-result pick (1X2 in soccer, moneyline in basketball)
- * and the Over/Under pick.
+ * Phase 11 — turn a live model output into the picks the Live Analysis screen
+ * shows: the match-result pick (1X2 in soccer, moneyline in basketball), the
+ * Over/Under pick, and — for soccer, when the live-stat feed supplied the count
+ * — the corners and shots Over/Under picks.
  *
  * Pure: no I/O, no cache. It reads only the model output it is handed plus the
  * line configuration, never recomputes the model, and never invents a number.
@@ -211,16 +212,77 @@ function basketballTotalsPick(model, game, markets) {
 }
 
 /**
- * Derive the picks for one live model output. Returns `{ match_result, over_under }`
- * — each key is an object or null (a null means that market could not be priced,
- * never a placeholder). Returns null overall when the model is not usable.
+ * The Over/Under pick for a rate-based count market (corners, shots): among the
+ * AVAILABLE lines, take the one NEAREST the projected final count — the model's
+ * "main" line — and the stronger side, exactly as the basketball totals pick
+ * takes the line nearest its expected total. Confidence is that side's own
+ * probability. Settled lines are never fresh picks, and a market that cannot be
+ * priced is null, never a placeholder.
+ *
+ * @param {string} market  'corners' | 'shots'
+ * @param {Array} markets  the soccer market list
+ * @param {number|null} projected  projected final count (for the main line)
+ */
+function rateCountPick(market, markets, projected) {
+  const byLine = new Map();
+  for (const m of markets || []) {
+    if (!m || m.market !== market || m.status !== 'available') continue;
+    if (!Number.isFinite(m.probability)) continue;
+    const cur = byLine.get(m.line) || { line: m.line, over: null, under: null };
+    if (m.side === 'over') cur.over = m.probability;
+    else if (m.side === 'under') cur.under = m.probability;
+    byLine.set(m.line, cur);
+  }
+  const candidates = [...byLine.values()].filter(c => c.over != null && c.under != null);
+  if (!candidates.length) return null;
+
+  // The main line is the one nearest the projection; with no projection the
+  // model's own near-even line (P(over) closest to 0.5) is the honest anchor.
+  const line = Number.isFinite(projected)
+    ? candidates.reduce((a, b) => (Math.abs(b.line - projected) < Math.abs(a.line - projected) ? b : a)).line
+    : candidates.reduce((a, b) => (Math.abs(a.over - 0.5) <= Math.abs(b.over - 0.5) ? a : b)).line;
+  const chosen = byLine.get(line);
+  const selection = chosen.over >= chosen.under ? 'over' : 'under';
+  return {
+    market,
+    line,
+    selection,
+    probability: M.round(selection === 'over' ? chosen.over : chosen.under, 4),
+    over: M.round(chosen.over, 4),
+    under: M.round(chosen.under, 4),
+  };
+}
+
+/**
+ * The projected final count of a rate statistic (corners, shots): the count so
+ * far plus the remaining count the per-minute rate implies. Null when the count
+ * or the clock is unknown — the pick then falls back to the near-even line.
+ */
+function projectedCount(stats, field, model) {
+  const cur = stats && stats.totals ? stats.totals[field] : null;
+  if (!Number.isFinite(cur)) return null;
+  const el = model && model.inputs ? model.inputs.elapsed_minutes : null;
+  const rem = model && model.inputs ? model.inputs.remaining_minutes : null;
+  const rest = liveMarkets.expectedRemaining(cur, el, rem);
+  return Number.isFinite(rest) ? M.round(cur + rest, 2) : null;
+}
+
+/**
+ * Derive the picks for one live model output. Returns
+ * `{ match_result, over_under, corners, shots }` — each key is an object or null
+ * (a null means that market could not be priced, never a placeholder). Returns
+ * null overall when the model is not usable. `corners` and `shots` are soccer
+ * only and are priced from the live-stat markets, so they are null whenever the
+ * provider gave no shots/corners count (e.g. a score-site game).
  *
  * @param {Object} args
  * @param {string} args.sport
  * @param {Object} args.model  a predictLive output (status live | prior_only)
  * @param {Object} [args.game] the LiveGame
+ * @param {Array} [args.markets] the priced market list from liveMarkets
+ * @param {Object} [args.stats] normalised live stats from liveStats
  */
-function derivePicks({ sport, model, game, markets } = {}) {
+function derivePicks({ sport, model, game, markets, stats = null } = {}) {
   if (!CFG || CFG.enabled === false) return null;
   if (!sport || !model) return null;
   if (model.status !== 'live' && model.status !== 'prior_only') return null;
@@ -231,8 +293,14 @@ function derivePicks({ sport, model, game, markets } = {}) {
   const overUnder = sport === 'basketball'
     ? basketballTotalsPick(model, game || {}, markets)
     : overUnderPick(sport, model, game || {}, markets);
-  if (!matchResult && !overUnder) return null;
-  return { match_result: matchResult, over_under: overUnder };
+  const corners = sport === 'soccer'
+    ? rateCountPick('corners', markets, projectedCount(stats, 'corners', model))
+    : null;
+  const shots = sport === 'soccer'
+    ? rateCountPick('shots', markets, projectedCount(stats, 'shots', model))
+    : null;
+  if (!matchResult && !overUnder && !corners && !shots) return null;
+  return { match_result: matchResult, over_under: overUnder, corners, shots };
 }
 
-module.exports = { derivePicks, overUnderLine, matchResultPick, doubleChancePick, overUnderPick, basketballTotalsPick, soccerOver, basketballOver };
+module.exports = { derivePicks, overUnderLine, matchResultPick, doubleChancePick, overUnderPick, basketballTotalsPick, rateCountPick, projectedCount, soccerOver, basketballOver };

@@ -43,7 +43,7 @@ export default function AdminPickCard({ pick, showVisibility = false }) {
         <View style={styles.leagueWrap}>
           <View style={[styles.sportPill, { backgroundColor: theme.bg }]}>
             <Ionicons
-              name={pick.sport === 'Basketball' ? 'basketball-outline' : 'football-outline'}
+              name={pick.sport === 'Tennis' ? 'tennisball-outline' : pick.sport === 'Basketball' ? 'basketball-outline' : 'football-outline'}
               size={moderateScale(12)}
               color={theme.secondary}
             />

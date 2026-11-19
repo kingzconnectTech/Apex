@@ -221,6 +221,40 @@ test('a pick that could not be priced is omitted, never a placeholder', () => {
   assert.equal(rows[0].key, 'over_under');
 });
 
+test('SHIPPED: corner and shot picks render alongside the main picks', () => {
+  const a = shippedAnalysis({
+    picks: {
+      match_result: { market: 'double_chance', selection: '1x', probability: 0.92 },
+      over_under: { market: 'over_under', line: 2.5, selection: 'over', probability: 0.54, over: 0.54, under: 0.46 },
+      corners: { market: 'corners', line: 8.5, selection: 'over', probability: 0.71, over: 0.71, under: 0.29 },
+      shots: { market: 'shots', line: 21.5, selection: 'under', probability: 0.58, over: 0.42, under: 0.58 },
+    },
+  });
+  const rows = pickRows(a);
+  assert.deepEqual(rows.map(r => r.key), ['match_result', 'over_under', 'corners', 'shots']);
+  const corners = rows.find(r => r.key === 'corners');
+  assert.equal(corners.market, 'Corners');
+  assert.equal(corners.label, 'Over 8.5');
+  assert.equal(corners.display, '71.0%');
+  const shots = rows.find(r => r.key === 'shots');
+  assert.equal(shots.market, 'Shots');
+  assert.equal(shots.label, 'Under 21.5');
+  assert.equal(shots.display, '58.0%');
+});
+
+test('SHIPPED: a missing corner/shot pick is omitted, never a placeholder', () => {
+  const a = shippedAnalysis({
+    picks: {
+      match_result: null,
+      over_under: { market: 'over_under', line: 2.5, selection: 'over', probability: 0.54 },
+      corners: null,
+      shots: null,
+    },
+  });
+  const rows = pickRows(a);
+  assert.deepEqual(rows.map(r => r.key), ['over_under']);
+});
+
 test('formatPercent is null-safe and honest about missing numbers', () => {
   assert.equal(formatPercent(0.6234), '62.3%');
   assert.equal(formatPercent(0), '0.0%');

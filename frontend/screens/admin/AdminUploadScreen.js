@@ -205,7 +205,7 @@ export default function AdminUploadScreen({ navigation, route }) {
               ]}
             >
               <Ionicons
-                name={sport === 'Basketball' ? 'basketball-outline' : 'football-outline'}
+                name={sport === 'Tennis' ? 'tennisball-outline' : sport === 'Basketball' ? 'basketball-outline' : 'football-outline'}
                 size={moderateScale(16)}
                 color={active ? '#FFFFFF' : theme.textSecondary}
               />

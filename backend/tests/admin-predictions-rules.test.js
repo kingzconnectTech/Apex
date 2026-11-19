@@ -181,7 +181,7 @@ describeEmulator('firestore.rules — admin_predictions are claims-gated', () =>
     const db = adminDb('admin_1');
     await assertFails(db.doc('admin_predictions/bad_conf').set(validPrediction({ confidence: 150 })));
     await assertFails(db.doc('admin_predictions/bad_status').set(validPrediction({ status: 'maybe' })));
-    await assertFails(db.doc('admin_predictions/bad_sport').set(validPrediction({ sport: 'Tennis' })));
+    await assertFails(db.doc('admin_predictions/bad_sport').set(validPrediction({ sport: 'Cricket' })));
     await assertFails(db.doc('admin_predictions/bad_vis').set(validPrediction({ visibility: 'hidden' })));
     // A date stored as text is refused (dates must be Firestore timestamps).
     await assertFails(db.doc('admin_predictions/bad_date').set(validPrediction({ matchDate: '2026-01-01' })));

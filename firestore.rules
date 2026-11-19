@@ -28,7 +28,7 @@ service cloud.firestore {
     // The exact shape every stored prediction must have. Used on create and on
     // update so a malformed or half-written document can never be persisted.
     function validPrediction(d) {
-      return d.sport in ['Football', 'Basketball']
+      return d.sport in ['Football', 'Basketball', 'Tennis']
         && d.league is string && d.league.size() > 0
         && d.homeTeam is string && d.homeTeam.size() > 0
         && d.awayTeam is string && d.awayTeam.size() > 0

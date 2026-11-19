@@ -416,7 +416,7 @@ function buildAnalysis({ game, context = {}, contextView = null, statsView = nul
         ? liveMarkets.buildBasketballTotalMarkets({ model, game })
         : null)
     : null;
-  const picks = showFigures ? derivePicks({ sport: game.sport, model, game, markets }) : null;
+  const picks = showFigures ? derivePicks({ sport: game.sport, model, game, markets, stats }) : null;
 
   const payload = {
     game_id: game.game_id,
@@ -463,8 +463,9 @@ function buildAnalysis({ game, context = {}, contextView = null, statsView = nul
       ? { status: model.status, name: model.model, reason: model.reason || null, notes: model.notes || [] }
       : { status: model.status, name: model.model || null, reason: model.reason || null, notes: model.notes || [] },
     probabilities: showFigures ? model.probabilities : null,
-    // Phase 11 — the recommended picks (match result + Over/Under), each with the
-    // model's own probability as its confidence. Null when the gate withholds.
+    // Phase 11 — the recommended picks (match result, Over/Under, and — for
+    // soccer when the stats arrived — corners and shots), each with the model's
+    // own probability as its confidence. Null when the gate withholds.
     picks,
     // Live statistics (facts, never predictions) — shown whenever they exist,
     // including context-only mode. Missing fields are null, never zero.

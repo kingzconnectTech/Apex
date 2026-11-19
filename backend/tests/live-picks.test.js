@@ -14,8 +14,10 @@
 
 const CONFIG = require('../services/live/config');
 const {
-  derivePicks, overUnderLine, matchResultPick, overUnderPick, soccerOver, basketballOver,
+  derivePicks, overUnderLine, matchResultPick, overUnderPick, rateCountPick, projectedCount,
+  soccerOver, basketballOver,
 } = require('../services/live/livePicks');
+const liveMarkets = require('../services/live/liveMarkets');
 
 const CFG = CONFIG.live.pickMarkets;
 
@@ -207,5 +209,105 @@ describe('derivePicks — both markets, or null overall when unusable', () => {
     } finally {
       CFG.enabled = saved;
     }
+  });
+});
+
+describe('rateCountPick — the main-line pick for corners/shots', () => {
+  const mk = (market, line, side, probability, status = 'available') => ({
+    market, line, side, probability, status,
+  });
+
+  test('takes the line nearest the projection with the stronger side', () => {
+    const markets = [
+      mk('corners', 7.5, 'over', 0.4), mk('corners', 7.5, 'under', 0.6),
+      mk('corners', 9.5, 'over', 0.3), mk('corners', 9.5, 'under', 0.7),
+    ];
+    const pick = rateCountPick('corners', markets, 7.2);
+    expect(pick.line).toBe(7.5);
+    expect(pick.selection).toBe('under');
+    expect(pick.probability).toBe(0.6);
+    expect(pick.over).toBe(0.4);
+    expect(pick.under).toBe(0.6);
+  });
+
+  test('settled lines and a foreign market are never candidates', () => {
+    const markets = [
+      mk('corners', 7.5, 'over', 1, 'won'), mk('corners', 7.5, 'under', 0, 'lost'),
+      mk('shots', 9.5, 'over', 0.9), mk('shots', 9.5, 'under', 0.1),
+    ];
+    expect(rateCountPick('corners', markets, 7.5)).toBeNull();
+  });
+
+  test('a line priced in one direction only is not a candidate', () => {
+    expect(rateCountPick('corners', [mk('corners', 7.5, 'over', 0.6)], 7.5)).toBeNull();
+  });
+
+  test('returns null rather than guessing without a priced market', () => {
+    expect(rateCountPick('corners', [], 7.5)).toBeNull();
+    expect(rateCountPick('corners', null, 7.5)).toBeNull();
+  });
+
+  test('without a projection the near-even line is the anchor', () => {
+    const markets = [
+      mk('corners', 5.5, 'over', 0.9), mk('corners', 5.5, 'under', 0.1),
+      mk('corners', 8.5, 'over', 0.55), mk('corners', 8.5, 'under', 0.45),
+    ];
+    const pick = rateCountPick('corners', markets, null);
+    expect(pick.line).toBe(8.5);
+    expect(pick.selection).toBe('over');
+  });
+});
+
+describe('derivePicks — corners and shots from the live-stat markets', () => {
+  const soccerModel = {
+    status: 'live',
+    probabilities: { home_win: 0.5, draw: 0.3, away_win: 0.2 },
+    total_distribution: [{ value: 3, prob: 0.6 }, { value: 1, prob: 0.4 }],
+    inputs: { elapsed_minutes: 60, remaining_minutes: 30 },
+  };
+  const stats = { totals: { corners: 6, shots: 12 } };
+
+  test('prices a corner pick and a shot pick from the live-stat markets', () => {
+    const markets = liveMarkets.buildSoccerMarkets({ model: soccerModel, game: {}, stats });
+    const picks = derivePicks({ sport: 'soccer', model: soccerModel, game: {}, markets, stats });
+    expect(picks.corners).not.toBeNull();
+    expect(picks.corners.market).toBe('corners');
+    expect(picks.corners.line).toBeGreaterThan(0);
+    expect(picks.corners.probability).toBeGreaterThanOrEqual(0.5);
+    expect(picks.shots).not.toBeNull();
+    expect(picks.shots.market).toBe('shots');
+    expect(picks.shots.probability).toBeGreaterThanOrEqual(0.5);
+  });
+
+  test('no corner or shot pick when the provider gave no count', () => {
+    const markets = liveMarkets.buildSoccerMarkets({ model: soccerModel, game: {}, stats: null });
+    const picks = derivePicks({ sport: 'soccer', model: soccerModel, game: {}, markets, stats: null });
+    expect(picks.corners).toBeNull();
+    expect(picks.shots).toBeNull();
+  });
+
+  test('basketball carries no corner or shot picks', () => {
+    const model = {
+      status: 'live',
+      probabilities: { home_win: 0.6, away_win: 0.4 },
+      expected: { total: 220 },
+      sigma: { total: 18 },
+    };
+    const picks = derivePicks({ sport: 'basketball', model, game: { league: { id: 'nba' } } });
+    expect(picks.corners).toBeNull();
+    expect(picks.shots).toBeNull();
+  });
+});
+
+describe('projectedCount — the rate extrapolation the pick line is chosen against', () => {
+  test('adds the remaining count the per-minute rate implies', () => {
+    const stats = { totals: { corners: 6 } };
+    // 6 corners in 60 min => 0.1/min => 3 more in 30 min => 9 projected.
+    expect(projectedCount(stats, 'corners', { inputs: { elapsed_minutes: 60, remaining_minutes: 30 } })).toBe(9);
+  });
+
+  test('null when the count or the clock is unknown', () => {
+    expect(projectedCount({ totals: {} }, 'corners', { inputs: { elapsed_minutes: 60, remaining_minutes: 30 } })).toBeNull();
+    expect(projectedCount(null, 'corners', { inputs: {} })).toBeNull();
   });
 });

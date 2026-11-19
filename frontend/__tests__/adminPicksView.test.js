@@ -218,11 +218,13 @@ test('user filter chips select the right subset', () => {
     pick({ id: 'b', sport: 'Basketball', status: STATUS.WON }),
     pick({ id: 'c', sport: 'Football', status: STATUS.LOST }),
     pick({ id: 'd', sport: 'Basketball', status: STATUS.VOID }),
+    pick({ id: 'e', sport: 'Tennis', status: STATUS.WON }),
   ];
-  assert.equal(applyUserFilter(list, 'all').length, 4);
+  assert.equal(applyUserFilter(list, 'all').length, 5);
   assert.equal(applyUserFilter(list, 'football').length, 2);
   assert.equal(applyUserFilter(list, 'basketball').length, 2);
-  assert.equal(applyUserFilter(list, 'won').map(p => p.id).join(','), 'b');
+  assert.equal(applyUserFilter(list, 'tennis').map(p => p.id).join(','), 'e');
+  assert.equal(applyUserFilter(list, 'won').map(p => p.id).join(','), 'b,e');
   assert.equal(applyUserFilter(list, 'lost').map(p => p.id).join(','), 'c');
   assert.equal(applyUserFilter(list, 'void').map(p => p.id).join(','), 'd');
   assert.equal(applyUserFilter(list, 'pending').map(p => p.id).join(','), 'a');
@@ -293,6 +295,6 @@ test('pickToForm reproduces the editable form and re-validates', () => {
 });
 
 test('SPORTS and STATUSES expose exactly the supported values', () => {
-  assert.deepEqual(SPORTS, ['Football', 'Basketball']);
+  assert.deepEqual(SPORTS, ['Football', 'Basketball', 'Tennis']);
   assert.deepEqual(STATUSES, ['pending', 'won', 'lost', 'void']);
 });

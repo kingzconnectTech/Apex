@@ -14,10 +14,10 @@
  * fresh predictions — the UI filters on `status === 'available'`.
  *
  * Goal markets read the model's own final-total distribution
- * (`total_distribution`, current score already folded in). Corner and card
+ * (`total_distribution`, current score already folded in). Corner, shot and card
  * markets are priced from per-minute rates extrapolated over the remaining
  * time, and only when the underlying statistic actually arrived — a corner
- * market is never priced from goals, and vice versa.
+ * market is never priced from goals, and a shot market never from corners.
  */
 
 const CONFIG = require('./config');
@@ -29,6 +29,8 @@ const STATUS = { AVAILABLE: 'available', WON: 'won', LOST: 'lost', UNAVAILABLE: 
 const GOAL_LINES = [0.5, 1.5, 2.5, 3.5, 4.5];
 const CORNER_OVER_LINES = [4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5];
 const CORNER_UNDER_LINES = [8.5, 9.5, 10.5, 11.5];
+const SHOT_OVER_LINES = [7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5];
+const SHOT_UNDER_LINES = [12.5, 13.5, 14.5, 15.5, 16.5];
 const CARD_LINES = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5];
 const TEAM_GOAL_EXTRA_LINES = [1.5, 2.5];
 const TEAM_CORNER_LINES = [2.5, 3.5, 5.5];
@@ -311,6 +313,47 @@ function cardMarkets(stats, elapsed, remaining) {
   return out;
 }
 
+/* ------------------------------------------------ shot markets */
+
+/**
+ * Shot markets — the same rate extrapolation the corner markets use, applied to
+ * total shots. A shot market is only priced from a shots count that actually
+ * arrived (never off goals or corners); a missing count yields an UNAVAILABLE
+ * entry rather than a guess.
+ */
+function shotMarkets(stats, elapsed, remaining) {
+  const out = [];
+  if (!stats || !stats.totals || !Number.isFinite(stats.totals.shots)) {
+    return [entry('shots_unavailable', 'shots', null, 'total', null, STATUS.UNAVAILABLE)];
+  }
+  const curTotal = stats.totals.shots;
+  const lambdaTotal = expectedRemaining(curTotal, elapsed, remaining);
+
+  for (const line of SHOT_OVER_LINES) {
+    const overProb = probOverCount(curTotal, lambdaTotal, line);
+    if (overProb == null) {
+      out.push(entry(`shots_over_${line}`, 'shots', line, 'over', null, STATUS.UNAVAILABLE));
+      out.push(entry(`shots_under_${line}`, 'shots', line, 'under', null, STATUS.UNAVAILABLE));
+      continue;
+    }
+    const st = overUnderStatus(curTotal, line);
+    out.push(entry(`shots_over_${line}`, 'shots', line, 'over', overProb, st.over));
+    out.push(entry(`shots_under_${line}`, 'shots', line, 'under', 1 - overProb, st.under));
+  }
+  for (const line of SHOT_UNDER_LINES) {
+    const overProb = probOverCount(curTotal, lambdaTotal, line);
+    if (overProb == null) {
+      out.push(entry(`shots_over_${line}`, 'shots', line, 'over', null, STATUS.UNAVAILABLE));
+      out.push(entry(`shots_under_${line}`, 'shots', line, 'under', null, STATUS.UNAVAILABLE));
+      continue;
+    }
+    const st = overUnderStatus(curTotal, line);
+    out.push(entry(`shots_over_${line}`, 'shots', line, 'over', overProb, st.over));
+    out.push(entry(`shots_under_${line}`, 'shots', line, 'under', 1 - overProb, st.under));
+  }
+  return out;
+}
+
 /* ------------------------------------------- basketball total points */
 
 /** P(final total > line) for a normal total (half-point line, no push). */
@@ -404,6 +447,7 @@ function buildSoccerMarkets({ model, game, stats = null, elapsed = null, remaini
   const el = Number.isFinite(elapsed) ? elapsed : (model && model.inputs && model.inputs.elapsed_minutes);
   const rem = Number.isFinite(remaining) ? remaining : (model && model.inputs && model.inputs.remaining_minutes);
   markets.push(...cornerMarkets(stats, el, rem));
+  markets.push(...shotMarkets(stats, el, rem));
   markets.push(...cardMarkets(stats, el, rem));
   markets.push(...bttsMarkets(model, game));
   return markets;
@@ -424,8 +468,12 @@ module.exports = {
   probOverTotal,
   probOverCount,
   overUnderStatus,
+  expectedRemaining,
+  shotMarkets,
   GOAL_LINES,
   CORNER_OVER_LINES,
   CORNER_UNDER_LINES,
+  SHOT_OVER_LINES,
+  SHOT_UNDER_LINES,
   CARD_LINES,
 };

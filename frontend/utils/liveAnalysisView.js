@@ -265,6 +265,20 @@ function pickRows(analysis) {
     });
   }
 
+  // Soccer-only rate markets, priced from the live-stat feeds. Absent (null)
+  // whenever the provider gave no count, so no placeholder is ever rendered.
+  for (const [key, label] of [['corners', 'Corners'], ['shots', 'Shots']]) {
+    const p = picks[key];
+    if (p && p.selection && p.line != null) {
+      rows.push({
+        key,
+        market: label,
+        label: `${p.selection === 'over' ? 'Over' : 'Under'} ${p.line}`,
+        display: formatPercent(p.probability),
+      });
+    }
+  }
+
   return rows;
 }
 
@@ -347,6 +361,7 @@ const MARKET_LABELS = {
   double_chance: 'Double chance',
   corners: 'Corners',
   team_corners: 'Team corners',
+  shots: 'Shots',
   cards: 'Cards',
   team_cards: 'Team cards',
   btts: 'BTTS',
@@ -366,6 +381,7 @@ function marketSideLabel(m, home, away) {
     case 'team_goals': return `${sideName(m.side) || m.side} to score`;
     case 'double_chance': return `Double chance ${m.side}`;
     case 'corners': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} corners`;
+    case 'shots': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} shots`;
     case 'team_corners': return `${sideName(m.side) || m.side} over ${m.line} corners`;
     case 'cards': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} cards`;
     case 'team_cards': return `${sideName(m.side) || m.side} over ${m.line} cards`;

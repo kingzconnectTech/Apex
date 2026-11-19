@@ -17,7 +17,7 @@
 /** The dedicated Firestore collection (nothing else is ever read/written here). */
 const COLLECTION = 'admin_predictions';
 
-const SPORTS = ['Football', 'Basketball'];
+const SPORTS = ['Football', 'Basketball', 'Tennis'];
 
 /** The prediction statuses. Newly published picks are always `pending`. */
 const STATUS = { PENDING: 'pending', WON: 'won', LOST: 'lost', VOID: 'void' };
@@ -57,6 +57,13 @@ const MARKET_OPTIONS = {
     'Team Total Points',
     'Point Spread/Handicap',
   ],
+  Tennis: [
+    'Match Winner',
+    'Set Winner',
+    'Over/Under Total Games',
+    'Over/Under Total Sets',
+    'Handicap Games/Sets',
+  ],
 };
 
 /** The user-facing filter chips, in order. */
@@ -64,6 +71,7 @@ const FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'football', label: 'Football' },
   { key: 'basketball', label: 'Basketball' },
+  { key: 'tennis', label: 'Tennis' },
   { key: 'pending', label: 'Pending' },
   { key: 'won', label: 'Won' },
   { key: 'lost', label: 'Lost' },
@@ -288,6 +296,7 @@ function applyUserFilter(picks, filterKey) {
   if (key === 'all') return list.slice();
   if (key === 'football') return list.filter(p => p && p.sport === 'Football');
   if (key === 'basketball') return list.filter(p => p && p.sport === 'Basketball');
+  if (key === 'tennis') return list.filter(p => p && p.sport === 'Tennis');
   if (STATUSES.includes(key)) return list.filter(p => p && normalizeStatus(p.status) === key);
   return list.slice();
 }
