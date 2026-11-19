@@ -295,13 +295,21 @@ describe('Phase 11 — the live picks (match result + Over/Under)', () => {
       expect(a.display.shows_probabilities).toBe(true);
 
       const mr = a.picks.match_result;
-      expect(mr.market).toBe('1x2');
-      expect(['home', 'draw', 'away']).toContain(mr.selection);
-      // The recommended outcome is the most likely one the probabilities show,
-      // and its confidence is exactly that probability — nothing is inflated.
-      const shown = { home: a.probabilities.home_win, draw: a.probabilities.draw, away: a.probabilities.away_win };
-      expect(mr.probability).toBeCloseTo(shown[mr.selection], 4);
-      expect(Math.max(...Object.values(shown))).toBeCloseTo(mr.probability, 4);
+      const hw = a.probabilities.home_win;
+      const dr = a.probabilities.draw;
+      const aw = a.probabilities.away_win;
+      const dc = { '1x': hw + dr, x2: dr + aw, '12': hw + aw };
+      if (mr) {
+        // Soccer match result is a Double Chance pick, gated at 90%.
+        expect(mr.market).toBe('double_chance');
+        expect(['1x', 'x2', '12']).toContain(mr.selection);
+        expect(mr.probability).toBeCloseTo(dc[mr.selection], 4);
+        expect(mr.probability).toBeGreaterThanOrEqual(0.9);
+        expect(mr.probability).toBeCloseTo(Math.max(...Object.values(dc)), 4);
+      } else {
+        // Below the 90% bar the pick is withheld rather than forced.
+        expect(Math.max(...Object.values(dc))).toBeLessThan(0.9);
+      }
 
       const ou = a.picks.over_under;
       expect(ou.market).toBe('over_under');

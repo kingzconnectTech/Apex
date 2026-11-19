@@ -18,6 +18,34 @@ import {
   classifyPredictionResult,
 } from '../utils/basketballPredictionView';
 
+// Market category grouping for football recommendation cards (spec order).
+const MARKET_CATEGORY_ORDER = ['double_chance', 'goals', 'team_goals', 'first_half', 'second_half', 'corners', 'cards', 'btts', 'shots', 'other'];
+const MARKET_CATEGORY_LABELS = {
+  double_chance: 'Double Chance',
+  goals: 'Goals',
+  team_goals: 'Team Goals',
+  first_half: 'First Half',
+  second_half: 'Second Half',
+  corners: 'Corners',
+  cards: 'Cards',
+  btts: 'Both Teams to Score',
+  shots: 'Shots',
+  other: 'Other',
+};
+function groupMarketRecommendations(recs) {
+  if (!Array.isArray(recs) || !recs.length) return [];
+  const map = new Map();
+  for (const rec of recs) {
+    const cat = rec.category || 'other';
+    if (!map.has(cat)) map.set(cat, []);
+    map.get(cat).push(rec);
+  }
+  return MARKET_CATEGORY_ORDER
+    .filter(c => map.has(c))
+    .concat([...map.keys()].filter(c => !MARKET_CATEGORY_ORDER.includes(c)))
+    .map(c => ({ category: c, label: MARKET_CATEGORY_LABELS[c] || c, items: map.get(c) }));
+}
+
 export default function MatchDetailsScreen({ route, navigation }) {
   const { theme, isDarkMode } = useTheme();
   const styles = createStyles(theme, isDarkMode);
@@ -554,6 +582,7 @@ export default function MatchDetailsScreen({ route, navigation }) {
     }
   };
 
+  const marketRecGroups = groupMarketRecommendations(botAnalysis && botAnalysis.recommendations);
   return (
     <View style={styles.container}>
       <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} />
@@ -751,8 +780,11 @@ export default function MatchDetailsScreen({ route, navigation }) {
                   )}
 
                   <View style={styles.tipsList}>
-                    {botAnalysis.recommendations && botAnalysis.recommendations.length > 0 ? (
-                      botAnalysis.recommendations.map((rec, i) => {
+                    {marketRecGroups.length > 0 ? (
+                      marketRecGroups.map(group => (
+                        <View key={group.category}>
+                          <Text style={styles.marketCategoryHeader}>{group.label}</Text>
+                          {group.items.map((rec, i) => {
                       const recMarketKey = (rec.type || '').toLowerCase();
                       const outcomeObj = settlementData?.results?.find(r =>
                         r.market === recMarketKey ||
@@ -807,8 +839,10 @@ export default function MatchDetailsScreen({ route, navigation }) {
                           </View>
                           <Text style={styles.tipValue}>{rec.value}</Text>
                         </View>
-                      );
-                    })
+                        );
+                          })}
+                        </View>
+                      ))
                     ) : (
                       <View style={styles.predictionErrorContainer}>
                         <Ionicons name="shield-checkmark-outline" size={32} color={theme.textSecondary} />
@@ -1250,6 +1284,15 @@ const createStyles = (theme, isDarkMode) => StyleSheet.create({
     paddingHorizontal: horizontalScale(10),
     paddingVertical: verticalScale(4),
     borderRadius: moderateScale(6),
+  },
+  marketCategoryHeader: {
+    fontSize: getResponsiveFontSize(13, 14),
+    fontWeight: '700',
+    color: theme.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: verticalScale(10),
+    marginBottom: verticalScale(4),
   },
   tipTypeText: {
     fontSize: getResponsiveFontSize(10),

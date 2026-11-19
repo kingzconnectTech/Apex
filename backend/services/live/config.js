@@ -130,6 +130,11 @@ const CONFIG = {
           // excluded — a decided market is never a fresh pick.
           minPickProbability: 0.0,
         },
+        // Soccer match-result pick is a Double Chance market (1X / X2 / 12)
+        // derived from the model's own 1X2 probabilities. It is only shown
+        // when the strongest option's calibrated probability clears this
+        // threshold — the same 90% football bar used for pre-match picks.
+        doubleChance: { minProbability: 0.90 },
       },
     },
 

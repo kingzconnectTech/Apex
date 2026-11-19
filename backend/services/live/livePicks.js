@@ -92,6 +92,32 @@ function matchResultPick(sport, probabilities) {
   return { market: resultMarket(sport), selection: best.selection, probability: M.round(best.probability, 4) };
 }
 
+/**
+ * Soccer match-result pick as a DOUBLE CHANCE market (1X / X2 / 12), derived
+ * from the same underlying home/draw/away probabilities — straight winners
+ * are never presented as football recommendations. All three options are
+ * evaluated independently and only the strongest is returned, and only when
+ * its calibrated probability clears the configured football threshold
+ * (default 0.90). Below it: no pick rather than a forced one.
+ */
+function doubleChancePick(probabilities) {
+  const p = probabilities || {};
+  const hw = Number.isFinite(p.home_win) ? p.home_win : null;
+  const dr = Number.isFinite(p.draw) ? p.draw : null;
+  const aw = Number.isFinite(p.away_win) ? p.away_win : null;
+  if (hw == null || dr == null || aw == null) return null;
+  const cfg = (CFG.pickMarkets && CFG.pickMarkets.doubleChance) || {};
+  const minProb = Number.isFinite(cfg.minProbability) ? cfg.minProbability : 0.90;
+  const options = [
+    { selection: '1x', probability: hw + dr },
+    { selection: 'x2', probability: dr + aw },
+    { selection: '12', probability: hw + aw },
+  ];
+  const best = options.reduce((a, b) => (b.probability > a.probability ? b : a));
+  if (best.probability < minProb) return null;
+  return { market: 'double_chance', selection: best.selection, probability: M.round(best.probability, 4) };
+}
+
 /** The Over/Under pick against the fixed line, or null when it cannot be priced. */
 function overUnderPick(sport, model, game, markets) {
   const line = overUnderLine(sport, game);
@@ -199,7 +225,9 @@ function derivePicks({ sport, model, game, markets } = {}) {
   if (!sport || !model) return null;
   if (model.status !== 'live' && model.status !== 'prior_only') return null;
 
-  const matchResult = matchResultPick(sport, model.probabilities);
+  const matchResult = sport === 'soccer'
+    ? doubleChancePick(model.probabilities)
+    : matchResultPick(sport, model.probabilities);
   const overUnder = sport === 'basketball'
     ? basketballTotalsPick(model, game || {}, markets)
     : overUnderPick(sport, model, game || {}, markets);
@@ -207,4 +235,4 @@ function derivePicks({ sport, model, game, markets } = {}) {
   return { match_result: matchResult, over_under: overUnder };
 }
 
-module.exports = { derivePicks, overUnderLine, matchResultPick, overUnderPick, basketballTotalsPick, soccerOver, basketballOver };
+module.exports = { derivePicks, overUnderLine, matchResultPick, doubleChancePick, overUnderPick, basketballTotalsPick, soccerOver, basketballOver };

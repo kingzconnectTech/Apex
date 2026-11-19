@@ -282,8 +282,12 @@ describe('Apex Backend — Offline Unit Tests', () => {
           expect(rec.confidence).toBeGreaterThanOrEqual(0);
           expect(rec.confidence).toBeLessThanOrEqual(100);
         });
-        // Sub-90% picks are surfaced, proving nothing is filtered out here.
-        expect(res.body.recommendations.some(rec => rec.confidence < 90)).toBe(true);
+        // Football recommendations are gated at the 90% calibrated-probability
+        // threshold — sub-90% markets are evaluated in allMarkets but never
+        // surfaced as recommendations.
+        res.body.recommendations.forEach(rec => {
+          expect(rec.confidence).toBeGreaterThanOrEqual(90);
+        });
       } finally {
         mod.setPredictionCache = origSetPredictionCache;
         mod.getPredictionFromCache = origGetPredictionFromCache;
@@ -536,18 +540,14 @@ describeOrSkip('Apex Backend — Live Server Integration Tests', () => {
 
         expect(res.body).toHaveProperty('recommendations');
         expect(Array.isArray(res.body.recommendations)).toBe(true);
-        // Football predictions should return at most 2 predictions
+        // Football market-selection engine: at most 4 picks, all >= 90%,
+        // never straight match-winner markets.
         if (res.body.sport === 'soccer') {
-          expect(res.body.recommendations.length).toBeLessThanOrEqual(2);
-          // Verify that if predictions exist, they are from the approved markets
-          const approvedMarkets = [
-            'UNDER_CORNERS',
-            'UNDER_4_5_GOALS',
-            'UNDER_1_5_HT',
-            'UNDER_2_5_HT',
-          ];
+          expect(res.body.recommendations.length).toBeLessThanOrEqual(4);
+          const straightWinTypes = ['WIN', 'HOME_WIN', 'AWAY_WIN', 'DRAW', 'MATCH_RESULT', '1X2'];
           res.body.recommendations.forEach(rec => {
-            expect(approvedMarkets).toContain(rec.type);
+            expect(rec.confidence).toBeGreaterThanOrEqual(90);
+            expect(straightWinTypes).not.toContain(rec.type);
           });
         }
         if (res.body.recommendations.length > 0) {

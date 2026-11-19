@@ -87,6 +87,91 @@ function settleMarket(market, selection, homeGoals, awayGoals, extra = {}) {
       : ag < line ? 'won' : 'lost';
   }
 
+  // ── Generic goal-line markets: [home_|away_](over|under)_X_Y_(goals|ht|2h) ──
+  const goalLineMatch = m.match(/^(?:(home|away)_)?(over|under)_(\d+)_(\d)_(goals|ht|2h)$/);
+  if (goalLineMatch) {
+    const side = goalLineMatch[1] || null;
+    const dir = goalLineMatch[2];
+    const line = parseFloat(`${goalLineMatch[3]}.${goalLineMatch[4]}`);
+    const period = goalLineMatch[5];
+
+    const htH = extra.htHome;
+    const htA = extra.htAway;
+    let value = null;
+    if (period === 'goals') {
+      value = side === 'home' ? hg : side === 'away' ? ag : total;
+    } else if (period === 'ht') {
+      if (!isValidScore(htH) || !isValidScore(htA)) return null;
+      value = side === 'home' ? Number(htH) : side === 'away' ? Number(htA) : Number(htH) + Number(htA);
+    } else { // 2h
+      if (!isValidScore(htH) || !isValidScore(htA)) return null;
+      const h2h = hg - Number(htH);
+      const h2a = ag - Number(htA);
+      value = side === 'home' ? h2h : side === 'away' ? h2a : h2h + h2a;
+    }
+    if (value == null) return null;
+    return dir === 'over' ? value > line ? 'won' : 'lost' : value < line ? 'won' : 'lost';
+  }
+
+  // ── Corner markets: [home_|away_]corners_(over|under)_X_Y ──
+  const cornerMatch = m.match(/^(?:(home|away)_)?corners_(over|under)_(\d+)_(\d)$/);
+  if (cornerMatch) {
+    const side = cornerMatch[1] || null;
+    const dir = cornerMatch[2];
+    const line = parseFloat(`${cornerMatch[3]}.${cornerMatch[4]}`);
+    let value = null;
+    if (side === 'home') {
+      value = extra.homeCorners;
+    } else if (side === 'away') {
+      value = extra.awayCorners;
+    } else {
+      value = extra.totalCorners;
+    }
+    if (!isValidScore(value)) return null;
+    value = Number(value);
+    return dir === 'over' ? value > line ? 'won' : 'lost' : value < line ? 'won' : 'lost';
+  }
+  // Legacy keys: under_corners / over_corners already handled in switch below.
+
+  // ── Card/bookings markets: [home_|away_]cards_(over|under)_X_Y ──
+  const cardMatch = m.match(/^(?:(home|away)_)?cards_(over|under)_(\d+)_(\d)$/);
+  if (cardMatch) {
+    const side = cardMatch[1] || null;
+    const dir = cardMatch[2];
+    const line = parseFloat(`${cardMatch[3]}.${cardMatch[4]}`);
+    let value = null;
+    if (side === 'home') {
+      value = extra.homeBookings;
+    } else if (side === 'away') {
+      value = extra.awayBookings;
+    } else {
+      value = extra.totalBookings;
+    }
+    if (!isValidScore(value)) return null;
+    value = Number(value);
+    return dir === 'over' ? value > line ? 'won' : 'lost' : value < line ? 'won' : 'lost';
+  }
+
+  // ── Half-time double chance / draw ──
+  if (m === 'ht_double_chance' || m === 'double_chance_ht' || m === 'ht_1x2_dc') {
+    const htH = extra.htHome;
+    const htA = extra.htAway;
+    if (!isValidScore(htH) || !isValidScore(htA)) return null;
+    const hh = Number(htH);
+    const ha = Number(htA);
+    const sel = normaliseSelection(selection);
+    if (sel === '1x' || sel === 'home_or_draw') return hh >= ha ? 'won' : 'lost';
+    if (sel === 'x2' || sel === 'away_or_draw' || sel === 'draw_or_away') return ha >= hh ? 'won' : 'lost';
+    if (sel === '12' || sel === 'home_or_away' || sel === 'no_draw') return hh !== ha ? 'won' : 'lost';
+    return null;
+  }
+  if (m === 'ht_draw' || m === 'draw_ht' || m === 'half_time_draw') {
+    const htH = extra.htHome;
+    const htA = extra.htAway;
+    if (!isValidScore(htH) || !isValidScore(htA)) return null;
+    return Number(htH) === Number(htA) ? 'won' : 'lost';
+  }
+
   switch (m) {
     // ── Goals totals ────────────────────────────────────
     case 'under_4_5_goals':
@@ -292,7 +377,9 @@ function marketRequiresStatistic(market) {
   if (m.startsWith('total_shots_') || m.startsWith('home_shots_') || m.startsWith('away_shots_') || m.includes('shots')) {
     return 'shots';
   }
-  if (m.includes('_ht') || m.includes('first_half') || m.includes('half_time') || m.includes('halftime')) {
+  if (m.includes('_ht') || m.includes('_2h') || m.includes('second_half')
+      || m.includes('first_half') || m.includes('half_time') || m.includes('halftime')
+      || m.startsWith('ht_')) {
     return 'ht';
   }
   return null;
@@ -304,8 +391,18 @@ function marketRequiresStatistic(market) {
  */
 function resolveNullOutcome(market, scoreData) {
   const needed = marketRequiresStatistic(market);
-  if (needed === 'corners' && !isValidScore(scoreData.totalCorners)) return 'pending';
-  if (needed === 'bookings' && !isValidScore(scoreData.totalBookings)) return 'pending';
+  if (needed === 'corners') {
+    const cm = normaliseMarketKey(market).match(/^(home|away)_corners_/);
+    if (cm === 'home' && !isValidScore(scoreData.homeCorners)) return 'pending';
+    if (cm === 'away' && !isValidScore(scoreData.awayCorners)) return 'pending';
+    if (!cm && !isValidScore(scoreData.totalCorners)) return 'pending';
+  }
+  if (needed === 'bookings') {
+    const bm = normaliseMarketKey(market).match(/^(home|away)_cards_/);
+    if (bm === 'home' && !isValidScore(scoreData.homeBookings)) return 'pending';
+    if (bm === 'away' && !isValidScore(scoreData.awayBookings)) return 'pending';
+    if (!bm && !isValidScore(scoreData.totalBookings)) return 'pending';
+  }
   if (needed === 'shots') {
     const m = normaliseMarketKey(market);
     if (m.startsWith('home_shots_') && !isValidScore(scoreData.homeShots)) return 'pending';
@@ -521,8 +618,12 @@ async function settlePrediction(admin, predictionDoc, scoreData, source, logger)
         htAway: scoreData.htAway,
         totalCorners: scoreData.totalCorners,
         cornersLine: pred.cornersLine || pred.line || scoreData.cornersLine,
+        homeCorners: scoreData.homeCorners ?? null,
+        awayCorners: scoreData.awayCorners ?? null,
         totalBookings: scoreData.totalBookings,
         bookingsLine: pred.bookingsLine || pred.line || scoreData.bookingsLine,
+        homeBookings: scoreData.homeBookings ?? null,
+        awayBookings: scoreData.awayBookings ?? null,
         homeShots: scoreData.homeShots,
         awayShots: scoreData.awayShots,
         totalShots: scoreData.totalShots,
@@ -752,6 +853,10 @@ function extractMatchResultFromSummary(summary) {
   let htAway = null;
   let totalCorners = null;
   let totalBookings = null;
+  let homeCorners = null;
+  let awayCorners = null;
+  let homeBookings = null;
+  let awayBookings = null;
   let homeShots = null;
   let awayShots = null;
   let totalShots = null;
@@ -768,6 +873,8 @@ function extractMatchResultFromSummary(summary) {
     };
     const hCorners = findStat(teams[0], ['wonCorners', 'cornerKicks', 'corners']);
     const aCorners = findStat(teams[1], ['wonCorners', 'cornerKicks', 'corners']);
+    if (isValidScore(hCorners)) homeCorners = hCorners;
+    if (isValidScore(aCorners)) awayCorners = aCorners;
     if (isValidScore(hCorners) && isValidScore(aCorners)) {
       totalCorners = hCorners + aCorners;
     }
@@ -776,6 +883,12 @@ function extractMatchResultFromSummary(summary) {
     const aYellow = findStat(teams[1], ['yellowCards', 'yellow_cards']);
     const hRed = findStat(teams[0], ['redCards', 'red_cards']);
     const aRed = findStat(teams[1], ['redCards', 'red_cards']);
+    if (isValidScore(hYellow)) {
+      homeBookings = hYellow + (isValidScore(hRed) ? hRed : 0);
+    }
+    if (isValidScore(aYellow)) {
+      awayBookings = aYellow + (isValidScore(aRed) ? aRed : 0);
+    }
     if (isValidScore(hYellow) && isValidScore(aYellow)) {
       // Red cards may legitimately be absent from some feeds; only add when present
       totalBookings = hYellow + aYellow
@@ -796,11 +909,21 @@ function extractMatchResultFromSummary(summary) {
     } else if (isValidScore(summary.stats.homeCorners) && isValidScore(summary.stats.awayCorners)) {
       totalCorners = Number(summary.stats.homeCorners) + Number(summary.stats.awayCorners);
     }
+    if (isValidScore(summary.stats.homeCorners)) homeCorners = Number(summary.stats.homeCorners);
+    if (isValidScore(summary.stats.awayCorners)) awayCorners = Number(summary.stats.awayCorners);
     if (isValidScore(summary.stats.totalBookings)) {
       totalBookings = Number(summary.stats.totalBookings);
     } else if (isValidScore(summary.stats.homeYellowCards) && isValidScore(summary.stats.awayYellowCards)) {
       totalBookings = Number(summary.stats.homeYellowCards) + Number(summary.stats.awayYellowCards)
         + (isValidScore(summary.stats.homeRedCards) ? Number(summary.stats.homeRedCards) : 0)
+        + (isValidScore(summary.stats.awayRedCards) ? Number(summary.stats.awayRedCards) : 0);
+    }
+    if (isValidScore(summary.stats.homeYellowCards)) {
+      homeBookings = Number(summary.stats.homeYellowCards)
+        + (isValidScore(summary.stats.homeRedCards) ? Number(summary.stats.homeRedCards) : 0);
+    }
+    if (isValidScore(summary.stats.awayYellowCards)) {
+      awayBookings = Number(summary.stats.awayYellowCards)
         + (isValidScore(summary.stats.awayRedCards) ? Number(summary.stats.awayRedCards) : 0);
     }
     if (isValidScore(summary.stats.homeShots)) homeShots = Number(summary.stats.homeShots);
@@ -894,6 +1017,10 @@ function extractMatchResultFromSummary(summary) {
     htAway,
     totalCorners,
     totalBookings,
+    homeCorners,
+    awayCorners,
+    homeBookings,
+    awayBookings,
     homeShots,
     awayShots,
     totalShots,

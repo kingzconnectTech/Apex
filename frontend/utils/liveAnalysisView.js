@@ -237,12 +237,22 @@ function pickRows(analysis) {
 
   const mr = picks.match_result;
   if (mr && mr.selection) {
-    rows.push({
-      key: 'match_result',
-      market: mr.market === '1x2' ? 'Match result' : 'Winner',
-      label: resultLabel(mr.selection, home, away),
-      display: formatPercent(mr.probability),
-    });
+    if (mr.market === 'double_chance') {
+      const dcLabel = { '1x': '1X (Home or Draw)', x2: 'X2 (Away or Draw)', '12': '12 (Home or Away)' }[mr.selection] || mr.selection.toUpperCase();
+      rows.push({
+        key: 'match_result',
+        market: 'Double chance',
+        label: dcLabel,
+        display: formatPercent(mr.probability),
+      });
+    } else {
+      rows.push({
+        key: 'match_result',
+        market: mr.market === '1x2' ? 'Match result' : 'Winner',
+        label: resultLabel(mr.selection, home, away),
+        display: formatPercent(mr.probability),
+      });
+    }
   }
 
   const ou = picks.over_under;
@@ -339,10 +349,17 @@ const MARKET_LABELS = {
   team_corners: 'Team corners',
   cards: 'Cards',
   team_cards: 'Team cards',
+  btts: 'BTTS',
 };
 
 function marketSideLabel(m, home, away) {
   const sideName = s => (s === 'home' ? home : s === 'away' ? away : null);
+  // New-format team markets carry team + dir fields (side may be 'home_over' etc.)
+  if (m.team && m.dir) {
+    const dirLabel = m.dir === 'over' ? 'Over' : 'Under';
+    const unit = m.market === 'team_goals' ? 'goals' : m.market === 'team_corners' ? 'corners' : 'cards';
+    return `${sideName(m.team) || m.team} ${dirLabel} ${m.line} ${unit}`;
+  }
   switch (m.market) {
     case 'total_goals': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} goals`;
     case 'total_points': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} points`;
@@ -352,6 +369,7 @@ function marketSideLabel(m, home, away) {
     case 'team_corners': return `${sideName(m.side) || m.side} over ${m.line} corners`;
     case 'cards': return `${m.side === 'over' ? 'Over' : 'Under'} ${m.line} cards`;
     case 'team_cards': return `${sideName(m.side) || m.side} over ${m.line} cards`;
+    case 'btts': return m.side === 'yes' ? 'BTTS Yes' : 'BTTS No';
     default: return m.side || m.market;
   }
 }
@@ -371,7 +389,7 @@ function marketRows(analysis) {
     if (!m) continue;
     if (m.status === 'won' || m.status === 'lost') { settledCount += 1; continue; }
     if (m.status !== 'available' || !Number.isFinite(m.probability)) continue;
-    const gk = `${m.market}|${m.line == null ? '' : m.line}`;
+    const gk = `${m.market}|${m.line == null ? '' : m.line}|${m.side || ''}|${m.team || ''}|${m.dir || ''}`;
     const cur = groups.get(gk);
     if (!cur || m.probability > cur.probability) {
       groups.set(gk, { ...m });

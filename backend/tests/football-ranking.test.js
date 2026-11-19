@@ -153,13 +153,37 @@ describe('Football Prediction Ranking Logic', () => {
 
   test('tie-break priority order matches FOOTBALL_MARKET_PRIORITY export', () => {
     expect(FOOTBALL_MARKET_PRIORITY).toEqual([
+      'double_chance',
       'under_4_5_goals',
+      'over_0_5_goals',
+      'under_3_5_goals',
+      'under_2_5_goals',
+      'over_1_5_goals',
+      'over_2_5_goals',
+      'over_3_5_goals',
+      'under_1_5_goals',
+      'over_4_5_goals',
+      'under_0_5_goals',
+      'home_under_2_5_goals',
+      'away_under_2_5_goals',
+      'home_under_1_5_goals',
+      'away_under_1_5_goals',
+      'home_over_0_5_goals',
+      'away_over_0_5_goals',
+      'btts',
+      'under_0_5_ht',
+      'over_0_5_ht',
       'under_2_5_ht',
+      'over_1_5_ht',
+      'under_1_5_ht',
+      'ht_double_chance',
+      'ht_draw',
+      'under_0_5_2h',
+      'over_0_5_2h',
       'under_corners',
       'over_corners',
       'under_bookings',
       'over_bookings',
-      'under_1_5_ht',
       'total_shots_over_19_5',
       'total_shots_under_19_5',
       'total_shots_over_21_5',
@@ -316,17 +340,20 @@ describe('Sport-Specific Prediction Engine (analyzeMatchServer)', () => {
       isDetailed: true,
     });
 
-    expect(result.recommendations.length).toBeLessThanOrEqual(2);
-    const approvedMarkets = [
-      'UNDER_CORNERS',
-      'UNDER_4_5_GOALS',
-      'UNDER_1_5_HT',
-      'UNDER_2_5_HT',
+    // Market-selection engine: up to FOOTBALL_MARKET_MAX_PICKS picks, all at or
+    // above the 90% calibrated-probability threshold, never straight winners.
+    expect(result.recommendations.length).toBeLessThanOrEqual(4);
+    const validCategories = [
+      'double_chance', 'goals', 'team_goals', 'first_half', 'second_half',
+      'corners', 'cards', 'btts', 'shots', 'other',
     ];
+    const straightWinTypes = ['WIN', 'HOME_WIN', 'AWAY_WIN', 'DRAW', 'MATCH_RESULT', '1X2'];
     result.recommendations.forEach(rec => {
-      expect(approvedMarkets).toContain(rec.type);
+      expect(rec.confidence).toBeGreaterThanOrEqual(90);
+      expect(validCategories).toContain(rec.category || 'other');
+      expect(straightWinTypes).not.toContain(rec.type);
     });
-    if (result.recommendations.length === 2) {
+    if (result.recommendations.length >= 2) {
       expect(result.recommendations[0].confidence).toBeGreaterThanOrEqual(result.recommendations[1].confidence);
     }
   });
@@ -397,7 +424,7 @@ describe('Sport-Specific Prediction Engine (analyzeMatchServer)', () => {
     });
 
     expect(result).toHaveProperty('recommendations');
-    expect(result.recommendations.length).toBeLessThanOrEqual(2);
+    expect(result.recommendations.length).toBeLessThanOrEqual(4);
     expect(result).toHaveProperty('allMarkets');
     expect(Array.isArray(result.allMarkets)).toBe(true);
   });

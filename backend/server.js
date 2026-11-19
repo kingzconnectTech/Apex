@@ -29,6 +29,10 @@ const {
   calculateShotsPrediction,
 } = require('./services/footballShotsAnalysis');
 const {
+  buildPreMatchMarkets,
+  selectFootballMarkets,
+} = require('./services/footballMarkets');
+const {
   settleMarket,
   classifyMatchStatus,
   normaliseMarketKey,
@@ -250,25 +254,7 @@ const ESPN_BASE = 'http://site.api.espn.com/apis/site/v2/sports';
 const FOOTBALL_UNDER_CORNERS_LINE = parseFloat(process.env.FOOTBALL_UNDER_CORNERS_LINE) || 10.5;
 
 // Approved football markets (in tie-break priority order)
-const FOOTBALL_MARKET_PRIORITY = [
-  'under_4_5_goals',
-  'under_2_5_ht',
-  'under_corners',
-  'over_corners',
-  'under_bookings',
-  'over_bookings',
-  'under_1_5_ht',
-  'total_shots_over_19_5',
-  'total_shots_under_19_5',
-  'total_shots_over_21_5',
-  'total_shots_under_21_5',
-  'total_shots_over_23_5',
-  'total_shots_under_23_5',
-  'total_shots_over_25_5',
-  'total_shots_under_25_5',
-  'total_shots_over_27_5',
-  'total_shots_under_27_5',
-];
+const FOOTBALL_MARKET_PRIORITY = _FOOTBALL_MARKET_PRIORITY;
 
 // Enhanced Cache
 // key: full ESPN URL
@@ -1186,6 +1172,54 @@ function parseRecord(record, sport) {
  * @param {boolean} params.isDetailed
  * @returns {Object} prediction result
  */
+
+// Football market-selection configuration
+const FOOTBALL_MARKET_CONFIDENCE_THRESHOLD = (() => {
+  const v = parseFloat(process.env.FOOTBALL_MARKET_THRESHOLD);
+  return Number.isFinite(v) && v > 0 && v <= 1 ? v : 0.90;
+})();
+const FOOTBALL_MARKET_MAX_PICKS = (() => {
+  const v = parseInt(process.env.FOOTBALL_MARKET_MAX_PICKS, 10);
+  return Number.isFinite(v) && v > 0 ? v : 2;
+})();
+
+function inferSelectionFromMarket(market) {
+  if (!market) return null;
+  const m = String(market).toLowerCase();
+  if (m === '1x' || m === 'x2' || m === '12' || m === '1x2' || m === 'double_chance') return m === 'double_chance' ? null : m;
+  if (m.includes('over')) return 'over';
+  if (m.includes('under')) return 'under';
+  return null;
+}
+
+function inferCategoryFromMarket(market) {
+  const m = String(market || '').toLowerCase();
+  if (m.includes('corner')) return 'corners';
+  if (m.includes('booking') || m.includes('card')) return 'cards';
+  if (m.includes('shot')) return 'shots';
+  if (m.includes('btts') || m.includes('both_teams')) return 'btts';
+  if (m.includes('ht') || m.includes('half') || m.includes('1_5_ht') || m.includes('2_5_ht')) return 'first_half';
+  if (m.includes('double_chance') || m === '1x' || m === 'x2' || m === '12') return 'double_chance';
+  if (m.startsWith('home_') || m.startsWith('away_')) return 'team_goals';
+  if (m.includes('goal')) return 'goals';
+  return 'other';
+}
+
+function inferFamilyFromMarket(market) {
+  const m = String(market || '').toLowerCase();
+  if (m === 'double_chance' || m.includes('double_chance')) return 'double_chance';
+  if (m.includes('ht_draw') || m.includes('ht_double_chance')) return 'ht_result';
+  if (m.includes('_2h') || m.includes('second_half')) return 'goals_2h';
+  if (m.includes('_ht') || m.includes('first_half') || m.includes('half_time')) return 'goals_ht';
+  if (m.includes('corner')) return m.startsWith('home_') || m.startsWith('away_') ? 'corners_team' : 'corners_total';
+  if (m.includes('booking') || m.includes('card')) return m.startsWith('home_') || m.startsWith('away_') ? 'cards_team' : 'cards_total';
+  if (m.includes('shot')) return 'shots_total';
+  if (m.includes('btts') || m.includes('both_teams')) return 'btts';
+  if (m.startsWith('home_') || m.startsWith('away_')) return 'team_goals';
+  if (m.includes('goal')) return 'goals_ft';
+  return 'other';
+}
+
 function analyzeMatchServer({
   homeName,
   awayName,
@@ -1861,6 +1895,80 @@ function analyzeMatchServer({
     }
   }
 
+  // --- Poisson Market Engine: Double Chance + expanded football markets ---
+  // Evaluates every supported market from team goal/corner/card averages and
+  // derives match-result probabilities from a Poisson score matrix. Straight
+  // Home Win / Draw / Away Win are never emitted - only Double Chance.
+  let marketEngineCandidates = [];
+  if (!isBasketball && sport !== 'tennis' && hAvgScored > 0 && aAvgScored > 0) {
+    try {
+      const cleanHomeMatchesM = validateAndFilterHistoricalMatches(homeStats?.lastMatches || []);
+      const cleanAwayMatchesM = validateAndFilterHistoricalMatches(awayStats?.lastMatches || []);
+
+      // Expected goals per side (same blended estimate used elsewhere)
+      let expHomeGoalsM = (hAvgScored + aAvgConceded) / 2;
+      let expAwayGoalsM = (aAvgScored + hAvgConceded) / 2;
+      if (h2hAvgGoals > 0) {
+        const totalM = expHomeGoalsM + expAwayGoalsM;
+        if (totalM > 0) {
+          const blended = totalM * 0.7 + h2hAvgGoals * 0.3;
+          const scale = blended / totalM;
+          expHomeGoalsM *= scale;
+          expAwayGoalsM *= scale;
+        }
+      }
+
+      // Pre-priced shots candidates from the existing shots engine
+      const shotsEval = footballPredictions
+        .filter(p => p.category === 'shots' || (p.market && String(p.market).startsWith('total_shots_')))
+        .map(p => ({
+          market: p.market,
+          line: p.line ?? null,
+          selection: p.selection || p.marketType || null,
+          label: p.label,
+          value: p.value,
+          probability: typeof p.probability === 'number' ? p.probability : (p.confidence != null ? p.confidence / 100 : null),
+          family: 'shots_total',
+          category: 'shots',
+        }));
+
+      marketEngineCandidates = buildPreMatchMarkets({
+        homeExpected: expHomeGoalsM,
+        awayExpected: expAwayGoalsM,
+        homeMatches: cleanHomeMatchesM,
+        awayMatches: cleanAwayMatchesM,
+        homeName,
+        awayName,
+        shotsEvaluation: shotsEval,
+      });
+    } catch (mktErr) {
+      logger.warn('[FootballMarkets] Non-fatal error during market evaluation', {
+        error: mktErr.message,
+      });
+    }
+  }
+
+  // Normalise legacy heuristic predictions into market candidates so they can
+  // compete in the same selection pool. Straight winners are never emitted.
+  const legacyMarketCandidates = footballPredictions.map(p => ({
+    status: 'available',
+    market: p.market,
+    line: p.line ?? null,
+    selection: p.selection || p.marketType || inferSelectionFromMarket(p.market),
+    label: p.label,
+    value: p.value,
+    probability: typeof p.probability === 'number' ? p.probability : (p.confidence != null ? p.confidence / 100 : null),
+    confidence: p.confidence,
+    category: p.category || inferCategoryFromMarket(p.market),
+    family: p.family || inferFamilyFromMarket(p.market),
+    dataQuality: 'medium',
+    model: 'heuristic',
+    calibrated: false,
+    explanation: p.explanation || '',
+  }));
+
+  const marketSelectionPool = marketEngineCandidates.concat(legacyMarketCandidates);
+
   // --- Recommendations ---
   // Soccer: Top 2 highest-confidence predictions from the 4 approved markets
   //         (under_corners, under_4_5_goals, under_1_5_ht, under_2_5_ht)
@@ -1893,19 +2001,26 @@ function analyzeMatchServer({
     }
     // Do NOT include straight-winner (WIN) predictions for basketball
   } else {
-    // Soccer — delegate top-2 selection to the shared ranking utility.
-    // rankFootballPredictions validates, deduplicates, sorts by confidence
-    // (descending), and applies deterministic tie-breaking. Returns at most 2.
-    const topPredictions = rankFootballPredictions(footballPredictions);
+    // Soccer — calibrated market selection (90% threshold, family dedup)
+    const selectedMarkets = selectFootballMarkets(marketSelectionPool, {
+      threshold: FOOTBALL_MARKET_CONFIDENCE_THRESHOLD,
+      maxPicks: FOOTBALL_MARKET_MAX_PICKS,
+    });
 
-    // Add to recommendations with proper type
-    topPredictions.forEach(pred => {
+    selectedMarkets.forEach(pred => {
+      const probPct = Math.round((pred.probability || 0) * 100);
       recommendations.push({
-        type: pred.market.toUpperCase(),
+        type: (pred.market || 'market').toUpperCase(),
         label: pred.label,
         value: pred.value,
-        confidence: Math.round(pred.confidence),
-        color: pred.color,
+        confidence: probPct,
+        probability: pred.probability,
+        category: pred.category || null,
+        family: pred.family || null,
+        explanation: pred.explanation || null,
+        model: pred.model || null,
+        dataQuality: pred.dataQuality || null,
+        color: probPct >= 90 ? '#40c057' : probPct >= 75 ? '#ffa94d' : '#4dabf7',
       });
     });
   }
@@ -1970,18 +2085,56 @@ function analyzeMatchServer({
     color: recommendations.length > 0 ? recommendations[0].color : '#868e96',
     recommendations,
     predictabilityMeta,
-    allMarkets: footballPredictions.map(p => ({
-      market: p.market,
-      type: p.market.toUpperCase(),
-      label: p.label,
-      value: p.value,
-      confidence: Math.round(p.confidence),
-      probability: p.probability ?? Number((p.confidence / 100).toFixed(4)),
-      color: p.color,
-      selectedTeam: p.selectedTeam || null,
-      opponentTeam: p.opponentTeam || null,
-      expectedGoals: p.expectedGoals ?? null,
-    })),
+    allMarkets: (() => {
+      // Full market evaluation: Poisson engine candidates first (calibrated),
+      // then legacy heuristic entries not already covered by market+line.
+      const seen = new Set();
+      const entries = [];
+      for (const c of marketEngineCandidates) {
+        const key = `${c.market}|${c.line ?? ''}|${c.selection ?? ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push({
+          market: c.market,
+          type: (c.market || 'market').toUpperCase(),
+          label: c.label,
+          value: c.value,
+          confidence: Math.round((c.probability || 0) * 100),
+          probability: c.probability,
+          color: (c.probability || 0) >= 0.9 ? '#40c057' : (c.probability || 0) >= 0.75 ? '#ffa94d' : '#4dabf7',
+          category: c.category || null,
+          family: c.family || null,
+          selection: c.selection || null,
+          line: c.line ?? null,
+          explanation: c.explanation || null,
+          model: c.model || null,
+          dataQuality: c.dataQuality || null,
+          status: c.status || null,
+        });
+      }
+      for (const p of footballPredictions) {
+        const key = `${p.market}|${p.line ?? ''}|${p.selection ?? ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push({
+          market: p.market,
+          type: p.market.toUpperCase(),
+          label: p.label,
+          value: p.value,
+          confidence: Math.round(p.confidence),
+          probability: p.probability ?? Number((p.confidence / 100).toFixed(4)),
+          color: p.color,
+          category: p.category || inferCategoryFromMarket(p.market),
+          family: p.family || inferFamilyFromMarket(p.market),
+          selection: p.selection || p.marketType || null,
+          line: p.line ?? null,
+          selectedTeam: p.selectedTeam || null,
+          opponentTeam: p.opponentTeam || null,
+          expectedGoals: p.expectedGoals ?? null,
+        });
+      }
+      return entries;
+    })(),
     factors,
   };
 }

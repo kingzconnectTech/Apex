@@ -155,9 +155,21 @@ describe('derivePicks — both markets, or null overall when unusable', () => {
   };
 
   test('returns both picks for a usable live model', () => {
-    const picks = derivePicks({ sport: 'soccer', model: liveModel, game: {} });
-    expect(picks.match_result.selection).toBe('home');
+    // Soccer match result is a Double Chance pick gated at the 90% bar:
+    // 0.8 + 0.15 = 0.95 for 1X clears it.
+    const strongModel = { ...liveModel, probabilities: { home_win: 0.8, draw: 0.15, away_win: 0.05 } };
+    const picks = derivePicks({ sport: 'soccer', model: strongModel, game: {} });
+    expect(picks.match_result.market).toBe('double_chance');
+    expect(picks.match_result.selection).toBe('1x');
+    expect(picks.match_result.probability).toBeCloseTo(0.95, 4);
     expect(picks.over_under.line).toBe(2.5);
+  });
+
+  test('soccer match result is suppressed below the 90% double-chance bar', () => {
+    // 1X = 0.55 + 0.25 = 0.80 < 0.90 -> no forced pick.
+    const picks = derivePicks({ sport: 'soccer', model: liveModel, game: {} });
+    expect(picks.match_result).toBeNull();
+    expect(picks.over_under).not.toBeNull();
   });
 
   test('a prior_only model (no in-game clock) still yields picks', () => {
@@ -178,11 +190,12 @@ describe('derivePicks — both markets, or null overall when unusable', () => {
   test('a model with a match result but no priceable O/U still returns the match result', () => {
     const picks = derivePicks({
       sport: 'soccer',
-      model: { status: 'live', probabilities: { home_win: 0.5, draw: 0.3, away_win: 0.2 } },
+      model: { status: 'live', probabilities: { home_win: 0.75, draw: 0.2, away_win: 0.05 } },
       game: {},
     });
     expect(picks).not.toBeNull();
     expect(picks.match_result).not.toBeNull();
+    expect(picks.match_result.market).toBe('double_chance');
     expect(picks.over_under).toBeNull();
   });
 

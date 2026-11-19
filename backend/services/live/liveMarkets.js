@@ -27,9 +27,12 @@ const STATUS = { AVAILABLE: 'available', WON: 'won', LOST: 'lost', UNAVAILABLE: 
 
 /* Standard lines the analysis surface reports. Half-point lines so no push. */
 const GOAL_LINES = [0.5, 1.5, 2.5, 3.5, 4.5];
-const CORNER_OVER_LINES = [4.5, 5.5, 6.5, 7.5, 8.5];
-const CORNER_UNDER_LINES = [8.5, 9.5, 10.5];
-const CARD_LINES = [3.5, 4.5];
+const CORNER_OVER_LINES = [4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5];
+const CORNER_UNDER_LINES = [8.5, 9.5, 10.5, 11.5];
+const CARD_LINES = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5];
+const TEAM_GOAL_EXTRA_LINES = [1.5, 2.5];
+const TEAM_CORNER_LINES = [2.5, 3.5, 5.5];
+const TEAM_CARD_LINES = [0.5, 1.5];
 const TEAM_GOAL_LINE = 0.5;
 const TEAM_CORNER_LINE = 3.5;
 
@@ -109,6 +112,30 @@ function goalMarkets(model, game) {
     // P(>=1 more goal) = 1 - P(0 remaining goals).
     const p = M.clamp(1 - M.poissonPmf(0, t.lambda), 0.0001, 0.9999);
     out.push(entry(`team_goals_${t.key}`, 'team_goals', TEAM_GOAL_LINE, t.key, p, STATUS.AVAILABLE));
+
+    // Team goal lines 1.5 / 2.5 — Over and Under priced off the remaining-goal
+    // Poisson added to the current score. A line the score has already decided
+    // is marked won/lost, never a fresh pick.
+    for (const line of TEAM_GOAL_EXTRA_LINES) {
+      if (!Number.isFinite(t.lambda) || t.lambda < 0) {
+        out.push(entry(`team_goals_${t.key}_over_${line}`, 'team_goals', line, `${t.key}_over`, null, STATUS.UNAVAILABLE, { team: t.key, dir: 'over' }));
+        out.push(entry(`team_goals_${t.key}_under_${line}`, 'team_goals', line, `${t.key}_under`, null, STATUS.UNAVAILABLE, { team: t.key, dir: 'under' }));
+        continue;
+      }
+      const st = overUnderStatus(t.score, line);
+      // Under: P(cur + X < line) = P(X <= floor(line) - cur); Over = complement.
+      const k = Math.floor(line) - t.score;
+      let underProb;
+      if (k < 0) underProb = 0; // already over the line — under impossible
+      else {
+        let cdf = 0;
+        for (let i = 0; i <= k; i += 1) cdf += M.poissonPmf(i, t.lambda);
+        underProb = M.clamp(cdf, 0.0001, 0.9999);
+      }
+      const overProb = M.clamp(1 - underProb, 0.0001, 0.9999);
+      out.push(entry(`team_goals_${t.key}_over_${line}`, 'team_goals', line, `${t.key}_over`, overProb, st.over, { team: t.key, dir: 'over' }));
+      out.push(entry(`team_goals_${t.key}_under_${line}`, 'team_goals', line, `${t.key}_under`, underProb, st.under, { team: t.key, dir: 'under' }));
+    }
   }
   return out;
 }
@@ -124,6 +151,38 @@ function doubleChanceMarkets(model) {
     { key: 'dc_12', label: '12', probability: (p.home_win || 0) + (p.away_win || 0) },
   ];
   return rows.map(r => entry(r.key, 'double_chance', null, r.label, r.probability, STATUS.AVAILABLE, { label: r.label }));
+}
+
+/* ------------------------------------------------------------- BTTS */
+
+/**
+ * Both-teams-to-score, priced off the remaining-goal lambdas: a side that has
+ * already scored is certain to feature; a side that has not needs at least
+ * one more goal. Won/Lost once the outcome is decided by the score itself.
+ */
+function bttsMarkets(model, game) {
+  const lambdas = model && model.inputs ? { home: model.inputs.lambda_home, away: model.inputs.lambda_away } : null;
+  const hg = game && game.home ? game.home.score : null;
+  const ag = game && game.away ? game.away.score : null;
+  if (!Number.isFinite(hg) || !Number.isFinite(ag)) {
+    return [entry('btts_unavailable', 'btts', null, 'total', null, STATUS.UNAVAILABLE)];
+  }
+  const pHomeScores = hg > 0 ? 1 : (lambdas && Number.isFinite(lambdas.home) ? M.clamp(1 - M.poissonPmf(0, lambdas.home), 0.0001, 0.9999) : null);
+  const pAwayScores = ag > 0 ? 1 : (lambdas && Number.isFinite(lambdas.away) ? M.clamp(1 - M.poissonPmf(0, lambdas.away), 0.0001, 0.9999) : null);
+  if (pHomeScores == null || pAwayScores == null) {
+    return [entry('btts_unavailable', 'btts', null, 'total', null, STATUS.UNAVAILABLE)];
+  }
+  const yes = M.clamp(pHomeScores * pAwayScores, 0.0001, 0.9999);
+  if (hg > 0 && ag > 0) {
+    return [
+      entry('btts_yes', 'btts', null, 'yes', 1, STATUS.WON, { label: 'BTTS Yes' }),
+      entry('btts_no', 'btts', null, 'no', 0, STATUS.LOST, { label: 'BTTS No' }),
+    ];
+  }
+  return [
+    entry('btts_yes', 'btts', null, 'yes', yes, STATUS.AVAILABLE, { label: 'BTTS Yes' }),
+    entry('btts_no', 'btts', null, 'no', 1 - yes, STATUS.AVAILABLE, { label: 'BTTS No' }),
+  ];
 }
 
 /* ------------------------------------------- rate-based markets (corners/cards) */
@@ -186,17 +245,27 @@ function cornerMarkets(stats, elapsed, remaining) {
     out.push(entry(`corners_under_${line}`, 'corners', line, 'under', 1 - overProb, st.under));
   }
 
-  // Per-side corner markets at a fixed line, priced off each side's own rate.
+  // Per-side corner markets across the supported lines, priced off each side's
+  // own rate. Both directions are emitted; settled lines are marked won/lost.
   for (const side of ['home', 'away']) {
     const cur = stats[side] && stats[side].corners;
     const lambda = expectedRemaining(cur, elapsed, remaining);
-    const p = probOverCount(cur, lambda, TEAM_CORNER_LINE);
-    if (p == null) {
-      out.push(entry(`corners_${side}`, 'team_corners', TEAM_CORNER_LINE, side, null, STATUS.UNAVAILABLE));
-      continue;
+    let any = false;
+    for (const line of TEAM_CORNER_LINES) {
+      const overProb = probOverCount(cur, lambda, line);
+      if (overProb == null) {
+        out.push(entry(`corners_${side}_over_${line}`, 'team_corners', line, `${side}_over`, null, STATUS.UNAVAILABLE, { team: side, dir: 'over' }));
+        out.push(entry(`corners_${side}_under_${line}`, 'team_corners', line, `${side}_under`, null, STATUS.UNAVAILABLE, { team: side, dir: 'under' }));
+        continue;
+      }
+      any = true;
+      const st = overUnderStatus(cur, line);
+      out.push(entry(`corners_${side}_over_${line}`, 'team_corners', line, `${side}_over`, overProb, st.over, { team: side, dir: 'over' }));
+      out.push(entry(`corners_${side}_under_${line}`, 'team_corners', line, `${side}_under`, 1 - overProb, st.under, { team: side, dir: 'under' }));
     }
-    const st = overUnderStatus(cur, TEAM_CORNER_LINE);
-    out.push(entry(`corners_${side}`, 'team_corners', TEAM_CORNER_LINE, side, p, st.over));
+    if (!any) {
+      out.push(entry(`corners_${side}`, 'team_corners', TEAM_CORNER_LINE, side, null, STATUS.UNAVAILABLE));
+    }
   }
   return out;
 }
@@ -222,13 +291,22 @@ function cardMarkets(stats, elapsed, remaining) {
   for (const side of ['home', 'away']) {
     const cur = stats[side] && stats[side].cards_total;
     const lambda = expectedRemaining(cur, elapsed, remaining);
-    const p = probOverCount(cur, lambda, 1.5);
-    if (p == null) {
-      out.push(entry(`cards_${side}`, 'team_cards', 1.5, side, null, STATUS.UNAVAILABLE));
-      continue;
+    let any = false;
+    for (const line of TEAM_CARD_LINES) {
+      const overProb = probOverCount(cur, lambda, line);
+      if (overProb == null) {
+        out.push(entry(`cards_${side}_over_${line}`, 'team_cards', line, `${side}_over`, null, STATUS.UNAVAILABLE, { team: side, dir: 'over' }));
+        out.push(entry(`cards_${side}_under_${line}`, 'team_cards', line, `${side}_under`, null, STATUS.UNAVAILABLE, { team: side, dir: 'under' }));
+        continue;
+      }
+      any = true;
+      const st = overUnderStatus(cur, line);
+      out.push(entry(`cards_${side}_over_${line}`, 'team_cards', line, `${side}_over`, overProb, st.over, { team: side, dir: 'over' }));
+      out.push(entry(`cards_${side}_under_${line}`, 'team_cards', line, `${side}_under`, 1 - overProb, st.under, { team: side, dir: 'under' }));
     }
-    const st = overUnderStatus(cur, 1.5);
-    out.push(entry(`cards_${side}`, 'team_cards', 1.5, side, p, st.over));
+    if (!any) {
+      out.push(entry(`cards_${side}`, 'team_cards', 1.5, side, null, STATUS.UNAVAILABLE));
+    }
   }
   return out;
 }
@@ -327,6 +405,7 @@ function buildSoccerMarkets({ model, game, stats = null, elapsed = null, remaini
   const rem = Number.isFinite(remaining) ? remaining : (model && model.inputs && model.inputs.remaining_minutes);
   markets.push(...cornerMarkets(stats, el, rem));
   markets.push(...cardMarkets(stats, el, rem));
+  markets.push(...bttsMarkets(model, game));
   return markets;
 }
 
