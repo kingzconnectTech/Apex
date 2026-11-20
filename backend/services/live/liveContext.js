@@ -26,12 +26,9 @@
 const CONFIG = require('./config');
 const { staleness } = require('./liveGame');
 const { EspnProvider } = require('../providers/EspnProvider');
-const { normalizeFixtureESPN } = require('../providers/normalizer');
-const { scoreFixture } = require('./teamMatch');
 
 const CFG = CONFIG.liveApi;
 const CTX = CFG.context || {};
-const BRIDGE = { enabled: true, minScore: 0.6, ambiguityGap: 0.08, ...(CFG.espnBridge || {}) };
 
 function numOrNull(v) {
   const n = typeof v === 'number' ? v : parseFloat(v);
@@ -175,56 +172,6 @@ function buildContext({ game, summary = null, fetchedAt = null, now = Date.now()
   };
 }
 
-/* -------------------------------------------------------- bookmaker line */
-
-/** American/decimal odds from a pickcenter side ({close:{odds}} preferred). */
-function americanOdds(side) {
-  if (!side) return null;
-  const close = side.close && side.close.odds;
-  const open = side.open && side.open.odds;
-  return numOrNull(close != null ? close : open);
-}
-
-/**
- * The REAL bookmaker line+odds for a game, read from an ESPN summary's
- * `pickcenter[0]` (falling back to `odds[0]`). This is the SAME field the
- * replay backtester (services/live/replay.js) and the pre-match basketball
- * engine price against, and it is the only source of a genuine line the live
- * surface has: the score feeds (LiveScore/FlashScore) publish no odds at all.
- *
- * Returns null when the summary carries no priced market, so a game ESPN does
- * not price stays line-less and its grid is withheld rather than priced off a
- * simulated line (see config live.pickMarkets.requireRealLine).
- *
- * @param {Object|null} summary an ESPN match summary payload
- * @returns {Object|null} { provider, overUnder, overOdds, underOdds, spread, moneyline }
- */
-function realOddsFromSummary(summary) {
-  const pickcenter = (summary && summary.pickcenter) || [];
-  const odds = (summary && summary.odds) || [];
-  const pc = pickcenter[0] || odds[0];
-  if (!pc) return null;
-  const ml = pc.moneyline || {};
-  const moneyline = {
-    home: americanOdds(ml.home) ?? numOrNull(pc.homeTeamOdds && pc.homeTeamOdds.moneyLine),
-    away: americanOdds(ml.away) ?? numOrNull(pc.awayTeamOdds && pc.awayTeamOdds.moneyLine),
-    draw: americanOdds(ml.draw) ?? numOrNull(pc.drawOdds && pc.drawOdds.moneyLine),
-  };
-  const overUnder = numOrNull(pc.overUnder);
-  const spread = numOrNull(pc.spread);
-  const priced = overUnder != null || spread != null
-    || moneyline.home != null || moneyline.away != null;
-  if (!priced) return null;
-  return {
-    provider: (pc.provider && pc.provider.name) || null,
-    overUnder,
-    overOdds: numOrNull(pc.overOdds),
-    underOdds: numOrNull(pc.underOdds),
-    spread,
-    moneyline,
-  };
-}
-
 /* ------------------------------------------------------------- cached fetch */
 
 /**
@@ -261,92 +208,6 @@ function eventIdOf(gameId) {
 }
 
 /**
- * The score-site feeds whose `game_id` is the SITE's own id, not an ESPN event
- * id. For these the ESPN summary read needs a bridge (below); every other
- * source already carries an ESPN event id in its `game_id`.
- */
-const FEED_SOURCES = new Set(['livescore', 'flashscore']);
-
-/**
- * `game_id` -> resolved ESPN event id, so N polls of one game cost one
- * scoreboard read. A FOUND id is stable and kept; a NOT-FOUND is retried once
- * the summary TTL lapses (the game may simply not be on the scoreboard yet).
- */
-const espnEventCache = new Map();
-
-function espnCacheGet(gameId, now) {
-  const hit = espnEventCache.get(gameId);
-  if (!hit) return undefined;
-  if (hit.espn_event_id == null && now - hit.at > (CFG.contextTtlMs || 0)) {
-    espnEventCache.delete(gameId);
-    return undefined;
-  }
-  return hit.espn_event_id;
-}
-
-function espnCachePut(gameId, eventId, now) {
-  espnEventCache.set(gameId, { espn_event_id: eventId, at: now });
-  while (espnEventCache.size > (CFG.maxCachedGames || 0)) {
-    const oldest = espnEventCache.keys().next();
-    if (oldest.done) break;
-    espnEventCache.delete(oldest.value);
-  }
-}
-
-/**
- * The ESPN event id the summary should be read with, or null.
- *
- * An ESPN-sourced game already carries the event id in its `game_id`, so it is
- * returned as-is. A score-site (LiveScore / FlashScore) game does NOT — ESPN
- * returns a 404 for the site's own id — so the matching ESPN event is looked up
- * by team NAME on the game's own league scoreboard, using the same pure
- * similarity scoring the link matcher uses. A weak or ambiguous lookup is
- * refused (null) rather than guessed: a wrong bridge would attach another
- * game's key events, stats and bookmaker line to this one.
- *
- * Never throws.
- */
-async function resolveEspnEventId({ espn = null, game = null, now = Date.now(), traceId = null } = {}) {
-  if (!game) return null;
-  // An ESPN (or manually typed, or already-bridged) id needs no lookup.
-  if (!FEED_SOURCES.has(game.source)) return eventIdOf(game.game_id);
-  if (!espn || BRIDGE.enabled === false) return null;
-
-  const league = game.league && game.league.id;
-  const home = game.home && game.home.name;
-  const away = game.away && game.away.name;
-  if (!league || !home || !away || !game.sport) return null;
-
-  const cached = espnCacheGet(game.game_id, now);
-  if (cached !== undefined) return cached;
-
-  let resolved = null;
-  try {
-    const data = await espn._request(`${game.sport}/${league}/scoreboard`, {
-      ttl: CFG.contextTtlMs, traceId,
-    });
-    const parsed = { home_raw: home, away_raw: away, sport: game.sport };
-    const scored = [];
-    for (const e of (data && data.events) || []) {
-      const fx = normalizeFixtureESPN(e, game.sport, league, league);
-      if (!fx) continue;
-      const s = scoreFixture(parsed, fx, CONFIG.matcher.minSideSimilarity);
-      if (s.score > 0) scored.push({ id: String(fx.fixture.id), score: s.score });
-    }
-    scored.sort((a, b) => b.score - a.score);
-    const best = scored[0];
-    const runnerUp = scored[1];
-    const unambiguous = !runnerUp || (best.score - runnerUp.score) >= BRIDGE.ambiguityGap;
-    if (best && best.score >= BRIDGE.minScore && unambiguous) resolved = best.id;
-  } catch (err) {
-    resolved = null;
-  }
-
-  espnCachePut(game.game_id, resolved, now);
-  return resolved;
-}
-
-/**
  * Best-effort context for one live game: pre-game fields from the game plus a
  * cached ESPN summary read for key events and injuries.
  *
@@ -374,9 +235,7 @@ async function getContext({ espn = null, game = null, now = Date.now(), traceId 
   if (!espn || !game || !game.game_id || game.manual) return base;
 
   const league = game.league && game.league.id;
-  // A score-site game id is bridged to its ESPN event here (see
-  // resolveEspnEventId); an ESPN-sourced game already carries the event id.
-  const eventId = await resolveEspnEventId({ espn, game, now, traceId });
+  const eventId = eventIdOf(game.game_id);
   if (!league || !eventId) return base;
 
   const hit = cacheGet(game.game_id, now);
@@ -407,7 +266,7 @@ async function getContext({ espn = null, game = null, now = Date.now(), traceId 
 async function getSummary({ espn = null, game = null, now = Date.now(), traceId = null } = {}) {
   if (!espn || !game || !game.game_id || game.manual) return null;
   const league = game.league && game.league.id;
-  const eventId = await resolveEspnEventId({ espn, game, now, traceId });
+  const eventId = eventIdOf(game.game_id);
   if (!league || !eventId) return null;
 
   const hit = cacheGet(game.game_id, now);
@@ -427,39 +286,15 @@ async function getSummary({ espn = null, game = null, now = Date.now(), traceId 
   return { summary, fetched_at: now };
 }
 
-/** Test/dev helper — clear the in-process summary + bridge caches. */
+/** Test/dev helper — clear the in-process summary cache. */
 function resetCache() {
   cache.clear();
-  espnEventCache.clear();
-}
-
-/**
- * The REAL bookmaker line+odds for a game, as the `game.odds` block the market
- * grid is priced against, or null when ESPN priced nothing. A convenience over
- * getSummary + realOddsFromSummary so every live caller (the analysis route and
- * the resolve route) attaches the SAME real line from the SAME cached summary
- * read — no extra HTTP call, and a game ESPN does not price stays un-priced so
- * its grid is withheld rather than priced off a simulated line.
- *
- * @param {Object} args
- * @param {Object} [args.espn]
- * @param {Object} args.game
- * @param {number} [args.now]
- * @param {string} [args.traceId]
- * @returns {Promise<Object|null>} { provider, overUnder, overOdds, underOdds, spread, moneyline }
- */
-async function getRealOdds({ espn = null, game = null, now = Date.now(), traceId = null } = {}) {
-  const read = await getSummary({ espn, game, now, traceId });
-  return read ? realOddsFromSummary(read.summary) : null;
 }
 
 module.exports = {
   getContext,
   getSummary,
-  getRealOdds,
-  resolveEspnEventId,
   buildContext,
-  realOddsFromSummary,
   pregameContext,
   extractKeyEvents,
   extractInjuries,

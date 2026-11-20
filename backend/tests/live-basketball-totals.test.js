@@ -14,7 +14,7 @@ const liveMarkets = require('../services/live/liveMarkets');
 const { predictLive } = require('../services/live/liveModel');
 const { buildAnalysis } = require('../services/live/analysis');
 
-function bgame({ clock = '12:00', period = 1, homeScore = 0, awayScore = 0, league = 'nba', status = 'live', odds = null } = {}) {
+function bgame({ clock = '12:00', period = 1, homeScore = 0, awayScore = 0, league = 'nba', status = 'live' } = {}) {
   return {
     game_id: 'espn:9', sport: 'basketball', source: 'espn',
     league: { id: league, name: 'L' },
@@ -22,7 +22,7 @@ function bgame({ clock = '12:00', period = 1, homeScore = 0, awayScore = 0, leag
     away: { id: 'a', name: 'Away', score: awayScore },
     live: { status, is_live: status === 'live', clock, period },
     schedule: {}, data_tier: 'full_live', freshness: null,
-    match: null, link: null, odds, manual: false,
+    match: null, link: null, manual: false,
   };
 }
 
@@ -189,19 +189,13 @@ describe('live model integration', () => {
   });
 
   test('analysis payload exposes basketball markets and suppresses weak picks', () => {
-    const g = bgame({ clock: '12:00', period: 1, odds: { overUnder: 219.5 } });
+    const g = bgame({ clock: '12:00', period: 1 });
     const a = buildAnalysis({ game: g });
     expect(Array.isArray(a.markets)).toBe(true);
     expect(a.markets.every(m => ['available', 'won', 'lost', 'unavailable'].includes(m.status))).toBe(true);
     if (a.picks && a.picks.over_under) {
       expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(a.picks.over_under.under ?? 0);
     }
-  });
-
-  test('WITHHOLD: with no real book line the market grid is withheld', () => {
-    const g = bgame({ clock: '12:00', period: 1 });
-    const a = buildAnalysis({ game: g });
-    expect(a.markets).toBeNull();
   });
 });
 

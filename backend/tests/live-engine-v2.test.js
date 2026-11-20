@@ -11,7 +11,7 @@ const { buildAnalysis } = require('../services/live/analysis');
 const liveStats = require('../services/live/liveStats');
 const liveMarkets = require('../services/live/liveMarkets');
 
-function game({ clock = "30'", period = 1, homeScore = 0, awayScore = 0, status = 'live', odds = null } = {}) {
+function game({ clock = "30'", period = 1, homeScore = 0, awayScore = 0, status = 'live' } = {}) {
   return {
     game_id: 'espn:1', sport: 'soccer', source: 'espn',
     league: { id: 'eng.1', name: 'L' },
@@ -19,7 +19,7 @@ function game({ clock = "30'", period = 1, homeScore = 0, awayScore = 0, status 
     away: { id: 'a', name: 'Away', score: awayScore },
     live: { status, is_live: status === 'live', clock, period },
     schedule: {}, data_tier: 'full_live', freshness: null,
-    match: null, link: null, odds, manual: false,
+    match: null, link: null, manual: false,
   };
 }
 
@@ -321,7 +321,7 @@ describe('analysis payload', () => {
   });
 
   test('payload carries stats, data_quality, confidence, markets, explanation', () => {
-    const g = game({ clock: "55'", period: 2, homeScore: 2, awayScore: 1, odds: { overUnder: 2.5 } });
+    const g = game({ clock: "55'", period: 2, homeScore: 2, awayScore: 1 });
     const st = statsFor({ home: FULL, away: { ...FULL, shotsOnTarget: 2, wonCorners: 1 } });
     const a = buildAnalysis({ game: g, statsView: { stats: st, momentum: null, data_quality: liveStats.dataQuality(st) } });
     expect(a.stats).toBeTruthy();

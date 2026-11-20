@@ -103,24 +103,6 @@ function elapsedMinutes(live, params) {
 }
 
 /**
- * Elapsed game minutes estimated from the PERIOD ALONE, or null.
- *
- * For a source that names the quarter but publishes no clock (LiveScore
- * basketball's '1Q'..'OT') the START of that period is a conservative lower
- * bound on how much has been played, so the remaining time — and the comeback it
- * allows — is never understated. Overtime periods are placed after regulation.
- */
-function elapsedFromPeriod(live, params) {
-  const period = Number(live && live.period) || 0;
-  if (period < 1) return null;
-  const periodMinutes = params.gameMinutes / params.periods;
-  if (period <= params.periods) {
-    return M.clamp((period - 1) * periodMinutes, 0, params.gameMinutes);
-  }
-  return params.gameMinutes + (period - 1 - params.periods) * B.overtimeMinutes;
-}
-
-/**
  * Live-stat tempo read for the rate estimate.
  *
  * The game's own possessions per minute are a structural pace signal the score
@@ -231,44 +213,24 @@ function predictBasketball({ game, weight = 1, manual = false, context = {}, eng
 
   const elapsed = elapsedMinutes(game.live, params);
   if (elapsed == null) {
-    // The source published no in-game clock — LiveScore's basketball feed names
-    // the quarter ('1Q') but no clock, and FlashScore's list feed carries none at
-    // all. Returning the PRE-GAME projection alone meant the scoreboard was
-    // ignored, so a side that was clearly behind still read as the home
-    // favourite (the positive home-court prior) no matter the score. Instead the
-    // current score is now carried INTO the projection: the game is anchored at
-    // the start of the quarter the source named — a conservative lower bound on
-    // time played — and, failing even that, the whole game is treated as
-    // remaining. The uncertainty stays at the full pre-game width because no
-    // clock was ever verified, so the bands are never tightened on an estimate.
-    notes.push('No in-game clock — the pre-game projection is carried at the current score.');
+    notes.push('No in-game clock — showing the pre-game projection only.');
     const zz = z();
+    // Widening sigma also softens the two-way probability toward a coin flip,
+    // which is the honest posture for values nobody verified.
     const sigmaTotal = prior.sigmaTotal * widen;
     const sigmaMargin = prior.sigmaMargin * widen;
-    const elapsedEst = elapsedFromPeriod(game.live, params);
-    const remainingEst = elapsedEst == null ? null : Math.max(0, params.gameMinutes - elapsedEst);
-    const fraction = remainingEst == null
-      ? 1
-      : (params.gameMinutes > 0 ? remainingEst / params.gameMinutes : 0);
-    // The margin is the score as it stands plus the pre-game edge over whatever
-    // is left; the total is the score as it stands plus the league rate over the
-    // same window. With no period at all we cannot place the game in time, so the
-    // pre-game total is kept and only the margin is moved onto the score.
-    const leagueRate = params.gameMinutes > 0 ? prior.total / params.gameMinutes : 0;
-    const margin = curMargin + prior.margin * fraction;
-    const total = remainingEst == null ? prior.total : curTotal + leagueRate * remainingEst;
-    const priorProb = homeWinProbability(margin, sigmaMargin);
+    const priorProb = homeWinProbability(prior.margin, sigmaMargin);
     return {
       ...base,
       status: 'prior_only',
       reason: 'in-game clock unavailable',
       inputs: { elapsed_minutes: null, remaining_minutes: null, period: game.live.period, clock: game.live.clock },
-      expected: expectedFrom(total, margin),
+      expected: expectedFrom(prior.total, prior.margin),
       probabilities: { home_win: M.round(priorProb, 4), away_win: M.round(1 - priorProb, 4) },
       uncertainty: {
         level: LEVEL,
-        total: { low: M.round(total - zz * sigmaTotal, 2), high: M.round(total + zz * sigmaTotal, 2) },
-        margin: { low: M.round(margin - zz * sigmaMargin, 2), high: M.round(margin + zz * sigmaMargin, 2) },
+        total: { low: M.round(prior.total - zz * sigmaTotal, 2), high: M.round(prior.total + zz * sigmaTotal, 2) },
+        margin: { low: M.round(prior.margin - zz * sigmaMargin, 2), high: M.round(prior.margin + zz * sigmaMargin, 2) },
       },
       sigma: { total: M.round(sigmaTotal, 2), margin: M.round(sigmaMargin, 2) },
       blend: { weight: 0, tier: game.data_tier || null, prior_used: true },

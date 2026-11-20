@@ -430,12 +430,9 @@ function createLiveRouter({
           rememberGame(game, now);
           const contextView = await liveContext.getContext({ espn, game, now, traceId });
           const statsView = await liveStats.getLiveStats({ espn, game, now, traceId });
-          // R6 — attach the REAL bookmaker line so the FIRST payload the UI
-          // renders carries the same real-line grid the later polls will.
-          const priced = { ...game, odds: await liveContext.getRealOdds({ espn, game, now, traceId }) };
           const analysis = putCachedAnalysis(
             game.game_id,
-            buildAnalysis({ game: priced, contextView, statsView, now, fetchedAt: now, tester }),
+            buildAnalysis({ game, contextView, statsView, now, fetchedAt: now, tester }),
             tester ? 'testers' : 'public',
             now,
           );
@@ -500,11 +497,9 @@ function createLiveRouter({
           // pre-game only.
           const contextView = await liveContext.getContext({ espn, game: games[0], now, traceId });
           const statsView = await liveStats.getLiveStats({ espn, game: games[0], now, traceId });
-          // R6 — attach the REAL bookmaker line so the first payload carries it.
-          const priced = { ...games[0], odds: await liveContext.getRealOdds({ espn, game: games[0], now, traceId }) };
           const analysis = putCachedAnalysis(
             games[0].game_id,
-            buildAnalysis({ game: priced, contextView, statsView, now, fetchedAt: now, tester }),
+            buildAnalysis({ game: games[0], contextView, statsView, now, fetchedAt: now, tester }),
             tester ? 'testers' : 'public',
             now,
           );

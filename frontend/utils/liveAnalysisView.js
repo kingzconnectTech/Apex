@@ -160,17 +160,6 @@ function periodLabel(sport, period) {
   return `P${n}`;
 }
 
-/**
- * Join a clock with its period label. Basketball reads "6'-Q1" — minutes into
- * the quarter, then the quarter — so the live time is shown in quarters; every
- * other sport keeps the spaced "34' · P1". Null period leaves the clock alone.
- */
-function clockWithPeriod(sport, clock, period) {
-  const p = periodLabel(sport, period);
-  if (!p) return String(clock);
-  return sport === 'basketball' ? `${clock}-${p}` : `${clock} · ${p}`;
-}
-
 /** Human clock label: state first, then clock and period. */
 function clockLine(analysis) {
   const live = (analysis && analysis.live) || {};
@@ -178,7 +167,8 @@ function clockLine(analysis) {
   if (live.status === 'finished') return 'Finished';
   if (live.status === 'scheduled') return 'Not started';
   if (live.clock) {
-    return clockWithPeriod(sport, live.clock, live.period);
+    const p = periodLabel(sport, live.period);
+    return p ? `${live.clock} · ${p}` : String(live.clock);
   }
   // A source that publishes no clock (FlashScore's list feed, or LiveScore
   // basketball's quarter-only feed) still gets one DERIVED from kick-off by the
@@ -186,7 +176,9 @@ function clockLine(analysis) {
   // reported time.
   const derived = live.derived_clock;
   if (derived && derived.clock) {
-    return `${clockWithPeriod(sport, derived.clock, derived.period)} (est.)`;
+    const p = periodLabel(sport, derived.period);
+    const core = p ? `${derived.clock} · ${p}` : String(derived.clock);
+    return `${core} (est.)`;
   }
   return 'Clock unavailable';
 }
@@ -663,8 +655,6 @@ module.exports = {
   teamNames,
   scoreLine,
   clockLine,
-  periodLabel,
-  clockWithPeriod,
   showsProbabilities,
   manualBadge,
   manualBadgeDetail,

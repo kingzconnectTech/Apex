@@ -94,31 +94,13 @@ const CONFIG = {
      * them into the two picks the Live Analysis screen shows: the match-result
      * pick (1X2 in soccer, moneyline in basketball) and the Over/Under pick.
      *
-     * The O/U pick anchors to the game's REAL bookmaker line when one is known
-     * (the ESPN summary `pickcenter` read, services/live/liveContext.js); with
-     * no real line it falls back to the FIXED standard line below. Because the
-     * line is a constant (never the live projection), the pick's confidence
-     * moves honestly as the live game state moves the projection away from it.
+     * The live model has NO bookmaker line to compare against, so the O/U pick is
+     * made against a FIXED standard line per sport/league. Because the line is a
+     * constant (never the live projection), the pick's confidence moves honestly
+     * as the live game state moves the projection away from it.
      */
     pickMarkets: {
       enabled: true,
-      /**
-       * Only price a market when a REAL bookmaker line+odds backs it. The REAL
-       * line is read from the ESPN match summary (`pickcenter[0]`, via
-       * services/live/liveContext.getRealOdds) — the SAME field the replay
-       * backtester prices against; the LiveScore/FlashScore feeds publish no
-       * odds at all. With this ON:
-       *   - the grid is priced at the REAL line where one exists (the total
-       *     market at `overUnder`), and every market that carries a simulated
-       *     line the bookies do not hang is DROPPED (see analysis.js
-       *     restrictToRealLine);
-       *   - a game ESPN does not price is priced off nothing: its market grid
-       *     and line-based picks are WITHHELD, and only the match-result pick
-       *     survives.
-       * Nothing is ever shown that the user cannot actually find at a book. Set
-       * false only to preview the simulated fixed-line grid.
-       */
-      requireRealLine: true,
       overUnder: {
         // Soccer: the standard main line. A half point (X.5) so a total can
         // never push.
@@ -739,22 +721,6 @@ const CONFIG = {
      */
     contextTtlMs: 60 * 1000,
     context: { maxKeyEvents: 6, maxInjuries: 8 },
-    /**
-     * A score-site (LiveScore / FlashScore) game carries the SITE's own id, not
-     * an ESPN event id, so ESPN cannot be asked for its summary directly
-     * (`?event=<site id>` is a 404). The summary is where the key events, the
-     * boxscore and the REAL bookmaker line live, so this block lets the engine
-     * look the game up on ESPN by team NAME: it sweeps the game's own league
-     * scoreboard and attaches the best name-match (the same pure similarity
-     * scoring the link matcher uses — services/live/teamMatch.js).
-     *
-     * `minScore` is the score BOTH sides must reach before the bridge is
-     * trusted, and `ambiguityGap` is how far the best match must beat the
-     * runner-up. An ambiguous or weak lookup is REFUSED (null), never guessed:
-     * a wrong bridge would attach another game's line and stats, so the cheaper
-     * mistake is to leave the game un-priced.
-     */
-    espnBridge: { enabled: true, minScore: 0.6, ambiguityGap: 0.08 },
     rateLimit: {
       windowMs: 60 * 1000,
       // Requests per window per client IP, and per authenticated user id.

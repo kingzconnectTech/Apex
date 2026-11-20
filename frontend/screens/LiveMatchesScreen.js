@@ -315,14 +315,9 @@ function MatchCard({ match, styles, theme, onOpen }) {
         <Text style={styles.leagueText} numberOfLines={1}>
           {[match.country, match.league].filter(Boolean).join(' · ') || match.sportLabel || 'Live'}
         </Text>
-        <View style={styles.liveRight}>
-          {match.timeLabel ? (
-            <Text style={styles.timeText}>{match.timeLabel}</Text>
-          ) : null}
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveBadgeText}>{match.statusLabel}</Text>
-          </View>
+        <View style={styles.liveBadge}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveBadgeText}>{match.statusLabel}</Text>
         </View>
       </View>
 
@@ -591,13 +586,6 @@ const createStyles = (theme) => StyleSheet.create({
   },
   liveDot: { width: moderateScale(6), height: moderateScale(6), borderRadius: moderateScale(3), backgroundColor: theme.success },
   liveBadgeText: { color: theme.success, fontSize: getResponsiveFontSize(10), fontWeight: '700' },
-  liveRight: { flexDirection: 'row', alignItems: 'center', gap: horizontalScale(8) },
-  timeText: {
-    color: theme.text,
-    fontSize: getResponsiveFontSize(12),
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
   teamsRow: {
     flexDirection: 'row',
     alignItems: 'center',

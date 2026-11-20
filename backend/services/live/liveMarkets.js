@@ -74,12 +74,12 @@ function entry(key, market, line, side, probability, status, extra = {}) {
 
 /* ------------------------------------------------------- goal markets */
 
-function goalMarkets(model, game, lines = GOAL_LINES) {
+function goalMarkets(model, game) {
   const out = [];
   const curTotal = (game.home && game.home.score || 0) + (game.away && game.away.score || 0);
   const dist = model && model.total_distribution;
 
-  for (const line of lines) {
+  for (const line of GOAL_LINES) {
     const overProb = probOverTotal(dist, line);
     if (overProb == null) {
       out.push(entry(`goals_over_${line}`, 'total_goals', line, 'over', null, STATUS.UNAVAILABLE));
@@ -437,14 +437,11 @@ function bestBasketballTotal(markets) {
  * @param {Object} [args.stats] normalised stats from liveStats.js
  * @param {number} [args.elapsed] elapsed match minutes (from model.inputs)
  * @param {number} [args.remaining] remaining match minutes
- * @param {number[]} [args.goalLines] explicit total-goals lines to price (used by
- *   analysis.js to price the REAL bookmaker line); defaults to GOAL_LINES
  * @returns {Array} market entries, each with a status
  */
-function buildSoccerMarkets({ model, game, stats = null, elapsed = null, remaining = null, goalLines = null } = {}) {
+function buildSoccerMarkets({ model, game, stats = null, elapsed = null, remaining = null } = {}) {
   const markets = [];
-  const goalLinesToPrice = Array.isArray(goalLines) && goalLines.length ? goalLines : GOAL_LINES;
-  markets.push(...goalMarkets(model, game, goalLinesToPrice));
+  markets.push(...goalMarkets(model, game));
   markets.push(...doubleChanceMarkets(model));
 
   const el = Number.isFinite(elapsed) ? elapsed : (model && model.inputs && model.inputs.elapsed_minutes);
