@@ -660,9 +660,15 @@ const CONFIG = {
        * it "(est.)" so it is never mistaken for a source-reported time.
        *
        * Only a sport whose period structure is knowable from here is derived; a
-       * sport not listed stays clock-less rather than guessed. Basketball is
-       * deliberately absent: its period length and breaks vary too much across
-       * leagues for a wall-clock derivation to be honest.
+       * sport not listed stays clock-less rather than guessed.
+       *
+       * Basketball IS listed even though its quarter length varies between
+       * competitions (NBA 12 min, FIBA 10): a labelled, roughly-right minute is
+       * more honest than a blank one, and the value carries "(est.)". The
+       * QUARTER itself is never guessed — where the source reports one
+       * (LiveScore's '1Q'..'OT') that exact period is kept and these lengths
+       * only place the minute inside it. The figures describe an NBA-shaped
+       * game.
        */
       derivedClock: {
         enabled: true,
@@ -671,6 +677,13 @@ const CONFIG = {
             halfLengthMinutes: 45,     // length of one half
             halfTimeBreakMinutes: 15,  // wall-clock break between the halves
             maxMinute: 90,             // clamp once regular time is over
+          },
+          basketball: {
+            periodMinutes: 12,         // one quarter (NBA-shaped estimate)
+            periodBreakMinutes: 3,     // wall-clock break between quarters
+            halfTimeBreakMinutes: 15,  // longer break at half time (after Q2)
+            regulationPeriods: 4,      // four quarters before overtime
+            overtimeMinutes: 5,        // each overtime period
           },
         },
       },

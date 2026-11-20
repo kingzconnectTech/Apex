@@ -96,6 +96,15 @@ const LIVESCORE_PHASE_LABELS = {
  */
 const LIVESCORE_PERIODS = { 2: 1, 3: 2 };
 
+/**
+ * LiveScore basketball `Eps` phase codes -> our numeric period. Basketball
+ * publishes the quarter as a PHASE code ('1Q'..'4Q', 'OT') where football
+ * publishes the elapsed minute, and its `Esid` enum is not the football one, so
+ * the phase code is what places us in a quarter. Only the codes the feed is
+ * known to use are mapped; anything else leaves the period at 0.
+ */
+const LIVESCORE_BASKETBALL_PERIODS = { '1Q': 1, '2Q': 2, '3Q': 3, '4Q': 4, OT: 5 };
+
 /* ------------------------------------------------------------------ helpers */
 
 function trimName(v) {
@@ -193,6 +202,19 @@ function livescoreLabel(ev) {
 }
 
 /**
+ * The in-play period LiveScore placed this event in, or 0 when it did not.
+ * Football reports the half via `Esid`; basketball reports the quarter via the
+ * `Eps` phase code. A phase we do not recognise yields 0 — a period is never
+ * invented from it.
+ */
+function livescorePeriod(ev, sport) {
+  if (sport === 'basketball') {
+    return LIVESCORE_BASKETBALL_PERIODS[String((ev && ev.Eps) || '').toUpperCase()] || 0;
+  }
+  return LIVESCORE_PERIODS[toInt(ev && ev.Esid)] || 0;
+}
+
+/**
  * The site URL for a LiveScore match:
  *   https://www.livescore.com/en/<sport>/<competition>/<stage>/<home>-<away>/<id>/
  * (verified reachable; the numeric segment is the event id). Falls back to the
@@ -214,7 +236,7 @@ function livescoreMatchUrl(stage, ev, sport) {
  * Parse a LiveScore day document into normalised live matches.
  * Pure: no network, no clock dependency beyond `now`.
  */
-function parseLiveScoreDate(json, { sport = 'soccer' } = {}) {
+function parseLiveScoreDate(json, { sport = 'soccer', now = Date.now() } = {}) {
   const stages = json && Array.isArray(json.Stages) ? json.Stages : [];
   const out = [];
   for (const stage of stages) {
@@ -226,6 +248,10 @@ function parseLiveScoreDate(json, { sport = 'soccer' } = {}) {
       const home = livescoreTeam(ev, 'T1');
       const away = livescoreTeam(ev, 'T2');
       if (!home || !away || !ev.Eid) continue;
+      const startTime = isoFromBasicStamp(ev.Esd);
+      const kickoffMs = startTime ? Date.parse(startTime) : null;
+      const sourceClock = liveClock(ev.Eps);
+      const sourcePeriod = livescorePeriod(ev, sport);
       out.push(buildMatch({
         id: `livescore:${ev.Eid}`,
         source: 'livescore',
@@ -235,12 +261,18 @@ function parseLiveScoreDate(json, { sport = 'soccer' } = {}) {
         home: { name: home, score: toInt(ev.Tr1) },
         away: { name: away, score: toInt(ev.Tr2) },
         status: { code: String(ev.Eps || ''), label: livescoreLabel(ev), live: true },
-        // LiveScore's `Eps` is the elapsed string for an in-play event ("34'",
-        // "90+1'") and a phase code ("HT", "FT") otherwise; `Esid` is its period
-        // enum. Both are read here, and neither is guessed at.
-        clock: liveClock(ev.Eps),
-        period: LIVESCORE_PERIODS[toInt(ev.Esid)] || 0,
-        start_time: isoFromBasicStamp(ev.Esd),
+        // LiveScore's `Eps` is the elapsed string for football ("34'", "90+1'")
+        // and a quarter phase code for basketball ("1Q", "OT"); the string IS
+        // the clock, the phase code is not (see `liveClock`). `Esid`/`Eps` place
+        // us in a period — the half for football, the quarter for basketball —
+        // and neither is guessed at.
+        clock: sourceClock,
+        period: sourcePeriod,
+        // A source that reports a phase but no clock (basketball's '1Q') gets a
+        // DISPLAY-ONLY estimate instead, on its own field and never on `clock`,
+        // so the data tier and the model stay untouched.
+        derived_clock: sourceClock ? null : deriveClock(sport, kickoffMs, now, { period: sourcePeriod }),
+        start_time: startTime,
         url: livescoreMatchUrl(stage, ev, sport),
       }));
     }
@@ -287,13 +319,34 @@ function splitLeagueHeader(value) {
 }
 
 /**
+ * A basketball period's wall-clock geometry: the minutes before it starts, how
+ * long it runs, and the break that follows it — all from config. Periods past
+ * `regulationPeriods` are overtime. NBA-shaped by default.
+ */
+function basketballPeriodSpan(period, rules) {
+  const q = Number(rules.periodMinutes) || 12;
+  const brk = Number(rules.periodBreakMinutes) || 0;
+  const half = Number(rules.halfTimeBreakMinutes) || brk;
+  const reg = Number(rules.regulationPeriods) || 4;
+  const ot = Number(rules.overtimeMinutes) || 5;
+  let offset = 0;
+  for (let p = 1; p < period; p += 1) {
+    offset += (p <= reg ? q : ot) + (p === 2 ? half : brk);
+  }
+  return { offset, length: period <= reg ? q : ot, after: period === 2 ? half : brk };
+}
+
+/**
  * Derive a DISPLAY-ONLY in-game clock for a source that publishes none.
  *
- * FlashScore's list feed has no per-minute clock, so a FlashScore row used to
- * carry no clock and the UI read "Clock unavailable". The feed DOES publish the
+ * FlashScore's list feed has no per-minute clock, and LiveScore's basketball
+ * feed reports the quarter ('1Q') but no clock either, so such a row used to
+ * carry no clock and the UI read "Clock unavailable". Both feeds DO publish the
  * kick-off, so the game time can be derived from the wall clock
  * (elapsed = now - kick-off). For football the half-time break is folded in, so
- * the second half reads 46'-90' rather than running on past 45'.
+ * the second half reads 46'-90' rather than running on past 45'. For basketball
+ * the quarters and their breaks are folded in the same way, and the minute shown
+ * is the ELAPSED minute inside the period.
  *
  * The result is an ESTIMATE and is meant to be carried on a SEPARATE field
  * (`derived_clock`), never on `clock`: it must not change the data tier or reach
@@ -302,12 +355,17 @@ function splitLeagueHeader(value) {
  * clock-less rather than guessed. An unknown kick-off, or one still in the
  * future, yields null.
  *
+ * `hint.period` names the period the SOURCE reported (basketball's exact
+ * quarter). When present it is trusted verbatim — the period is never second-
+ * guessed from the wall clock — and only the minute inside it is estimated.
+ *
  * @param {string} sport           'soccer' | 'basketball' | ...
  * @param {number|null} kickoffMs  epoch ms of the kick-off
  * @param {number} now             epoch ms "now"
+ * @param {{period?:number}} [hint] a source-reported period to keep exact
  * @returns {{clock:string, period:number}|null}
  */
-function deriveClock(sport, kickoffMs, now) {
+function deriveClock(sport, kickoffMs, now, hint) {
   const cfg = CFG.derivedClock || {};
   if (cfg.enabled === false) return null;
   const rules = (cfg.sports && cfg.sports[sport]) || null;
@@ -324,6 +382,25 @@ function deriveClock(sport, kickoffMs, now) {
     // Between the halves the clock stands where the first half ended.
     if (elapsed <= half + breakMin) return { clock: `${half}'`, period: 1 };
     return { clock: `${Math.min(max, elapsed - breakMin)}'`, period: 2 };
+  }
+
+  if (sport === 'basketball') {
+    const hintPeriod = hint && Number(hint.period) > 0 ? Number(hint.period) : 0;
+    if (hintPeriod) {
+      // The source named the quarter: keep it and place the minute inside it.
+      const { offset, length } = basketballPeriodSpan(hintPeriod, rules);
+      const within = Math.max(0, Math.min(length, elapsed - offset));
+      return { clock: `${within}'`, period: hintPeriod };
+    }
+    for (let period = 1; period <= 50; period += 1) {
+      const { offset, length, after } = basketballPeriodSpan(period, rules);
+      if (elapsed < offset + length) {
+        return { clock: `${Math.max(0, elapsed - offset)}'`, period };
+      }
+      // Between periods the clock holds where the period just ended.
+      if (elapsed < offset + length + after) return { clock: `${length}'`, period };
+    }
+    return null;
   }
 
   return null;
