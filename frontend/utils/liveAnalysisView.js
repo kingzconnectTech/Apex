@@ -148,20 +148,45 @@ function scoreLine(analysis) {
   return `${fmt(home)} - ${fmt(away)}`;
 }
 
+/**
+ * The period label for a clock string: a QUARTER for basketball (Q1..Q4, then
+ * OT) and a plain period otherwise (P1, P2). Null when the source gave no
+ * period, so the clock renders alone rather than inventing one.
+ */
+function periodLabel(sport, period) {
+  const n = Number(period);
+  if (!(n >= 1)) return null;
+  if (sport === 'basketball') return n > 4 ? 'OT' : `Q${n}`;
+  return `P${n}`;
+}
+
+/**
+ * Join a clock with its period label. Basketball reads "6'-Q1" — minutes into
+ * the quarter, then the quarter — so the live time is shown in quarters; every
+ * other sport keeps the spaced "34' · P1". Null period leaves the clock alone.
+ */
+function clockWithPeriod(sport, clock, period) {
+  const p = periodLabel(sport, period);
+  if (!p) return String(clock);
+  return sport === 'basketball' ? `${clock}-${p}` : `${clock} · ${p}`;
+}
+
 /** Human clock label: state first, then clock and period. */
 function clockLine(analysis) {
   const live = (analysis && analysis.live) || {};
+  const sport = analysis && analysis.sport;
   if (live.status === 'finished') return 'Finished';
   if (live.status === 'scheduled') return 'Not started';
-  if (live.clock && live.period) return `${live.clock} · P${live.period}`;
-  if (live.clock) return String(live.clock);
-  // A source that publishes no clock (FlashScore's list feed) still gets one
-  // DERIVED from kick-off by the server. It is labelled "(est.)" so it is never
-  // mistaken for a source-reported time.
+  if (live.clock) {
+    return clockWithPeriod(sport, live.clock, live.period);
+  }
+  // A source that publishes no clock (FlashScore's list feed, or LiveScore
+  // basketball's quarter-only feed) still gets one DERIVED from kick-off by the
+  // server. It is labelled "(est.)" so it is never mistaken for a source-
+  // reported time.
   const derived = live.derived_clock;
   if (derived && derived.clock) {
-    const core = derived.period ? `${derived.clock} · P${derived.period}` : String(derived.clock);
-    return `${core} (est.)`;
+    return `${clockWithPeriod(sport, derived.clock, derived.period)} (est.)`;
   }
   return 'Clock unavailable';
 }

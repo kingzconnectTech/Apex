@@ -287,6 +287,22 @@ test('clockLine shows a server-derived clock, labelled as an estimate', () => {
   );
 });
 
+test('clockLine shows basketball time in quarters, e.g. 6\'-Q1', () => {
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '6:24', period: 3 } }),
+    '6:24-Q3',
+  );
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: null, period: 0, derived_clock: { clock: "6'", period: 1 } } }),
+    "6'-Q1 (est.)",
+  );
+  // Overtime reads OT rather than a fifth quarter.
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: null, period: 0, derived_clock: { clock: "3'", period: 5 } } }),
+    "3'-OT (est.)",
+  );
+});
+
 test('refreshSeconds honours the backend floor', () => {
   assert.equal(refreshSeconds({ refresh: { suggested_seconds: 30, min_seconds: 15 } }), 30);
   assert.equal(refreshSeconds({ refresh: { suggested_seconds: 5, min_seconds: 15 } }), 15);
