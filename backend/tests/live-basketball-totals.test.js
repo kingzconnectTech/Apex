@@ -4,9 +4,10 @@
  * The old live pick pinned ONE line (the league mean or a 219.5 fallback) and
  * reported whichever side sat a hair above 50% — so unrecognised-league games
  * all read "Over 219.5" at ~51%. The path now prices EVERY evaluation line,
- * both directions, drops settled lines, anchors the pick on the league-typical
- * MAIN total (the line a book would hang), and only emits a pick when its side
- * clears the configured 55% edge bar — otherwise: no pick.
+ * both directions, drops settled lines, anchors the pick on the match's
+ * PRE-GAME expected total (the engine projection, else the competition mean —
+ * the line a book would hang), and only emits a pick when its side clears the
+ * configured 75% basketball bar — otherwise: no pick.
  */
 
 const { derivePicks, basketballTotalsPick, overUnderPick, overUnderLine } = require('../services/live/livePicks');
@@ -91,16 +92,21 @@ describe('buildBasketballTotalMarkets', () => {
 describe('basketballTotalsPick — pick anchored on the league main total', () => {
   // The NBA's fitted mean total is ~234.86, so its main line is 234.5. The pick
   // now sits on THAT line — the total a book would hang — not on the model's own
-  // projection, and it is only emitted when a side clears the 55% edge bar.
+  // projection, and it is only emitted when a side clears the 75% bar.
   const NBA_MAIN = 234.5;
 
   test('the pick line is the league main total, not the model projection', () => {
-    const pick = basketballTotalsPick(modelFor(225, 18), bgame());
+    const pick = basketballTotalsPick(modelFor(220, 18), bgame());
     expect(pick).not.toBeNull();
     expect(pick.line).toBe(NBA_MAIN);
-    // 225 is a long way under 234.5, so the honest side is the under.
+    // 220 is a long way under 234.5, so the honest side is the under.
     expect(pick.selection).toBe('under');
     expect(pick.probability).toBeCloseTo(pick.under, 3);
+  });
+
+  test('a projection merely NEAR the main line is never forced into a pick', () => {
+    // 225 leaves the under at ~70% — below the 75% bar -> withheld, not forced.
+    expect(basketballTotalsPick(modelFor(225, 18), bgame())).toBeNull();
   });
 
   test('the same main line is used whatever the projection; only the side moves', () => {
@@ -139,10 +145,11 @@ describe('basketballTotalsPick — pick anchored on the league main total', () =
 
   test('each competition anchors on its OWN main line', () => {
     const nba = basketballTotalsPick(modelFor(250.6, 16), bgame());
-    // An unrecognised league has no fitted mean -> the configured default line.
+    // An unrecognised league has no fitted mean and no pre-game anchor, so there
+    // is no line to hang -> no pick at all (never the old universal 219.5).
     const other = basketballTotalsPick(modelFor(250.6, 16), bgame({ league: 'unknown' }));
     expect(nba.line).toBe(NBA_MAIN);
-    expect(other.line).toBe(219.5);
+    expect(other).toBeNull();
     expect(nba.selection).toBe('over');
   });
 
@@ -159,9 +166,11 @@ describe('basketballTotalsPick — pick anchored on the league main total', () =
     expect(picks.over_under).not.toBeNull();
     expect(picks.over_under.line).toBe(NBA_MAIN);
     expect(picks.over_under.probability).toBeCloseTo(picks.over_under.over, 3);
-    // A projection sitting on the main line is a coin flip -> no O/U pick.
+    // A projection sitting on the main line is a coin flip -> the O/U pick is
+    // withheld, and with no other market clearing the bar the whole set is
+    // empty (null) rather than a blank picks object.
     const weak = derivePicks({ sport: 'basketball', model: modelFor(NBA_MAIN - 0.1, 18), game: bgame() });
-    expect(weak.over_under).toBeNull();
+    expect(weak).toBeNull();
   });
 
   test('the legacy single-line pricer still works for callers that use it', () => {
@@ -180,8 +189,9 @@ describe('live model integration', () => {
     expect(markets.length).toBe(12);
     const picks = derivePicks({ sport: 'basketball', model, game: g });
     // Tip-off projection ~235 sits on the league main line, so the O/U read is a
-    // coin flip and is withheld; that is honest, never forced.
-    if (picks.over_under) {
+    // coin flip and is withheld; with no other market clearing the bar the whole
+    // set is null — honest, never forced.
+    if (picks && picks.over_under) {
       expect(picks.over_under.probability).toBeGreaterThanOrEqual(picks.over_under.under || 0);
       const m = markets.find(x => x.line === picks.over_under.line && x.side === picks.over_under.selection);
       expect(m.status).toBe('available');

@@ -271,20 +271,27 @@ describe('Engine projections bridge (in-process)', () => {
 });
 
 describe('Blending by data tier', () => {
-  test('a lower tier pulls the estimate toward the prior', () => {
-    const full = predictLive({
-      game: game({ sport: 'basketball', league: { id: 'nba' }, clock: '0:00', period: 4, homeScore: 120, awayScore: 90, tier: 'full_live' }),
-    });
-    const user = predictLive({
-      game: game({ sport: 'basketball', league: { id: 'nba' }, clock: '0:00', period: 4, homeScore: 120, awayScore: 90, tier: 'user_entered' }),
-    });
+  test('a lower tier pulls the REMAINING projection toward the prior, never the banked score', () => {
+    // Half the game gone (period 2, 0:00) and a high-scoring, lopsided game.
+    const fixture = { sport: 'basketball', league: { id: 'nba' }, clock: '0:00', period: 2, homeScore: 80, awayScore: 60 };
+    const full = predictLive({ game: game({ ...fixture, tier: 'full_live' }) });
+    const user = predictLive({ game: game({ ...fixture, tier: 'user_entered' }) });
+
     expect(full.blend.weight).toBe(1);
     // A hand-typed game is shrunk FURTHER than its tier weight alone (Phase 7).
     const shrunk = CFG.liveModel.tierWeight.user_entered * (1 - CFG.liveModel.manual.extraShrink);
     expect(user.blend.weight).toBeCloseTo(shrunk, 6);
     expect(user.blend.prior_used).toBe(true);
-    // The prior is a coin flip on the margin, so the huge live lead is damped.
-    expect(user.expected.margin).toBeLessThan(full.expected.margin);
+
+    // RC2: the score already on the board is FACT — a less-trusted feed widens
+    // the uncertainty about the future but never shrinks a real 20-point lead.
+    expect(user.current.margin).toBe(20);
+    expect(user.expected.margin).toBeCloseTo(full.expected.margin, 6);
+
+    // The REMAINING total (what is still to be played) IS blended: the faster-
+    // than-league live read is pulled toward the lower pre-game prior.
+    expect(user.expected.total).toBeLessThan(full.expected.total);
+    // Same margin mean with a wider band -> the two-way read sits nearer a coin flip.
     expect(user.probabilities.home_win).toBeLessThan(full.probabilities.home_win);
   });
 
@@ -297,14 +304,17 @@ describe('Blending by data tier', () => {
 describe('Manual (hand-typed) conservatism — Phase 7', () => {
   test('a hand-typed game is shrunk further toward the prior than its tier alone', () => {
     const base = game({
-      sport: 'basketball', league: { id: 'nba' }, clock: '0:00', period: 4,
-      homeScore: 120, awayScore: 90, tier: 'user_entered',
+      sport: 'basketball', league: { id: 'nba' }, clock: '0:00', period: 2,
+      homeScore: 80, awayScore: 60, tier: 'user_entered',
     });
     const asTyped = predictLive({ game: base });                 // manual: true
     const asVerified = predictLive({ game: { ...base, manual: false } });
 
     expect(asTyped.blend.weight).toBeLessThan(asVerified.blend.weight);
-    expect(asTyped.expected.margin).toBeLessThan(asVerified.expected.margin);
+    // The extra shrink pulls the REMAINING projection harder toward the prior;
+    // the banked score itself is untouched by either weight (RC2).
+    expect(asTyped.expected.total).toBeLessThan(asVerified.expected.total);
+    expect(asTyped.expected.margin).toBeCloseTo(asVerified.expected.margin, 6);
   });
 
   test('a hand-typed basketball game gets a wider margin band', () => {

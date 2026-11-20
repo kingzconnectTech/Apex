@@ -76,6 +76,25 @@ const LEAGUES = {
     rotationSize: 9,
     enabled: true,
   },
+  fiba: {
+    key: 'fiba',
+    label: 'FIBA',
+    espnPath: 'basketball/fiba',
+    // FIBA rules: a 40-minute game in four 10-minute quarters — NOT the NBA's
+    // 48 minutes in four 12s. The quarter length must come from the
+    // competition, so this is a distinct league rather than an alias of NBA.
+    gameMinutes: 40,
+    ftWeight: 0.44,
+    // International fixtures are often neutral-venue and the crowd effect is
+    // smaller than the NBA's; a modest edge.
+    homeCourtPoints: 2.5,
+    leagueMean: { possessions: 72.0, ortg: 106.0, drtg: 106.0 },
+    sigma: { total: 15.0, margin: 10.5 },
+    scoreStd: 10.5,
+    priorSeason: { ortg: 106.0, drtg: 106.0, pace: 72.0 },
+    rotationSize: 9,
+    enabled: true,
+  },
 };
 
 // Aliases so callers can pass common provider names/paths.
@@ -98,6 +117,17 @@ const ALIASES = {
   'nba-development': 'nba',
   'nba-g-league': 'nba',
   'g-league': 'nba',
+  // FIBA competitions (40 minutes, four 10-minute quarters). Aliased so the
+  // provider names used by the live feed and the config league-ids map all
+  // resolve to the FIBA competition and its 10-minute quarter length.
+  'basketball/fiba': 'fiba',
+  olympics: 'fiba',
+  'olympic-basketball': 'fiba',
+  'world-cup': 'fiba',
+  'fiba-world-cup': 'fiba',
+  'basketball-world-cup': 'fiba',
+  eurobasket: 'fiba',
+  'fiba-eurobasket': 'fiba',
 };
 
 /**

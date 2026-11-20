@@ -103,6 +103,42 @@ function elapsedMinutes(live, params) {
 }
 
 /**
+ * Elapsed game minutes from whatever the source actually published, falling back
+ * to the PERIOD when the clock is missing.
+ *
+ * LiveScore's basketball feed reports the QUARTER ('1Q'..'OT') but no clock, so
+ * `elapsedMinutes` returns null. The quarter is still real evidence — it tells us
+ * at least this much of the game has been played — and ignoring it (returning the
+ * pre-game prior) was the Home Win bias: the scoreboard was never read. So when
+ * only the period is known we anchor at the START of the current period — the
+ * minimum elapsed, the honest floor — and let the remaining-time projection cover
+ * the rest of that period plus everything after it.
+ *
+ * Conservative by construction: assuming MORE time remains can only DEPRESS the
+ * leader's win probability, so a period-only read can never overstate a lead.
+ *
+ * Returns `{ elapsed, estimated }` (`estimated` true for a period-only read), or
+ * null when the period is unknown too — a genuinely clock-less, period-less
+ * game, which still models as a pre-game projection.
+ *
+ * @param {Object} live    game.live ({ clock, period })
+ * @param {Object} params  leagueParams output
+ * @returns {{elapsed:number, estimated:boolean}|null}
+ */
+function progressMinutes(live, params) {
+  const byClock = elapsedMinutes(live, params);
+  if (byClock != null) return { elapsed: byClock, estimated: false };
+  const period = Number(live && live.period) || 0;
+  if (period < 1) return null;
+  const periodMinutes = params.gameMinutes / params.periods;
+  let elapsed = (period - 1) * periodMinutes;
+  if (period > params.periods) {
+    elapsed = params.gameMinutes + (period - 1 - params.periods) * B.overtimeMinutes;
+  }
+  return { elapsed, estimated: true };
+}
+
+/**
  * Live-stat tempo read for the rate estimate.
  *
  * The game's own possessions per minute are a structural pace signal the score
@@ -208,12 +244,19 @@ function predictBasketball({ game, weight = 1, manual = false, context = {}, eng
     league: params.key,
     current: { home_score: curHome, away_score: curAway, total: curTotal, margin: curMargin },
     data_tier: game.data_tier || null,
+    // The PRE-GAME anchors the O/U and spread picks are priced against: the
+    // engine's own projected total/margin at tip-off, else the competition mean
+    // and fitted home-court edge. They do NOT move as the game does, so the live
+    // projection diverges from them and a pick's confidence moves honestly
+    // instead of sitting on the model's own number.
+    anchor_total: prior.total,
+    anchor_margin: prior.margin,
     notes,
   };
 
-  const elapsed = elapsedMinutes(game.live, params);
-  if (elapsed == null) {
-    notes.push('No in-game clock — showing the pre-game projection only.');
+  const progress = progressMinutes(game.live, params);
+  if (progress == null) {
+    notes.push('No in-game clock or period — showing the pre-game projection only.');
     const zz = z();
     // Widening sigma also softens the two-way probability toward a coin flip,
     // which is the honest posture for values nobody verified.
@@ -223,8 +266,14 @@ function predictBasketball({ game, weight = 1, manual = false, context = {}, eng
     return {
       ...base,
       status: 'prior_only',
-      reason: 'in-game clock unavailable',
-      inputs: { elapsed_minutes: null, remaining_minutes: null, period: game.live.period, clock: game.live.clock },
+      reason: 'in-game clock and period unavailable',
+      inputs: {
+        elapsed_minutes: null,
+        remaining_minutes: null,
+        period: game.live.period,
+        clock: game.live.clock,
+        clock_estimated: false,
+      },
       expected: expectedFrom(prior.total, prior.margin),
       probabilities: { home_win: M.round(priorProb, 4), away_win: M.round(1 - priorProb, 4) },
       uncertainty: {
@@ -237,8 +286,12 @@ function predictBasketball({ game, weight = 1, manual = false, context = {}, eng
     };
   }
 
+  const elapsed = progress.elapsed;
   const remaining = Math.max(0, params.gameMinutes - elapsed);
   const fraction = params.gameMinutes > 0 ? remaining / params.gameMinutes : 0;
+  if (progress.estimated) {
+    notes.push('No in-game clock — elapsed time taken from the start of the current period (a conservative floor).');
+  }
 
   const endgame = remaining <= B.endgame.minutes;
   const rateMultiplier = endgame ? B.endgame.rateMultiplier : 1;
@@ -281,24 +334,33 @@ function predictBasketball({ game, weight = 1, manual = false, context = {}, eng
     }
   }
 
-  const live = {
-    total: curTotal + rate * remaining * rateMultiplier,
-    margin: curMargin + priorMargin * fraction,
-    sigmaTotal: params.totalStd * Math.sqrt(fraction) * sigmaMultiplier,
-    sigmaMargin: params.marginStd * Math.sqrt(fraction) * sigmaMultiplier,
-  };
-  if (live.sigmaTotal <= 0) {
-    notes.push('Clock indicates the game is over; uncertainty band collapsed.');
-  }
+  // The score already on the board is FACT, not an estimate: the data-tier
+  // weight must never shrink it. The blend is applied to the REMAINING
+  // projection only — what is still to be played — never to the banked score.
+  // A lower-confidence feed widens the uncertainty about the FUTURE without
+  // erasing a real lead, which is what stops the tier weight from pulling a
+  // 17-point away advantage back toward the home-court prior (the Home Win
+  // bias). At weight 1 the live remaining projection is used untouched; toward
+  // 0 it reverts to the prorated pre-game prior.
+  const remTotal = M.blend(rate * remaining * rateMultiplier, prior.total * fraction, weight);
+  // The remaining-margin mean is the prior margin prorated over the time left;
+  // there is no live margin signal beyond the score already banked.
+  const remMargin = priorMargin * fraction;
 
-  const total = M.blend(live.total, prior.total, weight);
-  const margin = M.blend(live.margin, prior.margin, weight);
+  const total = curTotal + remTotal;
+  const margin = curMargin + remMargin;
+
   // Sigma is blended linearly so it stays between the (tighter) live value and
   // the (wider) prior, rather than dropping below either. It is then stretched
   // by `widen` for a hand-typed game, which widens the bands and pulls the
   // two-way probability toward a coin flip.
-  const sigmaTotal = Math.max(0.01, M.blend(live.sigmaTotal, prior.sigmaTotal, weight)) * widen;
-  const sigmaMargin = Math.max(0.01, M.blend(live.sigmaMargin, prior.sigmaMargin, weight)) * widen;
+  const liveSigmaTotal = params.totalStd * Math.sqrt(fraction) * sigmaMultiplier;
+  const liveSigmaMargin = params.marginStd * Math.sqrt(fraction) * sigmaMultiplier;
+  if (liveSigmaTotal <= 0) {
+    notes.push('Clock indicates the game is over; uncertainty band collapsed.');
+  }
+  const sigmaTotal = Math.max(0.01, M.blend(liveSigmaTotal, prior.sigmaTotal, weight)) * widen;
+  const sigmaMargin = Math.max(0.01, M.blend(liveSigmaMargin, prior.sigmaMargin, weight)) * widen;
 
   const homeWin = homeWinProbability(margin, sigmaMargin);
   const zz = z();
@@ -312,6 +374,7 @@ function predictBasketball({ game, weight = 1, manual = false, context = {}, eng
       remaining_minutes: M.round(remaining, 2),
       period: game.live.period,
       clock: game.live.clock,
+      clock_estimated: progress.estimated,
       rate_per_minute: M.round(rate, 3),
     },
     expected: expectedFrom(total, margin),
@@ -336,4 +399,4 @@ function expectedFrom(total, margin) {
   };
 }
 
-module.exports = { predictBasketball, elapsedMinutes, leagueParams, paceRead };
+module.exports = { predictBasketball, elapsedMinutes, progressMinutes, leagueParams, paceRead };

@@ -160,20 +160,66 @@ function periodLabel(sport, period) {
   return `P${n}`;
 }
 
+/**
+ * The WHOLE remaining minutes from a clock string, or null when it carries no
+ * number. A basketball clock counts DOWN, so `"6:24"` is 6 min 24 s LEFT (6
+ * here) and a server-derived `"4'"` is 4 minutes left. The seconds are dropped
+ * rather than rounded up, so the reading never claims more time than is left.
+ */
+function remainingMinutes(clock) {
+  if (clock == null) return null;
+  const m = String(clock).trim().match(/^(\d{1,3})/);
+  return m ? Number(m[1]) : null;
+}
+
+/** True only when the source reports the half-time break. */
+function isHalfTime(live) {
+  const raw = String((live && live.raw_status) || '').trim().toLowerCase();
+  return raw === 'ht' || raw === 'half time' || raw === 'half-time' || raw === 'halftime';
+}
+
+/**
+ * `6'-Q3` / `3'-OT`: the REMAINING minutes in the current period, using the
+ * spec's `[Remaining minutes]'-[Period]` format. Null when the clock carries no
+ * number, so the caller can fall through rather than invent a time.
+ */
+function basketballClock(clock, period) {
+  const mins = remainingMinutes(clock);
+  if (mins == null) return null;
+  const p = periodLabel('basketball', period);
+  return p ? `${mins}'-${p}` : `${mins}'`;
+}
+
 /** Human clock label: state first, then clock and period. */
 function clockLine(analysis) {
   const live = (analysis && analysis.live) || {};
   const sport = analysis && analysis.sport;
   if (live.status === 'finished') return 'Finished';
   if (live.status === 'scheduled') return 'Not started';
+  // At half time there is no running quarter clock to show.
+  if (isHalfTime(live)) return 'Half time';
+  // Basketball shows the quarter and the time REMAINING in it (`6'-Q1`), never
+  // an elapsed minute. A source clock and a derived one format the same way;
+  // the derived one keeps its "(est.)" label.
+  if (sport === 'basketball') {
+    if (live.clock) {
+      const line = basketballClock(live.clock, live.period);
+      if (line) return line;
+    }
+    const derived = live.derived_clock;
+    if (derived && derived.clock) {
+      const line = basketballClock(derived.clock, derived.period);
+      if (line) return `${line} (est.)`;
+    }
+    return live.clock ? String(live.clock) : 'Clock unavailable';
+  }
   if (live.clock) {
     const p = periodLabel(sport, live.period);
     return p ? `${live.clock} · ${p}` : String(live.clock);
   }
-  // A source that publishes no clock (FlashScore's list feed, or LiveScore
-  // basketball's quarter-only feed) still gets one DERIVED from kick-off by the
-  // server. It is labelled "(est.)" so it is never mistaken for a source-
-  // reported time.
+  // A source that publishes no clock (FlashScore's list feed) still gets one
+  // DERIVED from kick-off by the server. It is labelled "(est.)" so it is never
+  // mistaken for a source-reported time.
   const derived = live.derived_clock;
   if (derived && derived.clock) {
     const p = periodLabel(sport, derived.period);
@@ -287,6 +333,22 @@ function pickRows(analysis) {
       market: 'Total',
       label: `${ou.selection === 'over' ? 'Over' : 'Under'} ${ou.line}`,
       display: formatPercent(ou.probability),
+    });
+  }
+
+  // Basketball point spread (handicap). `line` is the HOME handicap — negative
+  // when the home side is favoured — so the pick is labelled with the handicap
+  // of whichever side it is on (`Away +4.5` when home is -4.5).
+  const sp = picks.spread;
+  if (sp && sp.selection && sp.line != null) {
+    const onHome = sp.selection === 'home';
+    const handicap = onHome ? sp.line : -sp.line;
+    const lineText = handicap > 0 ? `+${handicap}` : String(handicap);
+    rows.push({
+      key: 'spread',
+      market: 'Handicap',
+      label: `${onHome ? home : away} ${lineText}`,
+      display: formatPercent(sp.probability),
     });
   }
 

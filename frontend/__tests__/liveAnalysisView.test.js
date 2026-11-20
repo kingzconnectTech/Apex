@@ -209,6 +209,36 @@ test('a basketball pick labels the winner market without a draw', () => {
   assert.equal(rows[1].display, '60.0%');
 });
 
+test('a basketball spread pick renders as a handicap row', () => {
+  const a = shippedAnalysis({
+    sport: 'basketball',
+    picks: {
+      match_result: null,
+      over_under: { market: 'over_under', line: 221.5, selection: 'over', probability: 0.62 },
+      // `line` is the HOME handicap; the pick is on the AWAY side (+4.5).
+      spread: { market: 'spread', line: -4.5, selection: 'away', probability: 0.58 },
+    },
+  });
+  const rows = pickRows(a);
+  const spread = rows.find(r => r.key === 'spread');
+  assert.equal(spread.market, 'Handicap');
+  assert.equal(spread.label, 'Chelsea +4.5');
+  assert.equal(spread.display, '58.0%');
+});
+
+test('a basketball spread pick on the home side shows the negative handicap', () => {
+  const a = shippedAnalysis({
+    sport: 'basketball',
+    picks: {
+      match_result: null,
+      over_under: null,
+      spread: { market: 'spread', line: -6.5, selection: 'home', probability: 0.61 },
+    },
+  });
+  const rows = pickRows(a);
+  assert.equal(rows[0].label, 'Manchester United -6.5');
+});
+
 test('a pick that could not be priced is omitted, never a placeholder', () => {
   const a = shippedAnalysis({
     picks: {
@@ -287,20 +317,98 @@ test('clockLine shows a server-derived clock, labelled as an estimate', () => {
   );
 });
 
-test('clockLine labels the period as a quarter for basketball', () => {
+test('clockLine shows basketball time as REMAINING minutes + quarter', () => {
+  // A source count-down clock (`6:24` = 6 min 24 s LEFT in Q3) reads `6'-Q3`.
   assert.equal(
     clockLine({ sport: 'basketball', live: { status: 'live', clock: '6:24', period: 3 } }),
-    '6:24 · Q3',
+    "6'-Q3",
   );
+  // A derived clock is already remaining minutes; it keeps the "(est.)" label.
   assert.equal(
     clockLine({ sport: 'basketball', live: { status: 'live', clock: null, period: 0, derived_clock: { clock: "6'", period: 1 } } }),
-    "6' · Q1 (est.)",
+    "6'-Q1 (est.)",
   );
   // Overtime reads OT rather than a fifth quarter.
   assert.equal(
     clockLine({ sport: 'basketball', live: { status: 'live', clock: null, period: 0, derived_clock: { clock: "3'", period: 5 } } }),
-    "3' · OT (est.)",
+    "3'-OT (est.)",
   );
+  // The seconds are dropped, never rounded up: 0:52 left is 0', not 1'.
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '0:52', period: 4 } }),
+    "0'-Q4",
+  );
+});
+
+test('clockLine shows "Half time" with no running quarter clock', () => {
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '0:00', period: 2, raw_status: 'HT' } }),
+    'Half time',
+  );
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: null, period: 0, raw_status: 'Half time', derived_clock: { clock: "8'", period: 2 } } }),
+    'Half time',
+  );
+});
+
+/**
+ * Spec §13.11–18 — the quarter-aware basketball clock. Every case pins the
+ * [Remaining minutes]'-[Period] contract: the number is what is LEFT in the
+ * current period, never an elapsed minute, and never a football-shaped clock.
+ */
+test('spec §13.11–15: the clock reads the minutes REMAINING in each quarter', () => {
+  // 11. 6 minutes left in Q1.
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '6:00', period: 1 } }),
+    "6'-Q1",
+  );
+  // 12. 3 minutes left in Q2.
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '3:41', period: 2 } }),
+    "3'-Q2",
+  );
+  // 14. 8 minutes left in Q3.
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '8:12', period: 3 } }),
+    "8'-Q3",
+  );
+  // 15. 2 minutes left in Q4.
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '2:30', period: 4 } }),
+    "2'-Q4",
+  );
+});
+
+test('spec §13.13: a half-time break shows the half-time state, not a running clock', () => {
+  const line = clockLine({ sport: 'basketball', live: { status: 'live', clock: '0:00', period: 2, raw_status: 'HT' } });
+  assert.equal(line, 'Half time');
+  // No quarter label leaks through at the break.
+  assert.doesNotMatch(line, /Q\d|OT/);
+});
+
+test('spec §13.16–17: overtime — and multiple overtimes — read OT, never Q5/Q6', () => {
+  // 16. The first overtime.
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '3:00', period: 5 } }),
+    "3'-OT",
+  );
+  // 17. A second overtime is still an OT period, never a sixth quarter.
+  assert.equal(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '2:00', period: 6 } }),
+    "2'-OT",
+  );
+  assert.doesNotMatch(
+    clockLine({ sport: 'basketball', live: { status: 'live', clock: '2:00', period: 6 } }),
+    /Q\d/,
+  );
+});
+
+test('spec §13.18: a finished match freezes its label and stops updating', () => {
+  const finished = { sport: 'basketball', live: { status: 'finished', clock: '0:00', period: 4 } };
+  assert.equal(clockLine(finished), 'Finished');
+  // A finished game is never polled again, so its clock cannot keep ticking.
+  assert.equal(shouldPoll(finished), false);
+  assert.equal(shouldPoll(withheldAnalysis()), true);
 });
 
 test('refreshSeconds honours the backend floor', () => {

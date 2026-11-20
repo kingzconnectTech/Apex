@@ -284,8 +284,18 @@ function buildWhy({ game, model, stats = null, momentum = null }) {
   }
   if (momentum && momentum.pressure_share_home != null && momentum.window_minutes >= 3) {
     const share = momentum.pressure_share_home;
-    if (share >= 0.65) why.push(`Recent attacking pressure favours home over the last ${momentum.window_minutes} min.`);
-    else if (share <= 0.35) why.push(`Recent attacking pressure favours away over the last ${momentum.window_minutes} min.`);
+    if (momentum.sport === 'basketball') {
+      const ph = momentum.home && momentum.home.points;
+      const pa = momentum.away && momentum.away.points;
+      if (ph != null && pa != null) {
+        if (share >= 0.65) why.push(`Recent scoring favours home over the last ${momentum.window_minutes} min (${ph}-${pa}).`);
+        else if (share <= 0.35) why.push(`Recent scoring favours away over the last ${momentum.window_minutes} min (${ph}-${pa}).`);
+      }
+    } else if (share >= 0.65) {
+      why.push(`Recent attacking pressure favours home over the last ${momentum.window_minutes} min.`);
+    } else if (share <= 0.35) {
+      why.push(`Recent attacking pressure favours away over the last ${momentum.window_minutes} min.`);
+    }
   }
   if (model && model.inputs && model.inputs.elapsed_minutes != null && model.inputs.elapsed_minutes >= 70) {
     why.push(`Late in the match (${model.inputs.elapsed_minutes} min) — the current score carries most of the signal.`);

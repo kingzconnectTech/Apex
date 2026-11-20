@@ -32,9 +32,16 @@ describe('overUnderLine — a fixed line per sport/league', () => {
     expect(overUnderLine('basketball', { league: { id: 'nba' } })).toBe(234.5);
   });
 
-  test('an unrecognised basketball league falls back to the configured default', () => {
-    expect(overUnderLine('basketball', { league: { id: 'not-a-league' } })).toBe(CFG.overUnder.basketball.defaultLine);
-    expect(overUnderLine('basketball')).toBe(CFG.overUnder.basketball.defaultLine);
+  test('with no model anchor and no fitted league, basketball has no line', () => {
+    // The old universal 219.5 default is gone: with no pre-game expected total
+    // and no fitted competition mean there is nothing to hang, so it is null.
+    expect(overUnderLine('basketball', { league: { id: 'not-a-league' } })).toBeNull();
+    expect(overUnderLine('basketball')).toBeNull();
+  });
+
+  test('the model anchor total wins over the league mean, snapped to a half', () => {
+    const model = { anchor_total: 222.4 };
+    expect(overUnderLine('basketball', { league: { id: 'nba' } }, model)).toBe(222.5);
   });
 
   test('a sport with no configured market has no line', () => {

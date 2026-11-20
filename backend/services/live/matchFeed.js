@@ -44,6 +44,7 @@ const CONFIG = require('./config');
 const M = require('./liveMath');
 const { buildLiveGame } = require('./liveGame');
 const { buildAnalysis } = require('./analysis');
+const { resolveLeagueKey } = require('../basketball/leagues');
 
 const CFG = CONFIG.live.matchFeed;
 
@@ -271,7 +272,7 @@ function parseLiveScoreDate(json, { sport = 'soccer', now = Date.now() } = {}) {
         // A source that reports a phase but no clock (basketball's '1Q') gets a
         // DISPLAY-ONLY estimate instead, on its own field and never on `clock`,
         // so the data tier and the model stay untouched.
-        derived_clock: sourceClock ? null : deriveClock(sport, kickoffMs, now, { period: sourcePeriod }),
+        derived_clock: sourceClock ? null : deriveClock(sport, kickoffMs, now, { period: sourcePeriod, league }),
         start_time: startTime,
         url: livescoreMatchUrl(stage, ev, sport),
       }));
@@ -320,8 +321,8 @@ function splitLeagueHeader(value) {
 
 /**
  * A basketball period's wall-clock geometry: the minutes before it starts, how
- * long it runs, and the break that follows it — all from config. Periods past
- * `regulationPeriods` are overtime. NBA-shaped by default.
+ * long it runs, and the break that follows it — all from `rules`. Periods past
+ * `rules.regulationPeriods` are overtime. NBA-shaped only when `rules` is.
  */
 function basketballPeriodSpan(period, rules) {
   const q = Number(rules.periodMinutes) || 12;
@@ -337,6 +338,28 @@ function basketballPeriodSpan(period, rules) {
 }
 
 /**
+ * The basketball clock geometry for THIS competition: the quarter (or half)
+ * length and the number of regulation periods both come FROM THE COMPETITION,
+ * not a universal NBA shape. The competition name the source published is
+ * resolved the same way the ship gate resolves it (name -> ESPN league id ->
+ * canonical league key), and the length is looked up per league: NBA 12 min,
+ * WNBA/FIBA/EuroLeague/EuroCup/ACB 10, NCAA two 20-minute halves. A competition
+ * not listed falls back to `defaultPeriodMinutes` / `defaultRegulationPeriods`.
+ */
+function basketballClockRules(hint) {
+  const base = (CFG.derivedClock && CFG.derivedClock.sports && CFG.derivedClock.sports.basketball) || {};
+  const name = hint && hint.league;
+  const key = name ? resolveLeagueKey(resolveLeagueId('basketball', name)) : null;
+  const byLeague = base.periodMinutesByLeague || {};
+  const regByLeague = base.regulationPeriodsByLeague || {};
+  return {
+    ...base,
+    periodMinutes: Number(byLeague[key]) || Number(base.defaultPeriodMinutes) || 12,
+    regulationPeriods: Number(regByLeague[key]) || Number(base.defaultRegulationPeriods) || 4,
+  };
+}
+
+/**
  * Derive a DISPLAY-ONLY in-game clock for a source that publishes none.
  *
  * FlashScore's list feed has no per-minute clock, and LiveScore's basketball
@@ -345,8 +368,12 @@ function basketballPeriodSpan(period, rules) {
  * kick-off, so the game time can be derived from the wall clock
  * (elapsed = now - kick-off). For football the half-time break is folded in, so
  * the second half reads 46'-90' rather than running on past 45'. For basketball
- * the quarters and their breaks are folded in the same way, and the minute shown
- * is the ELAPSED minute inside the period.
+ * the quarter (or half) LENGTH comes from the COMPETITION — NBA
+ * 12 min, FIBA/EuroLeague 10, NCAA two 20-minute halves — resolved from
+ * `hint.league`, and the quarters and their breaks are folded in the same way,
+ * with the minute shown being the REMAINING minute inside the period (a
+ * basketball clock counts DOWN, so at 8 minutes into a 12-minute NBA quarter
+ * the estimate reads 4').
  *
  * The result is an ESTIMATE and is meant to be carried on a SEPARATE field
  * (`derived_clock`), never on `clock`: it must not change the data tier or reach
@@ -358,11 +385,13 @@ function basketballPeriodSpan(period, rules) {
  * `hint.period` names the period the SOURCE reported (basketball's exact
  * quarter). When present it is trusted verbatim — the period is never second-
  * guessed from the wall clock — and only the minute inside it is estimated.
+ * `hint.league` is the competition name, used to pick the period length.
  *
  * @param {string} sport           'soccer' | 'basketball' | ...
  * @param {number|null} kickoffMs  epoch ms of the kick-off
  * @param {number} now             epoch ms "now"
- * @param {{period?:number}} [hint] a source-reported period to keep exact
+ * @param {{period?:number, league?:string}} [hint] a source-reported period to
+ *   keep exact, plus the competition name for the period length
  * @returns {{clock:string, period:number}|null}
  */
 function deriveClock(sport, kickoffMs, now, hint) {
@@ -385,20 +414,25 @@ function deriveClock(sport, kickoffMs, now, hint) {
   }
 
   if (sport === 'basketball') {
+    // The period LENGTH is the competition's, not a universal NBA shape.
+    const clockRules = basketballClockRules(hint);
     const hintPeriod = hint && Number(hint.period) > 0 ? Number(hint.period) : 0;
+    // A basketball clock counts DOWN: the number shown is how much time is
+    // LEFT in the current period, never how much has elapsed.
     if (hintPeriod) {
-      // The source named the quarter: keep it and place the minute inside it.
-      const { offset, length } = basketballPeriodSpan(hintPeriod, rules);
+      // The source named the quarter: keep it and place the REMAINING minute.
+      const { offset, length } = basketballPeriodSpan(hintPeriod, clockRules);
       const within = Math.max(0, Math.min(length, elapsed - offset));
-      return { clock: `${within}'`, period: hintPeriod };
+      return { clock: `${Math.max(0, length - within)}'`, period: hintPeriod };
     }
     for (let period = 1; period <= 50; period += 1) {
-      const { offset, length, after } = basketballPeriodSpan(period, rules);
+      const { offset, length, after } = basketballPeriodSpan(period, clockRules);
       if (elapsed < offset + length) {
-        return { clock: `${Math.max(0, elapsed - offset)}'`, period };
+        const within = Math.max(0, Math.min(length, elapsed - offset));
+        return { clock: `${Math.max(0, length - within)}'`, period };
       }
-      // Between periods the clock holds where the period just ended.
-      if (elapsed < offset + length + after) return { clock: `${length}'`, period };
+      // Between periods the period is complete: nothing remains on its clock.
+      if (elapsed < offset + length + after) return { clock: "0'", period };
     }
     return null;
   }
@@ -445,7 +479,7 @@ function parseFlashScoreFeed(text, { sport = 'soccer', now = Date.now() } = {}) 
       status: { code: 'live', label: 'Live', live: true },
       start_time: isoFromUnixSeconds(fields.AD),
       // The feed publishes no clock, so this is a DERIVED, display-only one.
-      derived_clock: deriveClock(sport, kickoffMs, now),
+      derived_clock: deriveClock(sport, kickoffMs, now, { league }),
       url: `https://www.flashscore.com/match/${fields.AA}/`,
     }));
   }

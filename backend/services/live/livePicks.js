@@ -22,8 +22,15 @@ const CONFIG = require('./config');
 const M = require('./liveMath');
 const { leagueParams } = require('./basketballLive');
 const liveMarkets = require('./liveMarkets');
+const { spreadProbability } = require('../basketball/probability');
 
 const CFG = CONFIG.live.pickMarkets;
+
+/** The configured basketball moneyline bar (a pick below it is withheld). */
+function moneylineMin() {
+  const cfg = (CFG.pickMarkets && CFG.pickMarkets.moneyline) || {};
+  return Number.isFinite(cfg.minProbability) ? cfg.minProbability : 0.75;
+}
 
 /** The match-result market name for a sport. */
 function resultMarket(sport) {
@@ -31,29 +38,37 @@ function resultMarket(sport) {
 }
 
 /**
- * The FIXED Over/Under line for this game — a sport/league constant, never the
- * live projection. Soccer uses the configured line; basketball uses the
- * configured line, else the league's own mean total rounded to the nearest half
- * point. Returns null when no line can be established, so the O/U pick is
- * omitted rather than guessed.
+ * The FIXED Over/Under line for this game — the PRE-GAME expected total for the
+ * match, never the live projection. Soccer uses the configured line; basketball
+ * uses the model's own pre-game anchor (`model.anchor_total`: the engine's
+ * published projection when there is one, else the competition's own mean),
+ * snapped to a half point so the total can never push. When no anchor and no
+ * fitted league mean are available the line is null, so the O/U pick is omitted
+ * rather than guessed.
+ *
+ * The line is fixed for the whole game — it does NOT move with the score — so
+ * the live projection diverges from it and the pick's confidence moves honestly.
  *
  * @param {string} sport
- * @param {Object} [game] LiveGame (for the basketball league id)
+ * @param {Object} [game]  LiveGame (for the basketball league id)
+ * @param {Object} [model] the model output (for the pre-game anchor total)
  * @returns {number|null}
  */
-function overUnderLine(sport, game) {
+function overUnderLine(sport, game, model) {
   const cfg = CFG.overUnder[sport];
   if (!cfg) return null;
   if (Number.isFinite(cfg.line)) return cfg.line;
   if (sport !== 'basketball') return null;
-  // A fitted league: its own mean total rounded to the nearest half point. An
-  // unrecognised league: the configured fallback line. A half point (X.5) so the
-  // total can never push.
+  // Prefer THIS match's pre-game expected total; fall back to the competition's
+  // own mean for a fitted league. Nothing is fabricated when neither is known.
+  const anchor = model && Number.isFinite(model.anchor_total) ? model.anchor_total : null;
   const params = leagueParams(game && game.league && game.league.id);
-  if (params && params.fitted && Number.isFinite(params.totalMean)) {
-    return M.round(Math.round(params.totalMean) - 0.5, 1);
-  }
-  return Number.isFinite(cfg.defaultLine) ? cfg.defaultLine : null;
+  const mean = anchor != null
+    ? anchor
+    : (params && params.fitted && Number.isFinite(params.totalMean) ? params.totalMean : null);
+  if (!Number.isFinite(mean)) return null;
+  // Nearest half point (X.5) so the total can never push.
+  return M.round(Math.round(mean - 0.5) + 0.5, 1);
 }
 
 /**
@@ -80,8 +95,16 @@ function basketballOver(mean, sigma, line) {
   return M.clamp(1 - M.normalCdf((line - mean) / sigma), 0.001, 0.999);
 }
 
-/** The most likely match-result selection, with the model's probability. */
-function matchResultPick(sport, probabilities) {
+/**
+ * The most likely match-result selection, with the model's probability.
+ *
+ * `minProb` gates the recommendation: when the strongest outcome sits below the
+ * bar the pick is withheld (null) — the winner probability is still shown as
+ * ANALYSIS elsewhere, but a sub-threshold read is never dressed up as a pick.
+ * It defaults to 0, so the raw "most likely outcome" utility is unchanged for
+ * callers that want the argmax regardless (e.g. soccer's T6 symmetry check).
+ */
+function matchResultPick(sport, probabilities, minProb = 0) {
   if (!probabilities) return null;
   const p = probabilities;
   const options = [];
@@ -90,6 +113,7 @@ function matchResultPick(sport, probabilities) {
   if (Number.isFinite(p.away_win)) options.push({ selection: 'away', probability: p.away_win });
   if (!options.length) return null;
   const best = options.reduce((a, b) => (b.probability > a.probability ? b : a));
+  if (best.probability < minProb) return null;
   return { market: resultMarket(sport), selection: best.selection, probability: M.round(best.probability, 4) };
 }
 
@@ -175,9 +199,11 @@ function basketballTotalsPick(model, game) {
   const sigma = model && model.sigma ? model.sigma.total : null;
   if (!Number.isFinite(mean) || !(sigma > 0)) return null;
 
-  // The line is the league-typical MAIN total — the same line for every game in
-  // the competition; only the side the model favours moves.
-  const line = overUnderLine('basketball', game);
+  // The line is THIS match's PRE-GAME expected total (the engine's projection,
+  // else the competition mean) — the line a book would hang — fixed for the
+  // whole game. It is never the live projection, so the pick's confidence moves
+  // honestly as the game moves the projection away from it.
+  const line = overUnderLine('basketball', game, model);
   if (!Number.isFinite(line)) return null;
 
   // A line the current score has already settled is never a fresh pick.
@@ -196,6 +222,47 @@ function basketballTotalsPick(model, game) {
     probability: M.round(probability, 4),
     over: M.round(over, 4),
     under: M.round(1 - over, 4),
+  };
+}
+
+/**
+ * Basketball POINT-SPREAD (handicap) pick.
+ *
+ * The line is the HOME handicap derived from the match's PRE-GAME expected
+ * margin (`model.anchor_margin`) — negative when the home team is favoured —
+ * set on a half point so the margin can never push. Like the totals line it is
+ * fixed for the whole game; the side is whichever of home/away covers at the
+ * LIVE projected margin (`model.expected.margin`) with the model's own margin
+ * sigma, and the pick is emitted only when that side clears the configured bar.
+ * Below it: no pick rather than a ~50/50 read.
+ *
+ * Convention mirrors basketball/index.js and basketball/probability.js: the
+ * spread is the HOME handicap, and home covers when (margin + spread) > 0.
+ */
+function spreadPick(model, game) {
+  const cfg = (CFG.pickMarkets && CFG.pickMarkets.spread) || {};
+  const minProb = Number.isFinite(cfg.minProbability) ? cfg.minProbability : 0.75;
+  const anchorMargin = model && Number.isFinite(model.anchor_margin) ? model.anchor_margin : null;
+  const projMargin = model && model.expected ? model.expected.margin : null;
+  const sigmaMargin = model && model.sigma ? model.sigma.margin : null;
+  if (anchorMargin == null || !Number.isFinite(projMargin) || !(sigmaMargin > 0)) return null;
+
+  // HOME handicap on a half point, signed by which side is favoured.
+  const half = Math.round(Math.abs(anchorMargin) * 2) / 2 + 0.5;
+  const line = anchorMargin >= 0 ? -half : half;
+
+  const probs = spreadProbability({ spread: line, projMargin, sigmaMargin });
+  if (probs.home == null || probs.away == null) return null;
+  const selection = probs.home >= probs.away ? 'home' : 'away';
+  const probability = selection === 'home' ? probs.home : probs.away;
+  if (probability < minProb) return null;
+  return {
+    market: 'spread',
+    line,
+    selection,
+    probability: M.round(probability, 4),
+    home: M.round(probs.home, 4),
+    away: M.round(probs.away, 4),
   };
 }
 
@@ -257,11 +324,16 @@ function projectedCount(stats, field, model) {
 
 /**
  * Derive the picks for one live model output. Returns
- * `{ match_result, over_under, corners, shots }` — each key is an object or null
- * (a null means that market could not be priced, never a placeholder). Returns
- * null overall when the model is not usable. `corners` and `shots` are soccer
- * only and are priced from the live-stat markets, so they are null whenever the
- * provider gave no shots/corners count (e.g. a score-site game).
+ * `{ match_result, over_under, spread, corners, shots }` — each key is an
+ * object or null (a null means that market could not be priced, never a
+ * placeholder). Returns null overall when the model is not usable.
+ *
+ * Basketball gets `over_under` (anchored on the match's pre-game expected
+ * total), `spread` (handicap off the pre-game expected margin) and, only when
+ * its winner probability clears the moneyline bar, `match_result`. `corners`
+ * and `shots` are soccer only and are priced from the live-stat markets, so
+ * they are null whenever the provider gave no shots/corners count (e.g. a
+ * score-site game).
  *
  * @param {Object} args
  * @param {string} args.sport
@@ -277,18 +349,19 @@ function derivePicks({ sport, model, game, markets, stats = null } = {}) {
 
   const matchResult = sport === 'soccer'
     ? doubleChancePick(model.probabilities)
-    : matchResultPick(sport, model.probabilities);
+    : matchResultPick(sport, model.probabilities, moneylineMin());
   const overUnder = sport === 'basketball'
     ? basketballTotalsPick(model, game || {})
     : overUnderPick(sport, model, game || {}, markets);
+  const spread = sport === 'basketball' ? spreadPick(model, game || {}) : null;
   const corners = sport === 'soccer'
     ? rateCountPick('corners', markets, projectedCount(stats, 'corners', model))
     : null;
   const shots = sport === 'soccer'
     ? rateCountPick('shots', markets, projectedCount(stats, 'shots', model))
     : null;
-  if (!matchResult && !overUnder && !corners && !shots) return null;
-  return { match_result: matchResult, over_under: overUnder, corners, shots };
+  if (!matchResult && !overUnder && !spread && !corners && !shots) return null;
+  return { match_result: matchResult, over_under: overUnder, spread, corners, shots };
 }
 
-module.exports = { derivePicks, overUnderLine, matchResultPick, doubleChancePick, overUnderPick, basketballTotalsPick, rateCountPick, projectedCount, soccerOver, basketballOver };
+module.exports = { derivePicks, overUnderLine, matchResultPick, doubleChancePick, overUnderPick, basketballTotalsPick, spreadPick, rateCountPick, projectedCount, soccerOver, basketballOver };

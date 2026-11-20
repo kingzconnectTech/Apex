@@ -346,14 +346,20 @@ async function getLiveStats({ espn = null, game = null, now = Date.now(), traceI
     : normalizeStats(read.summary, { fetchedAt: read.fetched_at, source: game.source || 'espn' });
   if (!stats) return empty;
 
-  // Momentum is a soccer shots/corners concept; basketball has no equivalent
-  // snapshot signal here, so it stays null rather than being invented.
-  const momentum = game.sport === 'basketball' ? null : recordAndDiff(game.game_id, {
-    home_shots_on_target: stats.home.shots_on_target,
-    away_shots_on_target: stats.away.shots_on_target,
-    home_corners: stats.home.corners,
-    away_corners: stats.away.corners,
-  }, now);
+  // Momentum is recorded from REAL snapshots only — never invented. Soccer diffs
+  // shots/corners; basketball diffs the SCORE (points scored over the window),
+  // which is the only per-side signal these feeds give us without play-by-play.
+  const momentum = game.sport === 'basketball'
+    ? recordBasketballMomentum(game.game_id, {
+      home_score: game.home ? game.home.score : null,
+      away_score: game.away ? game.away.score : null,
+    }, now)
+    : recordAndDiff(game.game_id, {
+      home_shots_on_target: stats.home.shots_on_target,
+      away_shots_on_target: stats.away.shots_on_target,
+      home_corners: stats.home.corners,
+      away_corners: stats.away.corners,
+    }, now);
 
   return { stats, momentum, data_quality: dataQuality(stats, { now }) };
 }
@@ -370,7 +376,12 @@ const MAX_SNAPSHOTS = 12;
 const SNAPSHOT_GAP_MS = 60 * 1000;
 const MIN_WINDOW_MS = 3 * 60 * 1000;
 
-function recordAndDiff(gameId, point, now) {
+/**
+ * Record `point` against `gameId` (at most one per minute) and return the
+ * baseline snapshot to diff against — the oldest one, once it is at least
+ * ~3 minutes old. Null when there is no game, or no window long enough yet.
+ */
+function pushSnapshot(gameId, point, now) {
   if (!gameId) return null;
   let log = snapshotLog.get(gameId);
   if (!log) { log = []; snapshotLog.set(gameId, log); }
@@ -383,6 +394,37 @@ function recordAndDiff(gameId, point, now) {
   // Need a baseline at least ~3 minutes old for a meaningful window.
   const base = log.length > 1 ? log[0] : null;
   if (!base || now - base.at < MIN_WINDOW_MS) return null;
+  return base;
+}
+
+/**
+ * Basketball scoring momentum from SCORE snapshots: the points each side scored
+ * over the recorded window, the net, and the home share of them. It is built
+ * only from real snapshot deltas — there is no play-by-play here, so no run or
+ * drought is invented — and stays null until ~3 minutes of history exists.
+ */
+function recordBasketballMomentum(gameId, point, now) {
+  const base = pushSnapshot(gameId, point, now);
+  if (!base) return null;
+  const spanMin = (now - base.at) / 60000;
+  const dH = delta(point.home_score, base.point.home_score);
+  const dA = delta(point.away_score, base.point.away_score);
+  if (dH == null && dA == null) return null;
+  const scored = (dH || 0) + (dA || 0);
+  return {
+    sport: 'basketball',
+    window_minutes: Math.round(spanMin),
+    home: { points: dH },
+    away: { points: dA },
+    net_home: (dH || 0) - (dA || 0),
+    pressure_share_home: scored > 0 ? (dH || 0) / scored : null,
+    note: 'Points scored over the last recorded snapshots; confidence grows with window length.',
+  };
+}
+
+function recordAndDiff(gameId, point, now) {
+  const base = pushSnapshot(gameId, point, now);
+  if (!base) return null;
   const spanMin = (now - base.at) / 60000;
   const dSotH = delta(point.home_shots_on_target, base.point.home_shots_on_target);
   const dSotA = delta(point.away_shots_on_target, base.point.away_shots_on_target);
@@ -418,6 +460,7 @@ module.exports = {
   dataQuality,
   getLiveStats,
   recordAndDiff,
+  recordBasketballMomentum,
   resetSnapshots,
   TRACKED_FIELDS,
   BALL_TRACKED_FIELDS,

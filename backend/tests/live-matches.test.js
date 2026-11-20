@@ -514,26 +514,32 @@ describe('in-play clock and period', () => {
     expect(matchFeed.deriveClock('soccer', kickoff, at(-5))).toBeNull();
   });
 
-  test('deriveClock walks the quarters and breaks for basketball', () => {
+  test('deriveClock walks the quarters and breaks for basketball, counting DOWN', () => {
     const kickoff = Date.UTC(2026, 10, 20, 15, 0, 0);
     const at = min => kickoff + min * 60 * 1000;
-    // Q1 runs 0-12, then a 3-minute break.
-    expect(matchFeed.deriveClock('basketball', kickoff, at(8))).toEqual({ clock: "8'", period: 1 });
-    expect(matchFeed.deriveClock('basketball', kickoff, at(12))).toEqual({ clock: "12'", period: 1 });
-    // Q2 starts at wall 15 (12 + 3 break); 20 minutes in is 5' into Q2.
-    expect(matchFeed.deriveClock('basketball', kickoff, at(20))).toEqual({ clock: "5'", period: 2 });
-    // Q2 ends at wall 27; the long half-time break then holds the clock at 12'.
-    expect(matchFeed.deriveClock('basketball', kickoff, at(27))).toEqual({ clock: "12'", period: 2 });
-    expect(matchFeed.deriveClock('basketball', kickoff, at(35))).toEqual({ clock: "12'", period: 2 });
-    // Q3 tips off at wall 42 (12+3+12+15).
-    expect(matchFeed.deriveClock('basketball', kickoff, at(42))).toEqual({ clock: "0'", period: 3 });
-    // Overtime is its own 5-minute period past regulation.
-    expect(matchFeed.deriveClock('basketball', kickoff, at(75))).toEqual({ clock: "3'", period: 5 });
+    // A basketball clock counts DOWN: at 8 minutes into a 12-minute Q1, 4' remain.
+    expect(matchFeed.deriveClock('basketball', kickoff, at(8))).toEqual({ clock: "4'", period: 1 });
+    expect(matchFeed.deriveClock('basketball', kickoff, at(12))).toEqual({ clock: "0'", period: 1 });
+    // Q2 starts at wall 15 (12 + 3 break); 20 minutes in is 5' elapsed, 7' left.
+    expect(matchFeed.deriveClock('basketball', kickoff, at(20))).toEqual({ clock: "7'", period: 2 });
+    // Q2 ends at wall 27; the long half-time break holds the clock at 0' left.
+    expect(matchFeed.deriveClock('basketball', kickoff, at(27))).toEqual({ clock: "0'", period: 2 });
+    expect(matchFeed.deriveClock('basketball', kickoff, at(35))).toEqual({ clock: "0'", period: 2 });
+    // Q3 tips off at wall 42 (12+3+12+15): a full 12' remains.
+    expect(matchFeed.deriveClock('basketball', kickoff, at(42))).toEqual({ clock: "12'", period: 3 });
+    // Overtime is its own 5-minute period; 3' in leaves 2'.
+    expect(matchFeed.deriveClock('basketball', kickoff, at(75))).toEqual({ clock: "2'", period: 5 });
     // A source-named quarter is kept verbatim and only the minute is estimated.
     expect(matchFeed.deriveClock('basketball', kickoff, at(50), { period: 3 }))
-      .toEqual({ clock: "8'", period: 3 });
+      .toEqual({ clock: "4'", period: 3 });
     expect(matchFeed.deriveClock('basketball', kickoff, at(50), { period: 1 }))
-      .toEqual({ clock: "12'", period: 1 });
+      .toEqual({ clock: "0'", period: 1 });
+    // The COMPETITION sets the period length: a 10-minute FIBA quarter has 6'
+    // left at 4 minutes in, where an NBA quarter would still have 8'.
+    expect(matchFeed.deriveClock('basketball', kickoff, at(4), { period: 1, league: 'FIBA' }))
+      .toEqual({ clock: "6'", period: 1 });
+    expect(matchFeed.deriveClock('basketball', kickoff, at(4), { period: 1, league: 'NBA' }))
+      .toEqual({ clock: "8'", period: 1 });
     // Unknown kick-off or the future is still never invented.
     expect(matchFeed.deriveClock('basketball', null, at(8))).toBeNull();
     expect(matchFeed.deriveClock('basketball', kickoff, at(-5))).toBeNull();
@@ -553,10 +559,11 @@ describe('in-play clock and period', () => {
     const now = kickoff + 8 * 60 * 1000; // 8 minutes in
     const [m] = matchFeed.parseLiveScoreDate(doc, { sport: 'basketball', now });
     // The quarter is exact from the source; the feed has no clock, so the one
-    // shown is derived and rides on its OWN field, never on `clock`.
+    // shown is derived (REMAINING minutes — 4' left of the 12' NBA Q1) and rides
+    // on its OWN field, never on `clock`.
     expect(m.period).toBe(1);
     expect(m.clock).toBeNull();
-    expect(m.derived_clock).toEqual({ clock: "8'", period: 1 });
+    expect(m.derived_clock).toEqual({ clock: "4'", period: 1 });
   });
 });
 

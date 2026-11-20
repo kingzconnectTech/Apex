@@ -106,12 +106,14 @@ const CONFIG = {
         // never push.
         soccer: { line: 2.5 },
         // Basketball: `line` pins every league when set. When null the line is
-        // the league's own mean total (basketball/leagues.js) rounded to the
-        // nearest half point, so it stays a fixed per-league constant;
-        // `defaultLine` covers a league basketball/leagues.js does not know.
+        // THIS match's PRE-GAME expected total — the engine's published
+        // projection where available, else the competition's own mean
+        // (basketball/leagues.js) — snapped to a half point so the total can
+        // never push. It is fixed for the whole game, so the live projection
+        // diverges from it and the pick's confidence moves honestly. When
+        // neither is known the pick is withheld (no line, no pick).
         basketball: {
           line: null,
-          defaultLine: 219.5,
           // Multi-line totals evaluation: every supported line is priced
           // independently (Over AND Under) off the model's expected total and
           // sigma, with settled-market statuses. A pick is only emitted for
@@ -123,14 +125,14 @@ const CONFIG = {
           // (liveMarkets.basketballTotalLines) so every competition is priced
           // on its own scale.
           evaluationLines: [209.5, 214.5, 219.5, 224.5, 229.5, 234.5],
-          // The pick is the line NEAREST the league-typical total (the "main"
-          // line a book would hang — basketball/leagues.js own mean, via
-          // overUnderLine), side = argmax(Over, Under). A pick is only emitted
-          // when its side clears minPickProbability, so a ~50/50 read at the
-          // main line is withheld rather than dressed up as a recommendation:
-          // no edge, no pick. Settled lines are always excluded — a decided
-          // market is never a fresh pick.
-          minPickProbability: 0.55,
+          // The pick is priced against the match's pre-game expected total
+          // (the "main" line a book would hang — overUnderLine) and the side
+          // is argmax(Over, Under). A pick is only emitted when its side
+          // clears minPickProbability, so a ~50/50 read at the main line is
+          // withheld rather than dressed up as a recommendation: no edge, no
+          // pick. Settled lines are always excluded — a decided market is
+          // never a fresh pick.
+          minPickProbability: 0.75,
         },
         // Soccer match-result pick is a Double Chance market (1X / X2 / 12)
         // derived from the model's own 1X2 probabilities. It is only shown
@@ -138,6 +140,17 @@ const CONFIG = {
         // threshold — the same 90% football bar used for pre-match picks.
         doubleChance: { minProbability: 0.90 },
       },
+      // Basketball moneyline (Home Win / Away Win). The winner probability is
+      // ALWAYS shown as analysis; it becomes a PICK only when the strongest
+      // side clears this bar — the same 75% basketball bar used for totals and
+      // spread. Below it: no pick, so the model never "just keeps choosing the
+      // home team".
+      moneyline: { minProbability: 0.75 },
+      // Basketball point spread (handicap). The line is the home handicap off
+      // the match's PRE-GAME expected margin; the side is whichever covers at
+      // the LIVE projected margin. Emitted only when that side clears this
+      // bar — the same 75% basketball bar.
+      spread: { minProbability: 0.75 },
     },
 
     /**
@@ -636,6 +649,16 @@ const CONFIG = {
           'ACB': 'acb',
           'G League': 'nba-development',
           'NBA G League': 'nba-development',
+          // FIBA competitions (10-minute quarters). Names cover the common
+          // international tournaments; the ESPN slug is 'fiba'.
+          'FIBA': 'fiba',
+          'FIBA World Cup': 'fiba',
+          'World Cup': 'fiba',
+          'Basketball World Cup': 'fiba',
+          'Olympics': 'fiba',
+          'Olympic Basketball': 'fiba',
+          'EuroBasket': 'fiba',
+          'FIBA EuroBasket': 'fiba',
         },
       },
       /**
@@ -662,13 +685,13 @@ const CONFIG = {
        * Only a sport whose period structure is knowable from here is derived; a
        * sport not listed stays clock-less rather than guessed.
        *
-       * Basketball IS listed even though its quarter length varies between
-       * competitions (NBA 12 min, FIBA 10): a labelled, roughly-right minute is
-       * more honest than a blank one, and the value carries "(est.)". The
-       * QUARTER itself is never guessed — where the source reports one
+       * Basketball IS listed, and its quarter length is taken FROM THE
+       * COMPETITION (NBA 12 min, FIBA/EuroLeague 10, NCAA two 20-min halves)
+       * rather than one universal NBA-shaped clock: a labelled, right-length
+       * minute is more honest than a blank one, and the value carries "(est.)".
+       * The QUARTER itself is never guessed — where the source reports one
        * (LiveScore's '1Q'..'OT') that exact period is kept and these lengths
-       * only place the minute inside it. The figures describe an NBA-shaped
-       * game.
+       * only place the minute inside it.
        */
       derivedClock: {
         enabled: true,
@@ -679,10 +702,28 @@ const CONFIG = {
             maxMinute: 90,             // clamp once regular time is over
           },
           basketball: {
-            periodMinutes: 12,         // one quarter (NBA-shaped estimate)
+            // One quarter (or half) in MINUTES — the COMPETITION decides, not
+            // one universal NBA-shaped clock. NBA and the G-League play 12-min
+            // quarters; the WNBA, FIBA (Olympics/World Cup/EuroBasket),
+            // EuroLeague, EuroCup and ACB play 10; NCAA plays two 20-min
+            // halves. Keyed by the resolved league key (basketball/leagues.js);
+            // `defaultPeriodMinutes` covers a competition not listed here.
+            defaultPeriodMinutes: 12,
+            periodMinutesByLeague: {
+              nba: 12,
+              wnba: 10,
+              ncaa: 20,
+              euroleague: 10,
+              fiba: 10,
+            },
+            // Regulation periods before overtime, keyed the same way (NCAA
+            // plays two halves rather than four quarters).
+            defaultRegulationPeriods: 4,
+            regulationPeriodsByLeague: {
+              ncaa: 2,
+            },
             periodBreakMinutes: 3,     // wall-clock break between quarters
             halfTimeBreakMinutes: 15,  // longer break at half time (after Q2)
-            regulationPeriods: 4,      // four quarters before overtime
             overtimeMinutes: 5,        // each overtime period
           },
         },
@@ -966,8 +1007,8 @@ const CONFIG = {
     basketball: {
       defaultPeriods: 4,
       // Periods per league, so period length = gameMinutes / periods
-      // (NCAA is two 20-minute halves, the pros four quarters).
-      leaguePeriods: { nba: 4, wnba: 4, ncaa: 2, euroleague: 4 },
+      // (NCAA is two 20-minute halves, the pros and FIBA four quarters).
+      leaguePeriods: { nba: 4, wnba: 4, ncaa: 2, euroleague: 4, fiba: 4 },
       overtimeMinutes: 5,
       // Used only when the league is unknown to basketball/leagues.js.
       fallback: {

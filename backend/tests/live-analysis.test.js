@@ -326,17 +326,30 @@ describe('Phase 11 — the live picks (match result + Over/Under)', () => {
     withShippedLeague('basketball', 'nba', () => {
       const a = buildAnalysis({ game: basketball() });
       expect(a.display.shows_probabilities).toBe(true);
-      expect(a.picks.match_result.market).toBe('moneyline');
-      // Totals are priced on every evaluation line in both directions, and a
-      // pick sits at the line NEAREST the expected total with the argmax side —
-      // never the most extreme profitable line.
+      // Totals are priced on every evaluation line, both directions.
       expect(Array.isArray(a.markets)).toBe(true);
       const totals = a.markets.filter(m => m.market === 'total_points');
       expect(totals.length).toBeGreaterThan(0);
-      if (a.picks.over_under) {
-        expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(a.picks.over_under.under ?? 0);
-        expect([209.5, 214.5, 219.5, 224.5, 229.5, 234.5]).toContain(a.picks.over_under.line);
-      }
+      // At an even mid-game state (Q3, a 4-point lead) NO side clears the 75%
+      // basketball bar, so the whole pick set is withheld rather than forced.
+      expect(a.picks).toBeNull();
+    });
+  });
+
+  test('a decisive live lead ships a moneyline and a totals pick on the main line', () => {
+    withShippedLeague('basketball', 'nba', () => {
+      const a = buildAnalysis({ game: basketball({ clock: '0:30', period: 4, homeScore: 110, awayScore: 88 }) });
+      expect(a.display.shows_probabilities).toBe(true);
+      expect(a.picks.match_result.market).toBe('moneyline');
+      expect(a.picks.match_result.selection).toBe('home');
+      expect(a.picks.match_result.probability).toBeGreaterThanOrEqual(0.75);
+      // The O/U line is the match's PRE-GAME main total (the league anchor), not
+      // the live projection — so the tiny late projection settles UNDER it.
+      expect(a.picks.over_under.market).toBe('over_under');
+      expect(a.picks.over_under.line).toBe(234.5);
+      expect(a.picks.over_under.selection).toBe('under');
+      expect(a.picks.over_under.probability).toBeGreaterThanOrEqual(a.picks.over_under.over);
+      expect(a.picks.spread.market).toBe('spread');
     });
   });
 
