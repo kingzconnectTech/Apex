@@ -101,6 +101,15 @@ const CONFIG = {
      */
     pickMarkets: {
       enabled: true,
+      /**
+       * Only price a market when a REAL bookmaker line+odds backs it. The live
+       * feeds publish no odds at all (and the ESPN sweep attaches none to an
+       * in-play game), so with this ON the market grid and every line-based
+       * pick are WITHHELD rather than priced off a simulated fixed line the
+       * bookies do not hang. Nothing is shown that the user cannot actually
+       * find at a book. Set false only to preview the simulated grid.
+       */
+      requireRealLine: true,
       overUnder: {
         // Soccer: the standard main line. A half point (X.5) so a total can
         // never push.

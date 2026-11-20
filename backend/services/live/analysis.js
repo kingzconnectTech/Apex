@@ -364,6 +364,25 @@ function calibrateModel(model, sport) {
 }
 
 /**
+ * The REAL bookmaker line for this game, or null.
+ *
+ * The live feeds (LiveScore/FlashScore) publish no odds at all, and the ESPN
+ * sweep attaches none to an in-play game either — so this is null for every
+ * live game today. It is the ONE gate that decides whether a market figure may
+ * be shown: with no real line+odds there is nothing honest to price against,
+ * and a model percentage at a simulated fixed line would be a market the user
+ * cannot find at a bookmaker. See config live.pickMarkets.requireRealLine.
+ *
+ * @param {Object} game LiveGame
+ * @returns {Object|null} the odds block when it carries a real Over/Under line
+ */
+function realMarketLine(game) {
+  const o = game && game.odds;
+  if (!o || typeof o !== 'object') return null;
+  return Number.isFinite(o.overUnder) ? o : null;
+}
+
+/**
  * Build the UI payload for one live game. Pure: no I/O, no cache.
  *
  * @param {Object} args
@@ -402,10 +421,16 @@ function buildAnalysis({ game, context = {}, contextView = null, statsView = nul
     mode = model.status === 'live' ? DISPLAY_MODES.FULL : DISPLAY_MODES.PRIOR_ONLY;
   }
   const showFigures = mode !== DISPLAY_MODES.CONTEXT_ONLY;
+  // R6 honesty policy — a market figure may only be shown when a REAL bookmaker
+  // line backs it. The live feeds carry no odds, so this is false for every live
+  // game today, and the market grid / line-based picks are WITHHELD rather than
+  // priced off a simulated fixed line (config live.pickMarkets.requireRealLine).
+  const hasRealLine = Boolean(realMarketLine(game));
+  const marketsAllowed = !CONFIG.live.pickMarkets.requireRealLine || hasRealLine;
   // Phase 11 — the recommended picks, derived from the SAME model output the
   // probabilities come from. Withheld (null) whenever the gate withholds the
   // figures, so a pick can never appear beside a withheld probability.
-  const markets = showFigures && modelUsable
+  const markets = showFigures && modelUsable && marketsAllowed
     ? (game.sport === 'soccer'
       ? liveMarkets.buildSoccerMarkets({
           model, game, stats,
@@ -416,7 +441,16 @@ function buildAnalysis({ game, context = {}, contextView = null, statsView = nul
         ? liveMarkets.buildBasketballTotalMarkets({ model, game })
         : null)
     : null;
-  const picks = showFigures ? derivePicks({ sport: game.sport, model, game, markets, stats }) : null;
+  const allPicks = showFigures ? derivePicks({ sport: game.sport, model, game, markets, stats }) : null;
+  // Only the match-result pick is a model output with no bookmaker line attached
+  // (1X2 / moneyline is a market every book hangs); the Over/Under, corners and
+  // shots picks are all priced at a simulated line, so they are withheld unless a
+  // real line backs them. A shape of nulls is collapsed back to null.
+  const picks = allPicks
+    ? (marketsAllowed
+      ? allPicks
+      : (allPicks.match_result ? { match_result: allPicks.match_result, over_under: null, corners: null, shots: null } : null))
+    : null;
 
   const payload = {
     game_id: game.game_id,
@@ -468,17 +502,21 @@ function buildAnalysis({ game, context = {}, contextView = null, statsView = nul
       ? { status: model.status, name: model.model, reason: model.reason || null, notes: model.notes || [] }
       : { status: model.status, name: model.model || null, reason: model.reason || null, notes: model.notes || [] },
     probabilities: showFigures ? model.probabilities : null,
-    // Phase 11 — the recommended picks (match result, Over/Under, and — for
-    // soccer when the stats arrived — corners and shots), each with the model's
-    // own probability as its confidence. Null when the gate withholds.
+    // Phase 11 — the recommended picks. Only the match-result pick (a model
+    // output; every book hangs 1X2/moneyline) survives when no real bookmaker
+    // line is present — the Over/Under, corners and shots picks are priced at a
+    // simulated line and are withheld with the market grid. Null when the gate
+    // withholds the figures. Each pick carries the model's own probability.
     picks,
     // Live statistics (facts, never predictions) — shown whenever they exist,
     // including context-only mode. Missing fields are null, never zero.
     stats,
     data_quality: dataQuality,
     confidence: confidenceFor({ game, model, dataQuality }),
-    // Market states for soccer (available/won/lost/unavailable). Withheld
-    // entirely when the gate withholds probabilities.
+    // Market states (available/won/lost/unavailable) priced off REAL bookmaker
+    // lines. Withheld (null) when the gate withholds the figures OR when no real
+    // line backs the game (config live.pickMarkets.requireRealLine) — a market
+    // the user cannot find at a book is never shown.
     markets,
     // "Why Apex predicts this" — factual bullets from real stats only.
     explanation: showFigures ? buildWhy({ game, model, stats, momentum }) : null,
