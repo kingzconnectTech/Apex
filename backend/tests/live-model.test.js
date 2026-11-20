@@ -9,7 +9,7 @@ const { predictLive, tierWeight } = require('../services/live/liveModel');
 const { buildLiveGame } = require('../services/live/liveGame');
 const { predictSoccer, elapsedMinutes: soccerElapsed, scoreMultiplier } = require('../services/live/soccerLive');
 const {
-  predictBasketball, elapsedMinutes: nbaElapsed, leagueParams,
+  predictBasketball, elapsedMinutes: nbaElapsed, leagueParams, paceRead,
 } = require('../services/live/basketballLive');
 const M = require('../services/live/liveMath');
 const CFG = require('../services/live/config');
@@ -199,6 +199,74 @@ describe('Basketball model', () => {
     const r = predictBasketball({ game: nbaGame({ clock: null, period: 0, homeScore: 50, awayScore: 48 }), weight: 1 });
     expect(r.status).toBe('prior_only');
     expect(r.probabilities.home_win + r.probabilities.away_win).toBeCloseTo(1, 3);
+  });
+});
+
+describe('Basketball live-stat tempo (paceRead)', () => {
+  const params = leagueParams('nba'); // fitted: ~102.5 possessions/team over 48 min
+  const ballStats = possessions => ({ sport: 'basketball', totals: { possessions } });
+  const leaguePace = (2 * params.possessionsPerTeam) / params.gameMinutes;
+
+  test('a game played at league tempo leaves the rate untouched', () => {
+    const read = paceRead({ stats: ballStats(leaguePace * 24) }, params, 24);
+    expect(read).not.toBeNull();
+    expect(read.ratio).toBeCloseTo(1, 3);
+    expect(read.factor).toBeCloseTo(1, 3);
+  });
+
+  test('a fast game lifts the rate and a slow one drags it, both bounded', () => {
+    const cfg = CFG.liveModel.basketball.tempo;
+    const fast = paceRead({ stats: ballStats(leaguePace * 24 * 1.4) }, params, 24);
+    const slow = paceRead({ stats: ballStats(leaguePace * 24 * 0.5) }, params, 24);
+    expect(fast.factor).toBeGreaterThan(1);
+    expect(slow.factor).toBeLessThan(1);
+    expect(fast.factor).toBeLessThanOrEqual(cfg.scaleMax);
+    expect(slow.factor).toBeGreaterThanOrEqual(cfg.scaleMin);
+  });
+
+  test('no read without possession data, enough time, or a league pace', () => {
+    expect(paceRead({ stats: ballStats(100) }, params, 3)).toBeNull();          // too early
+    expect(paceRead({ stats: ballStats(5) }, params, 24)).toBeNull();           // too few
+    expect(paceRead({}, params, 24)).toBeNull();                                // no stats
+    expect(paceRead({ stats: { sport: 'basketball', totals: {} } }, params, 24)).toBeNull();
+    expect(paceRead({ stats: ballStats(100) }, leagueParams('unknown'), 24)).toBeNull(); // no league pace
+  });
+});
+
+describe('Engine projections bridge (in-process)', () => {
+  const engineProjections = require('../services/basketball/engineProjections');
+
+  beforeEach(() => engineProjections.reset());
+  afterAll(() => engineProjections.reset());
+
+  test('publishes formatted projections and reads them back by live game id', () => {
+    const n = engineProjections.publishAll([
+      { gameId: 'espn:401', projection: { margin: -7.5, total: 228.5 } },
+      { gameId: 'espn:402', projection: { margin: 2, total: 219 } },
+    ]);
+    expect(n).toBe(2);
+    expect(engineProjections.lookup('espn:401')).toMatchObject({ margin: -7.5, total: 228.5 });
+    // A live game id is `source:eventId`; the bridge keys on the event id only.
+    expect(engineProjections.lookup('flashscore:401')).toMatchObject({ margin: -7.5 });
+  });
+
+  test('an unusable projection is ignored and absence reads as null', () => {
+    expect(engineProjections.publish('espn:1', { margin: null, total: 220 })).toBeNull();
+    expect(engineProjections.lookup('espn:1')).toBeNull();
+    expect(engineProjections.lookup(null)).toBeNull();
+    expect(engineProjections.lookup('espn:nope')).toBeNull();
+  });
+
+  test('the live model uses the projected margin as its prior when present', () => {
+    engineProjections.publish('401', { margin: -9, total: 230 });
+    const g = { ...game({ sport: 'basketball', league: { id: 'nba' }, clock: '12:00', period: 1 }), game_id: 'espn:401' };
+    const withEngine = predictBasketball({ game: g, weight: 1, engineProjection: engineProjections.lookup(g.game_id) });
+    const without = predictBasketball({ game: g, weight: 1 });
+    // No engine prior: the league's small home-court edge. With it: a 9-point
+    // AWAY favourite, so the home prior margin flips negative.
+    expect(without.expected.margin).toBeGreaterThan(0);
+    expect(withEngine.expected.margin).toBeLessThan(0);
+    expect(withEngine.notes.join(' ')).toMatch(/pre-game engine projection/);
   });
 });
 

@@ -314,7 +314,7 @@ function projectionRows(analysis) {
 
 /* --------------------------------------------------------- live statistics */
 
-/** Fields worth a comparison row, in display order. */
+/** Fields worth a comparison row, in display order (football). */
 const STAT_ROWS = [
   ['possession_pct', 'Possession', '%'],
   ['shots', 'Shots', ''],
@@ -330,6 +330,22 @@ const STAT_ROWS = [
   ['fouls', 'Fouls', ''],
 ];
 
+/** Basketball comparison rows — the boxscore fields the live model also reads. */
+const STAT_ROWS_BASKETBALL = [
+  ['trb', 'Rebounds', ''],
+  ['orb', 'Off. rebounds', ''],
+  ['drb', 'Def. rebounds', ''],
+  ['ast', 'Assists', ''],
+  ['tov', 'Turnovers', ''],
+  ['stl', 'Steals', ''],
+  ['blk', 'Blocks', ''],
+  ['pf', 'Fouls', ''],
+  ['fgm', 'Field goals made', ''],
+  ['fga', 'Field goal attempts', ''],
+  ['tpm', 'Three-pointers made', ''],
+  ['ftm', 'Free throws made', ''],
+];
+
 function fmtStat(v, unit) {
   if (v == null || !Number.isFinite(v)) return '—';
   return `${v}${unit || ''}`;
@@ -338,14 +354,17 @@ function fmtStat(v, unit) {
 /**
  * Live-stat comparison rows (home vs away). A missing value renders as '—',
  * never 0. `share` is the home fraction of the pair (0..1) for the bar, or
- * null when the pair cannot be compared.
+ * null when the pair cannot be compared. Row set follows the sport, so a
+ * basketball boxscore renders rebounds/turnovers rather than shots/corners.
  */
 function statRows(analysis) {
   const stats = analysis && analysis.stats;
   if (!stats || !stats.home || !stats.away) return [];
+  const sport = stats.sport || (analysis && analysis.sport);
+  const rowsDef = sport === 'basketball' ? STAT_ROWS_BASKETBALL : STAT_ROWS;
   const h = stats.home, a = stats.away;
   const rows = [];
-  for (const [field, label, unit] of STAT_ROWS) {
+  for (const [field, label, unit] of rowsDef) {
     const hv = h[field], av = a[field];
     if (hv == null && av == null) continue;
     const total = (hv || 0) + (av || 0);

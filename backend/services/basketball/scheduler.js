@@ -22,6 +22,7 @@ const {
   saveBasketballPredictions, saveLineSnapshots, resolveSnapshotWindows, withinHorizon,
   settleBasketballPredictions, getBasketballPerformance, deriveMarketPolicy,
 } = require('./persistence');
+const engineProjections = require('./engineProjections');
 const CONFIG = require('./config');
 
 function startBasketballScheduler({ sportsData, admin, logger = null, leagues = null } = {}) {
@@ -95,8 +96,11 @@ function startBasketballScheduler({ sportsData, admin, logger = null, leagues = 
   const refresh = (name) => runGuarded(name, async (traceId) => {
     const marketPolicy = await currentPolicy(traceId);
     const predictions = await getPredictions({ sportsData, leagues, marketPolicy, traceId });
+    // Publish each game's projected margin/total for the live model's prior
+    // (services/live reads this in-process; nothing is persisted).
+    const published = engineProjections.publishAll(predictions);
     const res = await saveBasketballPredictions(admin, predictions, { logger });
-    logger?.log?.('info', '[BASKETBALL] predictions refreshed', { name, traceId, games: predictions.length, ...res });
+    logger?.log?.('info', '[BASKETBALL] predictions refreshed', { name, traceId, games: predictions.length, published, ...res });
     await captureSnapshots(name, predictions, traceId);
   });
 

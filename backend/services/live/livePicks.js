@@ -156,58 +156,46 @@ function overUnderPick(sport, model, game, markets) {
 }
 
 /**
- * Basketball total-points pick: price EVERY evaluation line (Over AND Under)
- * — lines generated around THIS match's expected total — off the model's
- * normal distribution, drop lines the current score has already decided, then
- * take the side at the line NEAREST the expected total (the "main" total),
- * argmax of Over vs Under. Settled lines are never fresh picks.
+ * Basketball total-points pick at the league's MAIN line — the total a book
+ * would hang (overUnderLine), never the model's own projection and never the
+ * most extreme evaluation line. The side is the one the model favours AT that
+ * line, priced off the model's own normal total distribution, and the pick is
+ * emitted only when that side clears `minPickProbability`; below it there is NO
+ * pick rather than a ~50/50 read dressed up as a recommendation. A line the
+ * current score has already settled is never a fresh pick.
  *
- * This replaces the old behaviour of pinning one fixed line and reporting
- * whichever side sat a hair above 50% — the source of the constant
- * "Over 219.5" reads on games the model had no real read on.
+ * This replaces the old behaviour of reporting whichever side sat a hair above
+ * 50% at a line picked off the model's own projection — the source of the
+ * constant "Over 219.5" reads on games the model had no real read on.
  */
-function basketballTotalsPick(model, game, markets) {
+function basketballTotalsPick(model, game) {
   const cfg = (CFG.overUnder && CFG.overUnder.basketball) || {};
   const minProb = Number.isFinite(cfg.minPickProbability) ? cfg.minPickProbability : 0;
-  const list = Array.isArray(markets) && markets.length
-    ? markets
-    : liveMarkets.buildBasketballTotalMarkets({ model, game });
   const mean = model && model.expected ? model.expected.total : null;
+  const sigma = model && model.sigma ? model.sigma.total : null;
+  if (!Number.isFinite(mean) || !(sigma > 0)) return null;
 
-  // Candidate lines: AVAILABLE only (settled markets are never fresh picks),
-  // each carrying both sides' probabilities.
-  const byLine = new Map();
-  for (const m of list) {
-    if (!m || m.market !== 'total_points' || m.status !== 'available') continue;
-    if (!Number.isFinite(m.probability)) continue;
-    const cur = byLine.get(m.line) || { line: m.line, over: null, under: null };
-    if (m.side === 'over') cur.over = m.probability; else cur.under = m.probability;
-    byLine.set(m.line, cur);
-  }
-  const candidates = [...byLine.values()].filter(c => c.over != null && c.under != null);
-  if (!candidates.length) return null;
+  // The line is the league-typical MAIN total — the same line for every game in
+  // the competition; only the side the model favours moves.
+  const line = overUnderLine('basketball', game);
+  if (!Number.isFinite(line)) return null;
 
-  // The pick line is the one NEAREST the expected total — the market's "main"
-  // total — not the most extreme profitable line. This is what makes the pick
-  // meaningful: it answers "over or under the projected total?", not "which
-  // tail is safest?".
-  let line;
-  if (Number.isFinite(mean)) {
-    line = candidates.reduce((a, b) => (Math.abs(b.line - mean) < Math.abs(a.line - mean) ? b : a)).line;
-  } else {
-    line = candidates[0].line;
-  }
-  const chosen = byLine.get(line);
-  const selection = chosen.over >= chosen.under ? 'over' : 'under';
-  const probability = selection === 'over' ? chosen.over : chosen.under;
+  // A line the current score has already settled is never a fresh pick.
+  const curTotal = ((game && game.home && game.home.score) || 0) + ((game && game.away && game.away.score) || 0);
+  if (curTotal > line) return null;
+
+  const over = basketballOver(mean, sigma, line);
+  if (over == null) return null;
+  const selection = over >= 0.5 ? 'over' : 'under';
+  const probability = selection === 'over' ? over : 1 - over;
   if (probability < minProb) return null;
   return {
     market: 'over_under',
     line,
     selection,
-    probability,
-    over: chosen.over,
-    under: chosen.under,
+    probability: M.round(probability, 4),
+    over: M.round(over, 4),
+    under: M.round(1 - over, 4),
   };
 }
 
@@ -291,7 +279,7 @@ function derivePicks({ sport, model, game, markets, stats = null } = {}) {
     ? doubleChancePick(model.probabilities)
     : matchResultPick(sport, model.probabilities);
   const overUnder = sport === 'basketball'
-    ? basketballTotalsPick(model, game || {}, markets)
+    ? basketballTotalsPick(model, game || {})
     : overUnderPick(sport, model, game || {}, markets);
   const corners = sport === 'soccer'
     ? rateCountPick('corners', markets, projectedCount(stats, 'corners', model))

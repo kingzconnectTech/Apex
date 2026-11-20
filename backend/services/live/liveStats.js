@@ -57,6 +57,40 @@ const TRACKED_FIELDS = [
   'accurate_crosses', 'penalty_goals', 'penalties',
 ];
 
+/* Basketball (liveStats.js basketball branch). ESPN's summary boxscore carries
+ * the shooting lines as a compound "made-attempted" stat and the counting stats
+ * as plain numbers. */
+const BALL_PAIR_MAP = {
+  'fieldGoalsMade-fieldGoalsAttempted': ['fgm', 'fga'],
+  'threePointFieldGoalsMade-threePointFieldGoalsAttempted': ['tpm', 'tpa'],
+  'freeThrowsMade-freeThrowsAttempted': ['ftm', 'fta'],
+};
+
+const BALL_STAT_MAP = {
+  fieldGoalsMade: 'fgm',
+  fieldGoalsAttempted: 'fga',
+  threePointFieldGoalsMade: 'tpm',
+  threePointFieldGoalsAttempted: 'tpa',
+  freeThrowsMade: 'ftm',
+  freeThrowsAttempted: 'fta',
+  offensiveRebounds: 'orb',
+  defensiveRebounds: 'drb',
+  totalRebounds: 'trb',
+  rebounds: 'trb',
+  assists: 'ast',
+  turnovers: 'tov',
+  steals: 'stl',
+  blocks: 'blk',
+  fouls: 'pf',
+  personalFouls: 'pf',
+};
+
+/* Display-order list for basketball and dataQuality(). */
+const BALL_TRACKED_FIELDS = [
+  'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'orb', 'drb', 'trb',
+  'ast', 'tov', 'stl', 'blk', 'pf', 'possessions',
+];
+
 function numOrNull(v) {
   if (v == null || v === '') return null;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace('%', ''));
@@ -144,13 +178,116 @@ function addNullable(a, b) {
   return a == null && b == null ? null : (a || 0) + (b || 0);
 }
 
+/* ------------------------------------------------------- basketball */
+
+function emptyBallSide() {
+  const side = {};
+  for (const f of BALL_TRACKED_FIELDS) side[f] = null;
+  return side;
+}
+
+/** Parse an ESPN compound "made-attempted" stat into [made, attempted]. */
+function parsePairStat(stat) {
+  if (!stat) return null;
+  const raw = stat.displayValue != null ? stat.displayValue : stat.value;
+  if (raw === undefined || raw === null || raw === '') return null;
+  const parts = String(raw).split('-');
+  if (parts.length !== 2) return null;
+  const made = parseFloat(parts[0]);
+  const attempted = parseFloat(parts[1]);
+  if (!Number.isFinite(made) || !Number.isFinite(attempted)) return null;
+  return [made, attempted];
+}
+
+/** Raw display value of a stat, or null when it is a compound "a-b" string. */
+function ballScalar(stat) {
+  if (!stat) return null;
+  const raw = stat.displayValue != null ? stat.displayValue : stat.value;
+  if (raw == null || raw === '') return null;
+  if (String(raw).includes('-')) return null; // a compound pair, parsed separately
+  return numOrNull(raw);
+}
+
+/**
+ * Normalise one provider basketball team-statistics block into Apex's per-side
+ * shape. Accepts ESPN `statistics: [{name, displayValue}]` arrays.
+ */
+function normalizeBasketballTeamStats(statistics) {
+  const side = emptyBallSide();
+  if (!Array.isArray(statistics)) return side;
+  const byName = {};
+  for (const s of statistics) {
+    if (s && s.name != null) byName[s.name] = s;
+  }
+  for (const [name, [madeF, attF]] of Object.entries(BALL_PAIR_MAP)) {
+    const pair = parsePairStat(byName[name]);
+    if (pair) { side[madeF] = pair[0]; side[attF] = pair[1]; }
+  }
+  for (const [espnName, field] of Object.entries(BALL_STAT_MAP)) {
+    const n = ballScalar(byName[espnName]);
+    if (n != null) side[field] = n;
+  }
+  // Possessions: FGA - ORB + TOV + 0.44 * FTA — the same maths basketball/
+  // normalize.js uses — only when every input is present.
+  side.possessions = (side.fga != null && side.orb != null && side.tov != null && side.fta != null)
+    ? side.fga - side.orb + side.tov + 0.44 * side.fta
+    : null;
+  return side;
+}
+
+/**
+ * Normalise an ESPN basketball summary payload into the Apex stats structure.
+ * Returns null when the boxscore has no usable team rows.
+ */
+function normalizeBasketballStats(summary, { fetchedAt = null, source = 'espn' } = {}) {
+  const teams = summary && summary.boxscore && Array.isArray(summary.boxscore.teams)
+    ? summary.boxscore.teams : [];
+  if (!teams.length) return null;
+
+  const home = emptyBallSide();
+  const away = emptyBallSide();
+  let found = false;
+  for (const t of teams) {
+    const side = t && t.homeAway === 'home' ? home : t && t.homeAway === 'away' ? away : null;
+    if (!side) continue;
+    const stats = t.statistics || (t.team && t.team.statistics) || [];
+    Object.assign(side, normalizeBasketballTeamStats(stats));
+    found = true;
+  }
+  if (!found) return null;
+
+  return {
+    source,
+    sport: 'basketball',
+    fetched_at: fetchedAt,
+    home,
+    away,
+    totals: {
+      // Combined possessions (both teams) — the live model's pace read.
+      possessions: addNullable(home.possessions, away.possessions),
+      possessions_home: home.possessions,
+      possessions_away: away.possessions,
+      rebounds: addNullable(home.trb, away.trb),
+      turnovers: addNullable(home.tov, away.tov),
+      fga: addNullable(home.fga, away.fga),
+      orb: addNullable(home.orb, away.orb),
+      fta: addNullable(home.fta, away.fta),
+    },
+  };
+}
+
 /* ------------------------------------------------------------- quality */
+
+/** The tracked-field list for a stats block, by sport. */
+function trackedFieldsFor(stats) {
+  return stats && stats.sport === 'basketball' ? BALL_TRACKED_FIELDS : TRACKED_FIELDS;
+}
 
 /** Count of tracked fields populated for BOTH sides (a usable comparison). */
 function availableCount(stats) {
   if (!stats) return 0;
   let n = 0;
-  for (const f of TRACKED_FIELDS) {
+  for (const f of trackedFieldsFor(stats)) {
     if (stats.home[f] != null && stats.away[f] != null) n += 1;
   }
   return n;
@@ -162,6 +299,7 @@ function availableCount(stats) {
  * sure the model is.
  */
 function dataQuality(stats, { now = Date.now() } = {}) {
+  const fields = trackedFieldsFor(stats);
   const count = availableCount(stats);
   const fetchedAt = stats && stats.fetched_at;
   const ageMs = fetchedAt ? Math.max(0, now - fetchedAt) : null;
@@ -173,7 +311,7 @@ function dataQuality(stats, { now = Date.now() } = {}) {
   return {
     level,
     stats_available: count,
-    stats_tracked: TRACKED_FIELDS.length,
+    stats_tracked: fields.length,
     stale,
     age_ms: ageMs,
     updated_label: fetchedAt ? `${Math.round(ageMs / 1000)}s ago` : null,
@@ -200,10 +338,17 @@ async function getLiveStats({ espn = null, game = null, now = Date.now(), traceI
   const read = await liveContext.getSummary({ espn, game, now, traceId });
   if (!read || !read.summary) return empty;
 
-  const stats = normalizeStats(read.summary, { fetchedAt: read.fetched_at, source: game.source || 'espn' });
+  // Sport-shaped normalisation: the ESPN boxscore differs between football and
+  // basketball, so the branch produces the fields each model reads (soccer:
+  // shots/corners; basketball: possessions/rebounds/turnovers).
+  const stats = game.sport === 'basketball'
+    ? normalizeBasketballStats(read.summary, { fetchedAt: read.fetched_at, source: game.source || 'espn' })
+    : normalizeStats(read.summary, { fetchedAt: read.fetched_at, source: game.source || 'espn' });
   if (!stats) return empty;
 
-  const momentum = recordAndDiff(game.game_id, {
+  // Momentum is a soccer shots/corners concept; basketball has no equivalent
+  // snapshot signal here, so it stays null rather than being invented.
+  const momentum = game.sport === 'basketball' ? null : recordAndDiff(game.game_id, {
     home_shots_on_target: stats.home.shots_on_target,
     away_shots_on_target: stats.away.shots_on_target,
     home_corners: stats.home.corners,
@@ -267,11 +412,14 @@ function resetSnapshots() {
 module.exports = {
   normalizeStats,
   normalizeTeamStats,
+  normalizeBasketballStats,
+  normalizeBasketballTeamStats,
   availableCount,
   dataQuality,
   getLiveStats,
   recordAndDiff,
   resetSnapshots,
   TRACKED_FIELDS,
+  BALL_TRACKED_FIELDS,
   STAT_MAP,
 };

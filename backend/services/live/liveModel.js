@@ -11,6 +11,7 @@
 const CONFIG = require('./config');
 const { predictSoccer } = require('./soccerLive');
 const { predictBasketball } = require('./basketballLive');
+const engineProjections = require('../basketball/engineProjections');
 
 /**
  * How much the live estimate is trusted versus the pre-game prior, by data tier.
@@ -68,7 +69,13 @@ function predictLive({ game, context = {} } = {}) {
   if (game.sport === 'soccer') {
     return predictSoccer({ game, context: usableContext, weight, manual });
   }
-  if (game.sport === 'basketball') return predictBasketball({ game, weight, manual });
+  if (game.sport === 'basketball') {
+    // The pre-game engine's own projection (published in-process by the
+    // basketball scheduler) supplies the live prior's team strength. A
+    // hand-typed game carries nothing verified, so it is never read.
+    const engineProjection = manual ? null : engineProjections.lookup(game.game_id);
+    return predictBasketball({ game, context: usableContext, engineProjection, weight, manual });
+  }
 
   return {
     sport: game.sport,

@@ -123,12 +123,14 @@ const CONFIG = {
           // (liveMarkets.basketballTotalLines) so every competition is priced
           // on its own scale.
           evaluationLines: [209.5, 214.5, 219.5, 224.5, 229.5, 234.5],
-          // The pick is the line NEAREST the expected total (the main total),
-          // side = argmax(Over, Under). No minimum-probability gate: a totals
-          // pick at the main line is legitimately ~50/50, and suppressing it
-          // would hide the model's honest read. Settled lines are still
-          // excluded — a decided market is never a fresh pick.
-          minPickProbability: 0.0,
+          // The pick is the line NEAREST the league-typical total (the "main"
+          // line a book would hang — basketball/leagues.js own mean, via
+          // overUnderLine), side = argmax(Over, Under). A pick is only emitted
+          // when its side clears minPickProbability, so a ~50/50 read at the
+          // main line is withheld rather than dressed up as a recommendation:
+          // no edge, no pick. Settled lines are always excluded — a decided
+          // market is never a fresh pick.
+          minPickProbability: 0.55,
         },
         // Soccer match-result pick is a Double Chance market (1X / X2 / 12)
         // derived from the model's own 1X2 probabilities. It is only shown
@@ -969,6 +971,21 @@ const CONFIG = {
         priorMinutes: 15,
         minFactor: 0.55,
         maxFactor: 1.8,
+      },
+      // Live-stat tempo (liveStats.js -> context.stats, ESPN boxscore). The
+      // game's own possessions per minute are compared to the league's and used
+      // to nudge the scoring rate toward the tempo the game is actually being
+      // played at. Only applied once enough of the game (minElapsed minutes) and
+      // enough possessions (minPossessions) have accumulated for the read to
+      // mean anything, and bounded to [scaleMin, scaleMax] so a single fast
+      // stretch can never run away with the projection. `weight` is how much of
+      // the pace deviation is passed through to the rate.
+      tempo: {
+        minElapsed: 6,
+        minPossessions: 20,
+        weight: 0.5,
+        scaleMin: 0.9,
+        scaleMax: 1.1,
       },
     },
   },

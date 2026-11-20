@@ -74,6 +74,63 @@ describe('normaliseStats', () => {
   });
 });
 
+describe('normaliseBasketballStats', () => {
+  const ball = ({ home = {}, away = {} } = {}) => {
+    const stat = (o) => Object.entries(o).map(([name, v]) => ({ name, displayValue: String(v) }));
+    const summary = { boxscore: { teams: [
+      { homeAway: 'home', statistics: stat(home) },
+      { homeAway: 'away', statistics: stat(away) },
+    ]}};
+    return liveStats.normalizeBasketballStats(summary, { fetchedAt: Date.now() });
+  };
+
+  test('parses compound shooting lines and counting stats, derives possessions', () => {
+    const st = ball({
+      home: {
+        'fieldGoalsMade-fieldGoalsAttempted': '30-65',
+        'threePointFieldGoalsMade-threePointFieldGoalsAttempted': '10-28',
+        'freeThrowsMade-freeThrowsAttempted': '18-22',
+        offensiveRebounds: 9, defensiveRebounds: 25, totalRebounds: 34,
+        assists: 20, turnovers: 12, steals: 7, blocks: 4, fouls: 15,
+      },
+      // Away is missing offensiveRebounds, so its possessions cannot be derived.
+      away: {
+        'fieldGoalsMade-fieldGoalsAttempted': '28-60',
+        'freeThrowsMade-freeThrowsAttempted': '14-18', turnovers: 9,
+      },
+    });
+    expect(st.sport).toBe('basketball');
+    expect(st.home.fgm).toBe(30);
+    expect(st.home.fga).toBe(65);
+    expect(st.home.tpm).toBe(10);
+    expect(st.home.trb).toBe(34);
+    // possessions = FGA - ORB + TOV + 0.44 * FTA = 65 - 9 + 12 + 0.44*22
+    expect(st.home.possessions).toBeCloseTo(77.68, 2);
+    // A missing input leaves the derived value null rather than guessing.
+    expect(st.away.possessions).toBeNull();
+    // Combined possessions (both teams) is what the live model's pace read uses.
+    expect(st.totals.possessions).toBeCloseTo(st.home.possessions, 3);
+  });
+
+  test('dataQuality follows the basketball field set', () => {
+    const both = {
+      'fieldGoalsMade-fieldGoalsAttempted': '10-20',
+      'freeThrowsMade-freeThrowsAttempted': '5-6',
+      offensiveRebounds: 3, defensiveRebounds: 9, totalRebounds: 12,
+      assists: 6, turnovers: 4, steals: 2, blocks: 1, fouls: 4,
+    };
+    const q = liveStats.dataQuality(ball({ home: both, away: both }));
+    expect(q.stats_tracked).toBe(liveStats.BALL_TRACKED_FIELDS.length);
+    expect(q.stats_available).toBeGreaterThanOrEqual(8);
+    expect(q.level).toBe('high');
+  });
+
+  test('returns null when the boxscore has no team rows', () => {
+    expect(liveStats.normalizeBasketballStats({})).toBeNull();
+    expect(liveStats.normalizeBasketballStats({ boxscore: { teams: [] } })).toBeNull();
+  });
+});
+
 describe('1X2 probabilities', () => {
   test('T1: 0-0 at 15 min evaluates all three outcomes', () => {
     const r = predictLive({ game: game({ clock: "15'" }) });

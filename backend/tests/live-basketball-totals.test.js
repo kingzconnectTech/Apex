@@ -1,11 +1,12 @@
 /**
- * Basketball totals — the Over 219.5 fix.
+ * Basketball totals.
  *
  * The old live pick pinned ONE line (the league mean or a 219.5 fallback) and
  * reported whichever side sat a hair above 50% — so unrecognised-league games
- * all read "Over 219.5" at ~51%. The new path prices EVERY evaluation line,
- * both directions, drops settled lines, and only emits a pick above the
- * configured 75% bar.
+ * all read "Over 219.5" at ~51%. The path now prices EVERY evaluation line,
+ * both directions, drops settled lines, anchors the pick on the league-typical
+ * MAIN total (the line a book would hang), and only emits a pick when its side
+ * clears the configured 55% edge bar — otherwise: no pick.
  */
 
 const { derivePicks, basketballTotalsPick, overUnderPick, overUnderLine } = require('../services/live/livePicks');
@@ -87,22 +88,28 @@ describe('buildBasketballTotalMarkets', () => {
   });
 });
 
-describe('basketballTotalsPick — pick at the match own main total', () => {
-  test('the pick line is the generated line nearest the expected total', () => {
+describe('basketballTotalsPick — pick anchored on the league main total', () => {
+  // The NBA's fitted mean total is ~234.86, so its main line is 234.5. The pick
+  // now sits on THAT line — the total a book would hang — not on the model's own
+  // projection, and it is only emitted when a side clears the 55% edge bar.
+  const NBA_MAIN = 234.5;
+
+  test('the pick line is the league main total, not the model projection', () => {
     const pick = basketballTotalsPick(modelFor(225, 18), bgame());
     expect(pick).not.toBeNull();
-    // floor(225)+0.5 = 225.5 is the anchor and the nearest line to 225.
-    expect(pick.line).toBe(225.5);
-    expect(pick.probability).toBeGreaterThanOrEqual(pick.under);
+    expect(pick.line).toBe(NBA_MAIN);
+    // 225 is a long way under 234.5, so the honest side is the under.
+    expect(pick.selection).toBe('under');
+    expect(pick.probability).toBeCloseTo(pick.under, 3);
   });
 
-  test('each match is picked on its own scale, argmax side wins', () => {
+  test('the same main line is used whatever the projection; only the side moves', () => {
     const high = basketballTotalsPick(modelFor(260, 15), bgame());
     const low = basketballTotalsPick(modelFor(180, 15), bgame());
-    // The pick line tracks the expected total — not a fixed grid.
-    expect(high.line).toBe(260.5);
-    expect(low.line).toBe(180.5);
-    // Selection is always the stronger side at that line.
+    expect(high.line).toBe(NBA_MAIN);
+    expect(low.line).toBe(NBA_MAIN);
+    expect(high.selection).toBe('over');
+    expect(low.selection).toBe('under');
     for (const pick of [high, low]) {
       const expected = pick.over >= pick.under ? 'over' : 'under';
       expect(pick.selection).toBe(expected);
@@ -110,47 +117,51 @@ describe('basketballTotalsPick — pick at the match own main total', () => {
     }
   });
 
-  test('a mid-range total picks the honest ~50/50 side, not a forced Over', () => {
-    const pick = basketballTotalsPick(modelFor(225.4, 18), bgame());
-    expect(pick).not.toBeNull();
-    expect(['over', 'under']).toContain(pick.selection);
-    expect(Math.abs(pick.probability - 0.5)).toBeLessThan(0.1);
+  test('a genuine coin-flip at the main line yields no pick at all', () => {
+    // Projection sits on the main line -> P(over) ~ 0.5 < 0.55 -> withheld.
+    const pick = basketballTotalsPick(modelFor(NBA_MAIN - 0.1, 18), bgame());
+    expect(pick).toBeNull();
   });
 
-  test('Over is selected when the projection sits above the line', () => {
-    // Expected 248.6 vs anchor 248.5 -> Over is the argmax side.
+  test('Over is selected when the projection sits above the main line', () => {
     const pick = basketballTotalsPick(modelFor(248.6, 15), bgame());
     expect(pick).not.toBeNull();
     expect(pick.selection).toBe('over');
-    expect(pick.line).toBe(248.5);
+    expect(pick.line).toBe(NBA_MAIN);
   });
 
-  test('Under is selected when the projection sits below the line', () => {
-    // Expected 192.4 vs anchor 192.5 -> Under is the argmax side.
+  test('Under is selected when the projection sits below the main line', () => {
     const pick = basketballTotalsPick(modelFor(192.4, 15), bgame());
     expect(pick).not.toBeNull();
     expect(pick.selection).toBe('under');
-    expect(pick.line).toBe(192.5);
+    expect(pick.line).toBe(NBA_MAIN);
   });
 
-  test('different matches get different lines on their own scale', () => {
-    const high = basketballTotalsPick(modelFor(250.6, 16), bgame());
-    const low = basketballTotalsPick(modelFor(190.4, 16), bgame());
-    expect(high.line).not.toBe(low.line);
-    expect(high.line).toBeGreaterThan(240);
-    expect(low.line).toBeLessThan(200);
+  test('each competition anchors on its OWN main line', () => {
+    const nba = basketballTotalsPick(modelFor(250.6, 16), bgame());
+    // An unrecognised league has no fitted mean -> the configured default line.
+    const other = basketballTotalsPick(modelFor(250.6, 16), bgame({ league: 'unknown' }));
+    expect(nba.line).toBe(NBA_MAIN);
+    expect(other.line).toBe(219.5);
+    expect(nba.selection).toBe('over');
   });
 
-  test('derivePicks routes basketball through the multi-line path', () => {
+  test('a settled main line is not a fresh pick', () => {
+    // Current total 240 already beats the 234.5 main line, so the pick must not
+    // sit on it.
+    const pick = basketballTotalsPick(modelFor(250, 15), bgame({ homeScore: 120, awayScore: 120 }));
+    expect(pick === null || pick.line > NBA_MAIN).toBe(true);
+  });
+
+  test('derivePicks routes basketball through the anchored totals path', () => {
     const model = { ...modelFor(245, 15), status: 'live' };
     const picks = derivePicks({ sport: 'basketball', model, game: bgame() });
     expect(picks.over_under).not.toBeNull();
-    expect(picks.over_under.probability).toBeGreaterThanOrEqual(picks.over_under.under || 0);
-    // A weak read yields no O/U pick at all.
-    const weak = derivePicks({ sport: 'basketball', model: modelFor(222, 22), game: bgame({ league: 'unknown' }) });
-    // Argmax at the nearest line: 222 -> 219.5 or 224.5 (equidistant -> first).
-    expect(weak.over_under).not.toBeNull();
-    expect(weak.over_under.probability).toBeGreaterThanOrEqual(weak.over_under.under ?? 0);
+    expect(picks.over_under.line).toBe(NBA_MAIN);
+    expect(picks.over_under.probability).toBeCloseTo(picks.over_under.over, 3);
+    // A projection sitting on the main line is a coin flip -> no O/U pick.
+    const weak = derivePicks({ sport: 'basketball', model: modelFor(NBA_MAIN - 0.1, 18), game: bgame() });
+    expect(weak.over_under).toBeNull();
   });
 
   test('the legacy single-line pricer still works for callers that use it', () => {
@@ -168,8 +179,8 @@ describe('live model integration', () => {
     const markets = liveMarkets.buildBasketballTotalMarkets({ model, game: g });
     expect(markets.length).toBe(12);
     const picks = derivePicks({ sport: 'basketball', model, game: g });
-    // Tip-off projection ~235 vs lines up to 234.5: best available may clear 75%
-    // on the low lines or produce no pick — either is honest, never forced.
+    // Tip-off projection ~235 sits on the league main line, so the O/U read is a
+    // coin flip and is withheld; that is honest, never forced.
     if (picks.over_under) {
       expect(picks.over_under.probability).toBeGreaterThanOrEqual(picks.over_under.under || 0);
       const m = markets.find(x => x.line === picks.over_under.line && x.side === picks.over_under.selection);

@@ -5,12 +5,19 @@
  *
  * Approach: project the REMAINING points as a normal distribution and add it to
  * the current score.
- *   - Remaining scoring rate blends the league's own total mean
+ *   - The prior is the pre-game engine's own projection where available (the
+ *     projected full-game margin/total the basketball scheduler publishes
+ *     in-process — team ratings, Elo, home court), so a 12-point favourite is
+ *     modelled as one instead of every game starting at the league home-court
+ *     edge. With no published projection it falls back to the league's own
+ *     mean total and fitted home-court points.
+ *   - The remaining scoring rate blends the league's own total
  *     (basketball/probability.leagueMeanTotal) with the rate the game itself
  *     is actually producing (observed pts/min shrunk toward the league rate),
- *     prorated by the minutes left.
- *   - The remaining-margin mean is the league home-court edge prorated by the
- *     same fraction.
+ *     prorated by the minutes left, then nudged by the game's own PACE when the
+ *     ESPN boxscore supplied possession data (liveStats.js -> context.stats).
+ *   - The remaining-margin mean is the prior margin prorated by the fraction of
+ *     the game left.
  *   - Sigma scales with sqrt(time): sigma_remaining = sigma_full * sqrt(fraction),
  *     so at tip-off it equals the pre-game sigma and it tightens as the clock
  *     runs down.
@@ -46,6 +53,10 @@ function leagueParams(leagueId) {
         periods: B.leaguePeriods[key] || B.defaultPeriods,
         homeCourtPoints: cfg.homeCourtPoints,
         totalMean: Number.isFinite(totalMean) ? totalMean : B.fallback.totalMean,
+        // League pace, for the live-stat tempo read: possessions per team per
+        // game. Only known for a fitted league.
+        possessionsPerTeam: cfg.leagueMean && Number.isFinite(cfg.leagueMean.possessions)
+          ? cfg.leagueMean.possessions : null,
         totalStd: cfg.sigma && Number.isFinite(cfg.sigma.total) ? cfg.sigma.total : B.fallback.totalStd,
         marginStd: cfg.sigma && Number.isFinite(cfg.sigma.margin) ? cfg.sigma.margin : B.fallback.marginStd,
         fitted: true,
@@ -60,6 +71,7 @@ function leagueParams(leagueId) {
     periods: B.defaultPeriods,
     homeCourtPoints: B.fallback.homeCourtPoints,
     totalMean: B.fallback.totalMean,
+    possessionsPerTeam: null,
     totalStd: B.fallback.totalStd,
     marginStd: B.fallback.marginStd,
     fitted: false,
@@ -90,6 +102,52 @@ function elapsedMinutes(live, params) {
   return elapsed;
 }
 
+/**
+ * Live-stat tempo read for the rate estimate.
+ *
+ * The game's own possessions per minute are a structural pace signal the score
+ * alone cannot give: the same 12-10 score at the same minute could be a slow
+ * grind or a fast game that just missed shots. Possessions per minute stay
+ * broadly stable through a game, so the observed pace is compared to the
+ * league's and used to nudge the scoring rate toward the tempo the game is
+ * actually being played at (bounded by config so it can never run away with the
+ * projection). Possessions already fold in FGA, turnovers and offensive boards
+ * (liveStats basketball branch), so a turnover-heavy game reads as faster.
+ *
+ * Returns null — the rate is left untouched — when the boxscore carried no
+ * possession data, when too little of the game has elapsed, or when the league
+ * pace is unknown: nothing is inferred from an absent read.
+ *
+ * @param {Object} context  { stats } from liveStats (basketball boxscore)
+ * @param {Object} params   leagueParams output
+ * @param {number} elapsed  elapsed game minutes
+ * @returns {{factor:number, ratio:number, observed:number, league:number}|null}
+ */
+function paceRead(context, params, elapsed) {
+  const cfg = B.tempo;
+  const stats = context && context.stats;
+  if (!cfg || !stats || stats.sport !== 'basketball' || !stats.totals) return null;
+  if (!Number.isFinite(elapsed) || elapsed < (cfg.minElapsed || 0)) return null;
+  const poss = stats.totals.possessions;
+  if (!Number.isFinite(poss) || poss < (cfg.minPossessions || 0)) return null;
+  // League pace for BOTH teams (possessions are recorded per team).
+  const league = params.possessionsPerTeam > 0 && params.gameMinutes > 0
+    ? (2 * params.possessionsPerTeam) / params.gameMinutes : null;
+  if (!(league > 0)) return null;
+  const observed = poss / elapsed;
+  const ratio = observed / league;
+  const weight = Number.isFinite(cfg.weight) ? cfg.weight : 0.5;
+  const lo = Number.isFinite(cfg.scaleMin) ? cfg.scaleMin : 0.9;
+  const hi = Number.isFinite(cfg.scaleMax) ? cfg.scaleMax : 1.1;
+  const factor = M.clamp(1 + weight * (ratio - 1), lo, hi);
+  return {
+    factor,
+    ratio,
+    observed: M.round(observed, 2),
+    league: M.round(league, 2),
+  };
+}
+
 function z() {
   return M.normalInv((1 + LEVEL) / 2);
 }
@@ -105,8 +163,11 @@ function homeWinProbability(marginMean, marginSigma) {
  * @param {Object} args.game    Phase 3 LiveGame
  * @param {number} args.weight  live-vs-prior blend weight (from liveModel.tierWeight)
  * @param {boolean} [args.manual] true for a hand-typed game (wider bands)
+ * @param {Object} [args.context] { stats } from liveStats (basketball boxscore)
+ * @param {Object|null} [args.engineProjection] the pre-game engine's projected
+ *   { margin, total } for this game (services/basketball/engineProjections)
  */
-function predictBasketball({ game, weight = 1, manual = false } = {}) {
+function predictBasketball({ game, weight = 1, manual = false, context = {}, engineProjection = null } = {}) {
   const notes = [];
   const widen = manual ? CONFIG.liveModel.manual.uncertaintyWiden : 1;
   if (manual) {
@@ -120,10 +181,23 @@ function predictBasketball({ game, weight = 1, manual = false } = {}) {
   const curTotal = curHome + curAway;
   const curMargin = curHome - curAway;
 
+  // Team strength: the pre-game engine's own projected margin/total when the
+  // scheduler published one, else the league's fitted home-court edge and mean
+  // total. The live models are not allowed to read a market line, so this is
+  // the engine's output — never a book's — and nothing is fabricated when it
+  // is absent.
+  const priorTotal = engineProjection && Number.isFinite(engineProjection.total)
+    ? engineProjection.total : params.totalMean;
+  const priorMargin = engineProjection && Number.isFinite(engineProjection.margin)
+    ? engineProjection.margin : params.homeCourtPoints;
+  if (engineProjection && Number.isFinite(engineProjection.margin)) {
+    notes.push('Prior margin taken from the pre-game engine projection (team strength).');
+  }
+
   // Prior = the same model at tip-off (full game remaining, empty scoreboard).
   const prior = {
-    total: params.totalMean,
-    margin: params.homeCourtPoints,
+    total: priorTotal,
+    margin: priorMargin,
     sigmaTotal: params.totalStd,
     sigmaMargin: params.marginStd,
   };
@@ -171,7 +245,7 @@ function predictBasketball({ game, weight = 1, manual = false } = {}) {
   const sigmaMultiplier = endgame ? B.endgame.sigmaMultiplier : 1;
   if (endgame) notes.push('Endgame adjustment applied (foul game).');
 
-  const leagueRate = params.gameMinutes > 0 ? params.totalMean / params.gameMinutes : 0;
+  const leagueRate = params.gameMinutes > 0 ? priorTotal / params.gameMinutes : 0;
 
   // Observed scoring rate. The league mean alone made every game in a league —
   // and every unknown league — project the SAME total, which is what produced
@@ -194,9 +268,22 @@ function predictBasketball({ game, weight = 1, manual = false } = {}) {
     }
   }
 
+  // Live-stat tempo: the game's own possessions per minute are a structural
+  // pace read the score alone cannot give — a fast game tends to stay fast.
+  // Applied only when the ESPN boxscore supplied possession data and enough of
+  // the game has elapsed, and bounded so it can never run away with the
+  // projection. Possessions already fold in FGA, turnovers and offensive boards.
+  const pace = paceRead(context, params, elapsed);
+  if (pace) {
+    rate *= pace.factor;
+    if (Math.abs(pace.ratio - 1) > 0.05) {
+      notes.push(`Scoring rate nudged by the game's own pace (${pace.observed} vs league ${pace.league} possessions/min).`);
+    }
+  }
+
   const live = {
     total: curTotal + rate * remaining * rateMultiplier,
-    margin: curMargin + params.homeCourtPoints * fraction,
+    margin: curMargin + priorMargin * fraction,
     sigmaTotal: params.totalStd * Math.sqrt(fraction) * sigmaMultiplier,
     sigmaMargin: params.marginStd * Math.sqrt(fraction) * sigmaMultiplier,
   };
@@ -249,4 +336,4 @@ function expectedFrom(total, margin) {
   };
 }
 
-module.exports = { predictBasketball, elapsedMinutes, leagueParams };
+module.exports = { predictBasketball, elapsedMinutes, leagueParams, paceRead };
