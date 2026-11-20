@@ -644,6 +644,35 @@ const CONFIG = {
        */
       retry: { attempts: 3, baseDelayMs: 400, maxDelayMs: 2000 },
       /**
+       * DERIVED IN-GAME CLOCK — for a source that publishes none.
+       *
+       * FlashScore's list feed carries no per-minute clock, so a FlashScore row
+       * carried no clock at all and the UI read "Clock unavailable". This block
+       * lets the server DERIVE one from the kick-off the feed DOES publish
+       * (elapsed = now - kick-off), so the in-game time can still be shown.
+       *
+       * DISPLAY ONLY. The derived value travels on `live.derived_clock` and
+       * NEVER on `live.clock`, so it cannot change the data tier (`decideTier`
+       * still sees a clock-less game) or reach the model — a FlashScore game
+       * still models as a pre-game projection, exactly as before. The UI labels
+       * it "(est.)" so it is never mistaken for a source-reported time.
+       *
+       * Only a sport whose period structure is knowable from here is derived; a
+       * sport not listed stays clock-less rather than guessed. Basketball is
+       * deliberately absent: its period length and breaks vary too much across
+       * leagues for a wall-clock derivation to be honest.
+       */
+      derivedClock: {
+        enabled: true,
+        sports: {
+          soccer: {
+            halfLengthMinutes: 45,     // length of one half
+            halfTimeBreakMinutes: 15,  // wall-clock break between the halves
+            maxMinute: 90,             // clamp once regular time is over
+          },
+        },
+      },
+      /**
        * Live predictions for the listed games. Each normalised match is adapted
        * into the SAME Phase 3 LiveGame the rest of the engine consumes and run
        * through the Phase 4 model, then gated by the Phase 5 ship gate — so a

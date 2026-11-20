@@ -287,6 +287,49 @@ function splitLeagueHeader(value) {
 }
 
 /**
+ * Derive a DISPLAY-ONLY in-game clock for a source that publishes none.
+ *
+ * FlashScore's list feed has no per-minute clock, so a FlashScore row used to
+ * carry no clock and the UI read "Clock unavailable". The feed DOES publish the
+ * kick-off, so the game time can be derived from the wall clock
+ * (elapsed = now - kick-off). For football the half-time break is folded in, so
+ * the second half reads 46'-90' rather than running on past 45'.
+ *
+ * The result is an ESTIMATE and is meant to be carried on a SEPARATE field
+ * (`derived_clock`), never on `clock`: it must not change the data tier or reach
+ * the model, and the UI labels it as derived. A sport whose period structure is
+ * not in config (see CFG.derivedClock.sports) is never derived — it is left
+ * clock-less rather than guessed. An unknown kick-off, or one still in the
+ * future, yields null.
+ *
+ * @param {string} sport           'soccer' | 'basketball' | ...
+ * @param {number|null} kickoffMs  epoch ms of the kick-off
+ * @param {number} now             epoch ms "now"
+ * @returns {{clock:string, period:number}|null}
+ */
+function deriveClock(sport, kickoffMs, now) {
+  const cfg = CFG.derivedClock || {};
+  if (cfg.enabled === false) return null;
+  const rules = (cfg.sports && cfg.sports[sport]) || null;
+  if (!rules || !Number.isFinite(kickoffMs)) return null;
+
+  const elapsed = Math.floor((now - kickoffMs) / 60000);
+  if (elapsed < 0) return null; // kick-off is in the future — never invent a clock
+
+  if (sport === 'soccer') {
+    const half = Number(rules.halfLengthMinutes) || 45;
+    const breakMin = Number(rules.halfTimeBreakMinutes) || 0;
+    const max = Number(rules.maxMinute) || 90;
+    if (elapsed <= half) return { clock: `${Math.max(0, elapsed)}'`, period: 1 };
+    // Between the halves the clock stands where the first half ended.
+    if (elapsed <= half + breakMin) return { clock: `${half}'`, period: 1 };
+    return { clock: `${Math.min(max, elapsed - breakMin)}'`, period: 2 };
+  }
+
+  return null;
+}
+
+/**
  * Parse the FlashScore ninja feed into normalised live matches.
  *
  * Blocks are separated by `~`; a block carrying `ZA` opens a new league and
@@ -294,7 +337,7 @@ function splitLeagueHeader(value) {
  * state (1 scheduled, 2 live, 3 finished) — only `2` is kept — and `AG`/`AH`
  * are the two sides' scores.
  */
-function parseFlashScoreFeed(text, { sport = 'soccer' } = {}) {
+function parseFlashScoreFeed(text, { sport = 'soccer', now = Date.now() } = {}) {
   const out = [];
   let league = null;
   let country = null;
@@ -312,6 +355,8 @@ function parseFlashScoreFeed(text, { sport = 'soccer' } = {}) {
     const home = trimName(fields.AE);
     const away = trimName(fields.AF);
     if (!home || !away) continue;
+    const kickoffSec = toInt(fields.AD);
+    const kickoffMs = kickoffSec != null && kickoffSec > 0 ? kickoffSec * 1000 : null;
     out.push(buildMatch({
       id: `flashscore:${fields.AA}`,
       source: 'flashscore',
@@ -322,6 +367,8 @@ function parseFlashScoreFeed(text, { sport = 'soccer' } = {}) {
       away: { name: away, score: toInt(fields.AH) },
       status: { code: 'live', label: 'Live', live: true },
       start_time: isoFromUnixSeconds(fields.AD),
+      // The feed publishes no clock, so this is a DERIVED, display-only one.
+      derived_clock: deriveClock(sport, kickoffMs, now),
       url: `https://www.flashscore.com/match/${fields.AA}/`,
     }));
   }
@@ -354,6 +401,10 @@ function buildMatch(m) {
     // FlashScore-only row is honestly clock-less and models as a projection.
     clock: m.clock || null,
     period: Number(m.period) || 0,
+    // A DISPLAY-ONLY clock derived from kick-off for a source that publishes
+    // none (see `deriveClock`). Deliberately separate from `clock` so it can
+    // never change the data tier or reach the model; the UI labels it "(est.)".
+    derived_clock: m.derived_clock || null,
     start_time: m.start_time || null,
     url: m.url || null,
     links: [{ source: m.source, source_name: name, source_id: providerId, url: m.url || null }],
@@ -481,6 +532,9 @@ function toLiveGame(match, { now = Date.now(), fetchedAt = now } = {}) {
           id: providerId,
           clock: match.clock || null,
           period: Number(match.period) || 0,
+          // DISPLAY-ONLY estimate for a source that publishes no clock; it must
+          // never be mistaken for a source-reported clock (see `deriveClock`).
+          derivedClock: match.derived_clock || null,
           status: 'live',
           date: match.start_time || null,
           timestamp: match.start_time ? Date.parse(match.start_time) : null,
@@ -892,6 +946,7 @@ module.exports = {
   withRetry,
   isRetryable,
   liveClock,
+  deriveClock,
   validateLink: validateSiteLink,
   livescoreUrl,
   flashscoreUrl,

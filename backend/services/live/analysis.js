@@ -430,6 +430,10 @@ function buildAnalysis({ game, context = {}, contextView = null, statsView = nul
       is_live: Boolean(game.live && game.live.is_live),
       clock: game.live ? game.live.clock : null,
       period: game.live ? game.live.period : 0,
+      // DISPLAY-ONLY derived clock for a source that publishes none (FlashScore).
+      // Separate from `clock`, so the UI can show an in-game time without it ever
+      // being mistaken for a source-reported one or reaching the model.
+      derived_clock: game.live ? (game.live.derived_clock || null) : null,
     },
     data_tier: game.data_tier || null,
     data_tier_label: game.data_tier_label || null,

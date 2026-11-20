@@ -118,6 +118,7 @@ describe('Unified LiveGame object', () => {
     expect(game.away.name).toBe('Chelsea');
     expect(game.live).toEqual({
       status: 'live', is_live: true, clock: "34'", period: 1, raw_status: { state: 'in' },
+      derived_clock: null,
     });
     expect(game.schedule).toEqual({
       kickoff: '2026-10-26T17:30:00.000Z',

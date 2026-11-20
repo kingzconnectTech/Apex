@@ -46,7 +46,7 @@ The basketball prediction system has been **fully implemented and validated**. A
 - P(Over L) and P(home covers S) with correct half-point handling
 - Walk-forward isotonic calibration (separate per market and league)
 - Vig removal (normalisation, not simple inversion)
-- Tests for edge cases (pushes, extreme lines)
+- Tests for edge cases (pushes, extreme lines) 
 
 ### Phase 4: Pick Selection ✅
 - Main lines: probability ≥ 60% (internal), ≥ 75% (API display)

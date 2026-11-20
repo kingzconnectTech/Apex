@@ -155,6 +155,14 @@ function clockLine(analysis) {
   if (live.status === 'scheduled') return 'Not started';
   if (live.clock && live.period) return `${live.clock} · P${live.period}`;
   if (live.clock) return String(live.clock);
+  // A source that publishes no clock (FlashScore's list feed) still gets one
+  // DERIVED from kick-off by the server. It is labelled "(est.)" so it is never
+  // mistaken for a source-reported time.
+  const derived = live.derived_clock;
+  if (derived && derived.clock) {
+    const core = derived.period ? `${derived.clock} · P${derived.period}` : String(derived.clock);
+    return `${core} (est.)`;
+  }
   return 'Clock unavailable';
 }
 

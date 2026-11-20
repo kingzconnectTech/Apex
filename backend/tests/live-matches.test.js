@@ -486,10 +486,32 @@ describe('in-play clock and period', () => {
     expect(m.period).toBe(0);
   });
 
-  test('a FlashScore block carries no clock and no period', () => {
-    const [m] = matchFeed.parseFlashScoreFeed(FLASHSCORE_TEXT, { sport: 'soccer' });
+  test('a FlashScore block carries no source clock, but a derived one', () => {
+    const kickoffSec = 1763300000;                 // 2025-11-16T14:13:20Z
+    const now = (kickoffSec + 32 * 60) * 1000;     // 32 minutes later
+    const [m] = matchFeed.parseFlashScoreFeed(FLASHSCORE_TEXT, { sport: 'soccer', now });
+    // The feed published neither, so `clock`/`period` stay honestly empty ...
     expect(m.clock).toBeNull();
     expect(m.period).toBe(0);
+    // ... and the display-only estimate rides on its OWN field.
+    expect(m.derived_clock).toEqual({ clock: "32'", period: 1 });
+  });
+
+  test('deriveClock folds the half-time break in and honours the sport rules', () => {
+    const kickoff = Date.UTC(2026, 10, 20, 15, 0, 0);
+    const at = min => kickoff + min * 60 * 1000;
+    expect(matchFeed.deriveClock('soccer', kickoff, at(12))).toEqual({ clock: "12'", period: 1 });
+    expect(matchFeed.deriveClock('soccer', kickoff, at(45))).toEqual({ clock: "45'", period: 1 });
+    // Half time: the clock holds where the first half ended.
+    expect(matchFeed.deriveClock('soccer', kickoff, at(53))).toEqual({ clock: "45'", period: 1 });
+    // The second half reads 47', not the 62 minutes of wall time since kick-off.
+    expect(matchFeed.deriveClock('soccer', kickoff, at(62))).toEqual({ clock: "47'", period: 2 });
+    // Clamped once regular time is over.
+    expect(matchFeed.deriveClock('soccer', kickoff, at(130))).toEqual({ clock: "90'", period: 2 });
+    // Never invented for a sport with no rules, an unknown kick-off, or the future.
+    expect(matchFeed.deriveClock('basketball', kickoff, at(12))).toBeNull();
+    expect(matchFeed.deriveClock('soccer', null, at(12))).toBeNull();
+    expect(matchFeed.deriveClock('soccer', kickoff, at(-5))).toBeNull();
   });
 });
 
@@ -531,6 +553,21 @@ describe('toLiveGame', () => {
       home: { name: 'A', score: 0 }, away: { name: 'B', score: 0 },
       status: { code: 'live', label: 'Live', live: true }, clock: null, period: 0,
     });
+    expect(game.data_tier).toBe('score_time_only');
+  });
+
+  test('a derived clock rides on live.derived_clock, never on live.clock', () => {
+    const game = matchFeed.toLiveGame({
+      id: 'flashscore:abc', source: 'flashscore', sport: 'soccer', league: null,
+      home: { name: 'A', score: 1 }, away: { name: 'B', score: 0 },
+      status: { code: 'live', label: 'Live', live: true },
+      clock: null, period: 0, derived_clock: { clock: "57'", period: 2 },
+    });
+    // The reported clock stays empty; the estimate is kept apart from it ...
+    expect(game.live.clock).toBeNull();
+    expect(game.live.period).toBe(0);
+    expect(game.live.derived_clock).toEqual({ clock: "57'", period: 2 });
+    // ... so the tier is unchanged and the game still models as a projection.
     expect(game.data_tier).toBe('score_time_only');
   });
 });

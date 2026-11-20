@@ -269,6 +269,24 @@ test('clockLine distinguishes live, finished, scheduled and a missing clock', ()
   assert.equal(clockLine({ live: { status: 'live', clock: null, period: 0 } }), 'Clock unavailable');
 });
 
+test('clockLine shows a server-derived clock, labelled as an estimate', () => {
+  // A source that publishes no clock (FlashScore) still gets one derived from
+  // kick-off; it is shown, but only ever labelled "(est.)".
+  assert.equal(
+    clockLine({ live: { status: 'live', clock: null, period: 0, derived_clock: { clock: "57'", period: 2 } } }),
+    "57' · P2 (est.)",
+  );
+  assert.equal(
+    clockLine({ live: { status: 'live', clock: null, derived_clock: { clock: "34'", period: 0 } } }),
+    "34' (est.)",
+  );
+  // A source-reported clock always wins over a derived one.
+  assert.equal(
+    clockLine({ live: { status: 'live', clock: "60'", period: 2, derived_clock: { clock: "57'", period: 2 } } }),
+    "60' · P2",
+  );
+});
+
 test('refreshSeconds honours the backend floor', () => {
   assert.equal(refreshSeconds({ refresh: { suggested_seconds: 30, min_seconds: 15 } }), 30);
   assert.equal(refreshSeconds({ refresh: { suggested_seconds: 5, min_seconds: 15 } }), 15);

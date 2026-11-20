@@ -155,6 +155,11 @@ function buildLiveGame({ candidate, parsed = null, fetchedAt = Date.now(), now =
       clock: f.clock || null,
       period: Number(f.period) || 0,
       raw_status: f.rawStatus || null,
+      // DISPLAY-ONLY estimate of the in-game clock for a source that publishes
+      // none (see matchFeed.deriveClock). Deliberately NOT part of `clock`:
+      // `decideTier` and the model read `clock` only, so this can neither
+      // upgrade the data tier nor influence a prediction.
+      derived_clock: f.derivedClock || null,
     },
     schedule: {
       kickoff: f.date || null,
