@@ -366,20 +366,52 @@ function calibrateModel(model, sport) {
 /**
  * The REAL bookmaker line for this game, or null.
  *
- * The live feeds (LiveScore/FlashScore) publish no odds at all, and the ESPN
- * sweep attaches none to an in-play game either — so this is null for every
- * live game today. It is the ONE gate that decides whether a market figure may
- * be shown: with no real line+odds there is nothing honest to price against,
- * and a model percentage at a simulated fixed line would be a market the user
- * cannot find at a bookmaker. See config live.pickMarkets.requireRealLine.
+ * The live feeds (LiveScore/FlashScore) publish no odds at all, so the line is
+ * read from the ESPN summary the live path already fetches (liveContext
+ * `realOddsFromSummary` -> `game.odds`). It is the ONE gate that decides whether
+ * a market figure may be shown: with no real line+odds there is nothing honest
+ * to price against, and a model percentage at a simulated fixed line would be a
+ * market the user cannot find at a bookmaker. See config
+ * live.pickMarkets.requireRealLine.
  *
  * @param {Object} game LiveGame
- * @returns {Object|null} the odds block when it carries a real Over/Under line
+ * @returns {Object|null} the odds block when it carries a priced market
  */
 function realMarketLine(game) {
   const o = game && game.odds;
   if (!o || typeof o !== 'object') return null;
-  return Number.isFinite(o.overUnder) ? o : null;
+  const hasTotal = Number.isFinite(o.overUnder);
+  const hasMoneyline = Boolean(o.moneyline)
+    && (Number.isFinite(o.moneyline.home) || Number.isFinite(o.moneyline.away));
+  return (hasTotal || hasMoneyline) ? o : null;
+}
+
+/** The total market a real Over/Under line prices, per sport. */
+const TOTAL_MARKETS = { soccer: 'total_goals', basketball: 'total_points' };
+
+/**
+ * Honesty filter — keep only the markets a REAL bookmaker line can back:
+ * a line-free market (the model's own match-result / BTTS read, which every
+ * book hangs) or the sport's TOTAL market priced AT the real Over/Under line.
+ * Any other line-based market (a simulated corner / shot / card / goal line) is
+ * dropped, so the grid shows only lines the user can actually find at a book
+ * (config live.pickMarkets.requireRealLine).
+ *
+ * @param {Array} markets  the priced market list from liveMarkets
+ * @param {number|null} realTotal  the real Over/Under line, when one exists
+ * @param {string} sport  'soccer' | 'basketball'
+ */
+function restrictToRealLine(markets, realTotal, sport) {
+  if (!Array.isArray(markets)) return markets;
+  const totalMarket = TOTAL_MARKETS[sport] || null;
+  return markets.filter(m => {
+    if (!m) return false;
+    if (m.line == null) return true;
+    return Boolean(totalMarket)
+      && m.market === totalMarket
+      && Number.isFinite(realTotal)
+      && m.line === realTotal;
+  });
 }
 
 /**
@@ -422,30 +454,45 @@ function buildAnalysis({ game, context = {}, contextView = null, statsView = nul
   }
   const showFigures = mode !== DISPLAY_MODES.CONTEXT_ONLY;
   // R6 honesty policy — a market figure may only be shown when a REAL bookmaker
-  // line backs it. The live feeds carry no odds, so this is false for every live
-  // game today, and the market grid / line-based picks are WITHHELD rather than
-  // priced off a simulated fixed line (config live.pickMarkets.requireRealLine).
-  const hasRealLine = Boolean(realMarketLine(game));
-  const marketsAllowed = !CONFIG.live.pickMarkets.requireRealLine || hasRealLine;
+  // line+odds backs it, read from the ESPN summary the live path already fetches
+  // (liveContext.realOddsFromSummary -> game.odds). With no real line there is
+  // nothing honest to price against, so the market grid and the line-based picks
+  // are WITHHELD rather than priced off a simulated fixed line the bookies do not
+  // hang (config live.pickMarkets.requireRealLine).
+  const realLine = realMarketLine(game);
+  const hasRealLine = Boolean(realLine);
+  const realTotal = realLine && Number.isFinite(realLine.overUnder) ? realLine.overUnder : null;
+  const requireReal = CONFIG.live.pickMarkets.requireRealLine !== false;
+  const marketsAllowed = !requireReal || hasRealLine;
   // Phase 11 — the recommended picks, derived from the SAME model output the
   // probabilities come from. Withheld (null) whenever the gate withholds the
   // figures, so a pick can never appear beside a withheld probability.
-  const markets = showFigures && modelUsable && marketsAllowed
+  const grid = showFigures && modelUsable && marketsAllowed
     ? (game.sport === 'soccer'
       ? liveMarkets.buildSoccerMarkets({
           model, game, stats,
           elapsed: model.inputs && model.inputs.elapsed_minutes,
           remaining: model.inputs && model.inputs.remaining_minutes,
+          // Price the goal total AT the real bookmaker line, so the restricted
+          // grid carries the line the user can actually find at a book.
+          goalLines: realTotal != null ? [realTotal] : null,
         })
       : game.sport === 'basketball'
-        ? liveMarkets.buildBasketballTotalMarkets({ model, game })
+        ? liveMarkets.buildBasketballTotalMarkets({
+            model, game,
+            lines: realTotal != null ? [realTotal] : null,
+          })
         : null)
     : null;
+  // A grid is built only when a real line backs the game; it is then restricted
+  // to the real lines the bookmaker hangs (a line-free market always survives).
+  // With requireRealLine OFF the full simulated grid is previewed as-is.
+  const markets = grid && requireReal ? restrictToRealLine(grid, realTotal, game.sport) : grid;
   const allPicks = showFigures ? derivePicks({ sport: game.sport, model, game, markets, stats }) : null;
   // Only the match-result pick is a model output with no bookmaker line attached
   // (1X2 / moneyline is a market every book hangs); the Over/Under, corners and
-  // shots picks are all priced at a simulated line, so they are withheld unless a
-  // real line backs them. A shape of nulls is collapsed back to null.
+  // shots picks are all line-based, so they are withheld unless a real line backs
+  // them. A shape of nulls is collapsed back to null.
   const picks = allPicks
     ? (marketsAllowed
       ? allPicks
@@ -513,10 +560,10 @@ function buildAnalysis({ game, context = {}, contextView = null, statsView = nul
     stats,
     data_quality: dataQuality,
     confidence: confidenceFor({ game, model, dataQuality }),
-    // Market states (available/won/lost/unavailable) priced off REAL bookmaker
-    // lines. Withheld (null) when the gate withholds the figures OR when no real
-    // line backs the game (config live.pickMarkets.requireRealLine) — a market
-    // the user cannot find at a book is never shown.
+    // Market states (available/won/lost/unavailable) priced AT the REAL
+    // bookmaker lines. Withheld (null) when the gate withholds the figures OR
+    // when no real line backs the game (config live.pickMarkets.requireRealLine)
+    // — a market the user cannot find at a book is never shown.
     markets,
     // "Why Apex predicts this" — factual bullets from real stats only.
     explanation: showFigures ? buildWhy({ game, model, stats, momentum }) : null,
@@ -728,6 +775,12 @@ async function analyseLiveGame({ gameId, matcher = null, espn = null, now = Date
   // Live statistics (shots, possession, corners, cards) from the same cached
   // ESPN summary read — shared cache means this costs no extra HTTP call.
   const statsView = await liveStats.getLiveStats({ espn, game, now, traceId });
+
+  // R6 — the REAL bookmaker line+odds for THIS game, read from the SAME cached
+  // ESPN summary the context/stats reads above already fetched (no extra HTTP).
+  // A summary ESPN does not price leaves the line null, so the market grid and
+  // the line-based picks stay withheld rather than priced off a simulated line.
+  game = { ...game, odds: await liveContext.getRealOdds({ espn, game, now, traceId }) };
 
   const analysis = buildAnalysis({ game, contextView, statsView, now, fetchedAt: now, tester });
   recordForwardTest({ game, analysis, now });

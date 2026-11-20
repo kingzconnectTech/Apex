@@ -11,11 +11,13 @@
  * The confidence it reports is the model's OWN probability for the selection it
  * recommends — nothing is inflated, rounded up or "boosted".
  *
- * The line matters: the live model has no bookmaker line to compare against, so
- * the Over/Under pick is made against a FIXED standard line per sport/league
- * (config live.pickMarkets.overUnder). Because the line is a constant and not
- * the live projection, the pick's confidence moves honestly as the game state
- * moves the projection away from it.
+ * The line matters: a REAL bookmaker line takes precedence when the ESPN
+ * summary priced the game (game.odds.overUnder, attached by analysis.js), so
+ * the Over/Under pick anchors to a line the user can actually find at a book.
+ * With no real line the pick falls back to a FIXED standard line per
+ * sport/league (config live.pickMarkets.overUnder). The line is never the live
+ * projection, so the pick's confidence moves honestly as the game state moves
+ * the projection away from it.
  */
 
 const CONFIG = require('./config');
@@ -31,17 +33,22 @@ function resultMarket(sport) {
 }
 
 /**
- * The FIXED Over/Under line for this game — a sport/league constant, never the
- * live projection. Soccer uses the configured line; basketball uses the
+ * The Over/Under line for this game. A REAL bookmaker line, when the ESPN
+ * summary priced the game (game.odds.overUnder, attached by analysis.js), takes
+ * precedence — the pick must anchor to a line the user can actually find at a
+ * book. With no real line the FIXED sport/league constant is used (never the
+ * live projection): soccer uses the configured line; basketball uses the
  * configured line, else the league's own mean total rounded to the nearest half
  * point. Returns null when no line can be established, so the O/U pick is
  * omitted rather than guessed.
  *
  * @param {string} sport
- * @param {Object} [game] LiveGame (for the basketball league id)
+ * @param {Object} [game] LiveGame (for the real line and the basketball league id)
  * @returns {number|null}
  */
 function overUnderLine(sport, game) {
+  const real = game && game.odds && Number.isFinite(game.odds.overUnder) ? game.odds.overUnder : null;
+  if (real != null) return real;
   const cfg = CFG.overUnder[sport];
   if (!cfg) return null;
   if (Number.isFinite(cfg.line)) return cfg.line;

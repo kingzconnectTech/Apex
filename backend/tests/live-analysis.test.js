@@ -17,6 +17,7 @@ const forwardTest = require('../services/live/forwardTest');
 const shadowHealth = require('../services/live/shadowHealth');
 const ledger = require('../services/live/ledger');
 const store = require('../services/live/store');
+const liveContext = require('../services/live/liveContext');
 const {
   buildAnalysis, nextGoal, projectionFor,
   analyseLiveGame, rememberGame, resetCache, recordForwardTest, DISPLAY_MODES,
@@ -361,6 +362,31 @@ describe('Phase 11 — the live picks (match result + Over/Under)', () => {
     });
   });
 
+  test('a real soccer line restricts the goal grid to that line and anchors the pick', () => {
+    withShippedLeague('soccer', 'eng.1', () => {
+      const a = buildAnalysis({ game: game({ homeScore: 1, awayScore: 1, odds: { overUnder: 3.5 } }) });
+      const goals = a.markets.filter(m => m.market === 'total_goals');
+      // Only the goal line the book hangs is priced; the simulated 0.5-4.5 grid
+      // is dropped, so nothing above/below the real line is offered.
+      expect(goals.length).toBeGreaterThan(0);
+      expect(goals.every(m => m.line === 3.5)).toBe(true);
+      // Line-free markets every book hangs (double chance, BTTS) survive.
+      expect(a.markets.some(m => m.market === 'btts')).toBe(true);
+      expect(a.picks.over_under.line).toBe(3.5);
+    });
+  });
+
+  test('a real basketball line restricts the totals grid to that line', () => {
+    withShippedLeague('basketball', 'nba', () => {
+      const a = buildAnalysis({ game: basketball({ odds: { overUnder: 224.5 } }) });
+      const totals = a.markets.filter(m => m.market === 'total_points');
+      expect(totals.length).toBe(2); // Over + Under at the one real line
+      expect(totals.every(m => m.line === 224.5)).toBe(true);
+      // The pick anchors to the real line, never the league's own mean line.
+      if (a.picks.over_under) expect(a.picks.over_under.line).toBe(224.5);
+    });
+  });
+
   test('withheld: no pick can ride along when the gate refuses', () => {
     withShadowSport('soccer', () => {
       const a = buildAnalysis({ game: game() });
@@ -400,6 +426,32 @@ describe('analyseLiveGame — resolution, caching and honest 404', () => {
     rememberGame(game(), t0);
     const out = await analyseLiveGame({ gameId: 'espn:1', now: t0 + CONFIG.liveApi.gameTtlMs + 1 });
     expect(out.error.code).toBe('GAME_NOT_RESOLVED');
+  });
+
+  test('a game ESPN prices carries a REAL-line grid and picks end to end', async () => {
+    liveContext.resetCache();
+    const g = game({
+      sport: 'basketball', league: { id: 'nba', name: 'NBA' },
+      clock: '7:24', period: 3, homeScore: 70, awayScore: 66,
+    });
+    rememberGame(g);
+    const espn = {
+      calls: 0,
+      async getMatchSummary() {
+        this.calls += 1;
+        return { pickcenter: [{ overUnder: 219.5, moneyline: { home: -160, away: 140 } }] };
+      },
+    };
+    const out = await analyseLiveGame({ gameId: 'espn:1', espn, now: Date.now() });
+    expect(out.error).toBeUndefined();
+    const a = out.analysis;
+    expect(a.display.shows_probabilities).toBe(true);
+    expect(Array.isArray(a.markets)).toBe(true);
+    // The grid is priced AT the real line read from the ESPN summary.
+    const totals = a.markets.filter(m => m.market === 'total_points');
+    expect(totals.length).toBe(2);
+    expect(totals.every(m => m.line === 219.5)).toBe(true);
+    if (a.picks && a.picks.over_under) expect(a.picks.over_under.line).toBe(219.5);
   });
 });
 

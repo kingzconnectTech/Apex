@@ -19,14 +19,14 @@ beforeEach(() => {
 
 /** A LiveGame shaped like liveGame.buildLiveGame output. */
 function game({
-  sport = 'basketball', leagueId = 'nba', gameId = 'espn:401',
+  sport = 'basketball', leagueId = 'nba', gameId = 'espn:401', source = 'espn',
   venue = 'Crypto.com Arena', kickoff = '2026-11-08T02:00:00Z',
   homeRecord = '6-3', awayRecord = '7-2', manual = false,
 } = {}) {
   return {
     game_id: gameId,
     sport,
-    source: 'espn',
+    source,
     league: { id: leagueId, name: 'NBA' },
     home: { id: 'h', name: 'Lakers', logo: null, score: 70, record: homeRecord },
     away: { id: 'a', name: 'Celtics', logo: null, score: 66, record: awayRecord },
@@ -200,5 +200,200 @@ describe('getContext (cached, best-effort)', () => {
     const ctx = await liveContext.getContext({ espn: null, game: game(), now: 1000 });
     expect(ctx.summary_available).toBe(false);
     expect(ctx.pregame).not.toBeNull();
+  });
+});
+
+describe('realOddsFromSummary — the REAL bookmaker line the live grid prices against', () => {
+  const PICKCENTER_SUMMARY = {
+    pickcenter: [{
+      provider: { name: 'DraftKings' },
+      overUnder: 219.5,
+      overOdds: -110,
+      underOdds: -110,
+      spread: -3.5,
+      moneyline: { home: { close: { odds: -160 } }, away: { close: { odds: 140 } } },
+    }],
+  };
+
+  test('parses the pickcenter total, odds and moneyline', () => {
+    const odds = liveContext.realOddsFromSummary(PICKCENTER_SUMMARY);
+    expect(odds.provider).toBe('DraftKings');
+    expect(odds.overUnder).toBe(219.5);
+    expect(odds.overOdds).toBe(-110);
+    expect(odds.underOdds).toBe(-110);
+    expect(odds.spread).toBe(-3.5);
+    expect(odds.moneyline).toEqual({ home: -160, away: +140, draw: null });
+  });
+
+  test('falls back to odds[0] and to close odds on the sides', () => {
+    const odds = liveContext.realOddsFromSummary({
+      odds: [{ overUnder: 2.5, moneyline: { home: { close: { odds: -120 } }, away: null } }],
+    });
+    expect(odds.overUnder).toBe(2.5);
+    expect(odds.moneyline.home).toBe(-120);
+    expect(odds.moneyline.away).toBeNull();
+  });
+
+  test('reads the moneyLine fields when the moneyline block is absent', () => {
+    const odds = liveContext.realOddsFromSummary({
+      pickcenter: [{ homeTeamOdds: { moneyLine: -105 }, awayTeamOdds: { moneyLine: -115 } }],
+    });
+    expect(odds.moneyline.home).toBe(-105);
+    expect(odds.moneyline.away).toBe(-115);
+    expect(odds.overUnder).toBeNull();
+  });
+
+  test('an un-priced summary yields null rather than a fake line', () => {
+    expect(liveContext.realOddsFromSummary(null)).toBeNull();
+    expect(liveContext.realOddsFromSummary({})).toBeNull();
+    expect(liveContext.realOddsFromSummary({ pickcenter: [{}] })).toBeNull();
+  });
+
+  test('getSummary shares the getContext cache so pricing costs no extra call', async () => {
+    const espn = { calls: 0, async getMatchSummary() { this.calls += 1; return PICKCENTER_SUMMARY; } };
+    const g = game();
+    await liveContext.getContext({ espn, game: g, now: 1000 });
+    const read = await liveContext.getSummary({ espn, game: g, now: 1000 });
+    expect(espn.calls).toBe(1);
+    expect(read.summary).toBe(PICKCENTER_SUMMARY);
+  });
+});
+
+describe('resolveEspnEventId — the score-site -> ESPN bridge', () => {
+  // A score-site game id (LiveScore/FlashScore) is the SITE's own id, not an
+  // ESPN event id: reading its summary returns a 404. The bridge looks the
+  // matching ESPN event up by team NAME on the game's own league scoreboard so
+  // the real line and live stats can be attached. A weak or ambiguous lookup is
+  // refused (null) rather than guessed.
+
+  const SCOREBOARD = {
+    events: [
+      {
+        id: '401879233',
+        date: '2026-11-08T02:00:00Z',
+        status: { type: { state: 'in' } },
+        competitions: [{
+          competitors: [
+            { homeAway: 'home', team: { id: '13', displayName: 'Lakers' }, score: { value: 70 } },
+            { homeAway: 'away', team: { id: '2', displayName: 'Celtics' }, score: { value: 66 } },
+          ],
+        }],
+      },
+    ],
+  };
+
+  const SUMMARY = {
+    pickcenter: [{
+      provider: { name: 'DraftKings' },
+      overUnder: 219.5,
+      moneyline: { home: { close: { odds: -160 } }, away: { close: { odds: 140 } } },
+    }],
+  };
+
+  /** An EspnProvider stand-in: raw `_request` for the scoreboard, a summary read. */
+  function stubEspn({ scoreboard = null, summary = null, fail = false } = {}) {
+    return {
+      requests: [],
+      summaryCalls: [],
+      async _request(url) {
+        this.requests.push(url);
+        if (fail) throw new Error('upstream down');
+        return scoreboard;
+      },
+      async getMatchSummary(sport, league, eventId, opts) {
+        this.summaryCalls.push({ sport, league, eventId, opts });
+        return summary;
+      },
+    };
+  }
+
+  test('a score-site game is bridged to its matching ESPN event', async () => {
+    const espn = stubEspn({ scoreboard: SCOREBOARD });
+    const g = game({ source: 'livescore', gameId: 'livescore:1810738' });
+    const id = await liveContext.resolveEspnEventId({ espn, game: g, now: 1000 });
+    expect(id).toBe('401879233');
+    expect(espn.requests).toEqual(['basketball/nba/scoreboard']);
+  });
+
+  test('a flashscore game is bridged the same way', async () => {
+    const espn = stubEspn({ scoreboard: SCOREBOARD });
+    const g = game({ source: 'flashscore', gameId: 'flashscore:abc123' });
+    expect(await liveContext.resolveEspnEventId({ espn, game: g, now: 1000 })).toBe('401879233');
+  });
+
+  test('an ESPN-sourced game short-circuits to its own event id, no lookup', async () => {
+    const espn = stubEspn({ scoreboard: SCOREBOARD });
+    const id = await liveContext.resolveEspnEventId({ espn, game: game({ gameId: 'espn:401' }), now: 1000 });
+    expect(id).toBe('401');
+    expect(espn.requests.length).toBe(0);
+  });
+
+  test('the bridge caches one scoreboard read per game', async () => {
+    const espn = stubEspn({ scoreboard: SCOREBOARD });
+    const g = game({ source: 'livescore', gameId: 'livescore:1810738' });
+    await liveContext.resolveEspnEventId({ espn, game: g, now: 1000 });
+    const again = await liveContext.resolveEspnEventId({ espn, game: g, now: 1500 });
+    expect(again).toBe('401879233');
+    expect(espn.requests.length).toBe(1);
+  });
+
+  test('resetCache clears the bridge so the lookup is retried', async () => {
+    const espn = stubEspn({ scoreboard: SCOREBOARD });
+    const g = game({ source: 'livescore', gameId: 'livescore:1810738' });
+    await liveContext.resolveEspnEventId({ espn, game: g, now: 1000 });
+    liveContext.resetCache();
+    await liveContext.resolveEspnEventId({ espn, game: g, now: 1000 });
+    expect(espn.requests.length).toBe(2);
+  });
+
+  test('an unrelated scoreboard leaves the game withheld (null)', async () => {
+    const espn = stubEspn({ scoreboard: { events: [{
+      id: '999',
+      date: '2026-11-08T02:00:00Z',
+      status: { type: { state: 'in' } },
+      competitions: [{ competitors: [
+        { homeAway: 'home', team: { id: '9', displayName: 'Warriors' } },
+        { homeAway: 'away', team: { id: '14', displayName: 'Heat' } },
+      ] }],
+    }] } });
+    const g = game({ source: 'livescore', gameId: 'livescore:1' });
+    expect(await liveContext.resolveEspnEventId({ espn, game: g, now: 1000 })).toBeNull();
+  });
+
+  test('an ambiguous scoreboard is refused rather than guessed', async () => {
+    // Two events carry the same two team names, so the best cannot beat the
+    // runner-up by the ambiguity gap: the bridge refuses rather than attaching
+    // the wrong game's line and stats.
+    const twin = { ...SCOREBOARD.events[0], id: '401879999' };
+    const espn = stubEspn({ scoreboard: { events: [SCOREBOARD.events[0], twin] } });
+    const g = game({ source: 'livescore', gameId: 'livescore:1' });
+    expect(await liveContext.resolveEspnEventId({ espn, game: g, now: 1000 })).toBeNull();
+  });
+
+  test('a provider failure degrades to null without throwing', async () => {
+    const espn = stubEspn({ fail: true });
+    const g = game({ source: 'livescore', gameId: 'livescore:1' });
+    expect(await liveContext.resolveEspnEventId({ espn, game: g, now: 1000 })).toBeNull();
+  });
+
+  test('a score-site game with no provider is withheld (null)', async () => {
+    const g = game({ source: 'livescore', gameId: 'livescore:1' });
+    expect(await liveContext.resolveEspnEventId({ espn: null, game: g, now: 1000 })).toBeNull();
+  });
+
+  test('a bridged game reads its summary with the resolved ESPN event id', async () => {
+    const espn = stubEspn({ scoreboard: SCOREBOARD, summary: SUMMARY });
+    const g = game({ source: 'livescore', gameId: 'livescore:1810738' });
+    const read = await liveContext.getSummary({ espn, game: g, now: 1000 });
+    expect(read.summary).toBe(SUMMARY);
+    expect(espn.summaryCalls.length).toBe(1);
+    expect(espn.summaryCalls[0].eventId).toBe('401879233');
+  });
+
+  test('a score-site game the bridge cannot match yields no summary', async () => {
+    const espn = stubEspn({ scoreboard: { events: [] }, summary: SUMMARY });
+    const g = game({ source: 'livescore', gameId: 'livescore:1' });
+    expect(await liveContext.getSummary({ espn, game: g, now: 1000 })).toBeNull();
+    expect(espn.summaryCalls.length).toBe(0);
   });
 });
