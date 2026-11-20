@@ -25,6 +25,7 @@ const {
   matchRows,
   scoreLine,
   statusLabel,
+  matchTimeLabel,
   isLive,
   refreshSeconds,
   updatedLabel,
@@ -159,6 +160,32 @@ test('matchView exposes every site that has the game as links', () => {
   const v = matchView(payload().matches[0]);
   assert.equal(v.links.length, 1);
   assert.equal(v.links[0].sourceName, 'LiveScore');
+});
+
+test('matchTimeLabel shows the live time in the shared format, and null when not live', () => {
+  // Basketball reads in quarters: minutes into the quarter, then the quarter.
+  assert.equal(
+    matchTimeLabel({ sport: 'basketball', status: { live: true }, clock: "6'", period: 1 }),
+    "6'-Q1",
+  );
+  // A source clock for every other sport keeps the spaced period label.
+  assert.equal(
+    matchTimeLabel({ sport: 'soccer', status: { live: true }, clock: "34'", period: 2 }),
+    "34' · P2",
+  );
+  // No source clock -> the server's kick-off-derived estimate, labelled "(est.)".
+  assert.equal(
+    matchTimeLabel({ sport: 'basketball', status: { live: true }, clock: null, derived_clock: { clock: "8'", period: 1 } }),
+    "8'-Q1 (est.)",
+  );
+  // Not live -> never an invented time.
+  assert.equal(matchTimeLabel({ sport: 'soccer', status: { live: false }, clock: "34'", period: 2 }), null);
+  // Live but with no clock anywhere -> nothing to show.
+  assert.equal(matchTimeLabel({ sport: 'soccer', status: { live: true } }), null);
+
+  // matchView surfaces it for the screen to render.
+  const v = matchView({ sport: 'basketball', status: { live: true }, clock: "6'", period: 3 });
+  assert.equal(v.timeLabel, "6'-Q3");
 });
 
 /* -------------------------------------------------------------- refresh */

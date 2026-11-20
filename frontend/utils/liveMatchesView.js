@@ -13,6 +13,10 @@
  * browser, and say clearly when a link is not usable. All labelling lives here.
  */
 
+// The clock/period formatting is shared with the analysis screen, so a
+// basketball game reads "6'-Q1" on BOTH — the format is defined once.
+const { clockWithPeriod } = require('./liveAnalysisView');
+
 /** The states the live-matches screen can be in. */
 const VIEW_STATE = {
   IDLE: 'idle',
@@ -80,6 +84,23 @@ function isLive(match) {
 }
 
 /**
+ * The in-play clock a row shows, in the SAME format as the analysis screen
+ * (basketball "6'-Q1", every other sport "34' · P2"). Prefers the source clock;
+ * failing that the server's kick-off-derived estimate, labelled "(est.)" so it
+ * is never mistaken for a reported time. A game the backend did not mark live,
+ * or one with neither clock, yields null rather than an invented time.
+ */
+function matchTimeLabel(match) {
+  if (!isLive(match)) return null;
+  if (match.clock) return clockWithPeriod(match.sport, match.clock, match.period);
+  const derived = match.derived_clock;
+  if (derived && derived.clock) {
+    return `${clockWithPeriod(match.sport, derived.clock, derived.period)} (est.)`;
+  }
+  return null;
+}
+
+/**
  * One match, shaped for rendering. `links` carries every site that has the game
  * (the list is de-duplicated server-side), so the user can pick which to open.
  */
@@ -99,6 +120,7 @@ function matchView(match) {
     awayScore: away.score == null ? null : away.score,
     score: scoreLine(match),
     statusLabel: statusLabel(match),
+    timeLabel: matchTimeLabel(match),
     isLive: isLive(match),
     source: (match && match.source_name) || (match && match.source) || null,
     sourceNames: links.map(l => l && l.source_name).filter(Boolean),
@@ -271,6 +293,7 @@ module.exports = {
   matchRows,
   scoreLine,
   statusLabel,
+  matchTimeLabel,
   isLive,
   refreshSeconds,
   updatedLabel,

@@ -663,6 +663,8 @@ module.exports = {
   teamNames,
   scoreLine,
   clockLine,
+  periodLabel,
+  clockWithPeriod,
   showsProbabilities,
   manualBadge,
   manualBadgeDetail,
